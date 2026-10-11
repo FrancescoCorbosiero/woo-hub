@@ -11,8 +11,9 @@ import { deleteSyncRun } from "./runs";
  * of prices changed on WordPress.
  *
  * The same preview the Sync tab runs, then its apply with "apply all", and
- * narrower on purpose: prices and stock only — never the size cleanup (it
- * deletes variations), never identifiers. The run is dropped afterwards, plans
+ * narrower on purpose: prices and stock (and, when asked, the sizes a product
+ * is missing) — never the size cleanup (it deletes variations), never
+ * identifiers. The run is dropped afterwards, plans
  * and all: nobody reviews it, and left to the preview's retention its plans
  * would push the operator's own preview out of the runs it keeps.
  */
@@ -26,6 +27,11 @@ export interface PriceSyncOptions {
   maxChanges?: number;
   /** Steps of 250 SKUs before giving up. Default: what the run needs, and some. */
   maxSteps?: number;
+  /**
+   * Also add the sizes a product is missing (see ApplyOptions.addSizes) —
+   * "feed": the feed-owned products only, the unattended runs' choice.
+   */
+  addSizes?: "all" | "feed";
 }
 
 export interface PriceSyncResult {
@@ -35,6 +41,13 @@ export interface PriceSyncResult {
   outcome: ApplyOutcome | null;
   /** The changes planned, when there were more than maxChanges: nothing was written. */
   capped: number | null;
+  /**
+   * Missing sizes left for the Sync tab: adding them would have taken the run
+   * past maxChanges. The prices and stock were written all the same — a big
+   * catch-up of sizes (the first run after this feature, a feed that grew)
+   * must never hold up the stock the store sells on.
+   */
+  sizesHeld: number | null;
 }
 
 /** Throws when the run cannot be planned to the end: a half-read store is not a plan. */
@@ -55,9 +68,15 @@ export async function runPriceSync(opts: PriceSyncOptions = {}): Promise<PriceSy
       progress = next.progress;
     }
     const report = progress.result!;
-    const planned = report.totals?.update ?? 0;
-    if (planned === 0) return { report, outcome: null, capped: null };
-    if (opts.maxChanges != null && planned > opts.maxChanges) return { report, outcome: null, capped: planned };
+    const updates = report.totals?.update ?? 0;
+    // Missing sizes count as changes too (an overestimate: a sold-out size is
+    // never added). Over the cap they wait for the Sync tab; the prices don't.
+    const creates = opts.addSizes ? (report.totals?.create ?? 0) : 0;
+    if (updates + creates === 0) return { report, outcome: null, capped: null, sizesHeld: null };
+    if (opts.maxChanges != null && updates > opts.maxChanges) {
+      return { report, outcome: null, capped: updates, sizesHeld: null };
+    }
+    const holdSizes = opts.maxChanges != null && updates + creates > opts.maxChanges;
     const outcome = await applySync({
       runId,
       priceScope: "all",
@@ -65,8 +84,9 @@ export async function runPriceSync(opts: PriceSyncOptions = {}): Promise<PriceSy
       sanitize: false,
       backfillGtins: false,
       liveCheck: opts.liveCheck,
+      addSizes: holdSizes ? undefined : opts.addSizes,
     });
-    return { report, outcome, capped: null };
+    return { report, outcome, capped: null, sizesHeld: holdSizes ? creates : null };
   } finally {
     await deleteRunPlans(runId)
       .then(() => deleteSyncRun(runId))

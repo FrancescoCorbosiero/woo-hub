@@ -39,10 +39,23 @@ async function withSnapshotWriteLock<T>(write: (tx: Tx) => Promise<T>): Promise<
 }
 
 /**
+ * The field a patched product carries: when the Hub last wrote it into the
+ * snapshot. A full pull keeps whatever was patched after it started (see
+ * saveSnapshotKeepingPatches) — a product read before the Hub wrote it is
+ * older than the patch, and putting it back made the Hub's own write look
+ * like an edit made in WordPress.
+ */
+export const PATCHED_AT = "hub_patched_at";
+
+/**
  * Rewrite the snapshot's product list as the products `keep` matches plus
  * `incoming`, under the write lock's transaction. Postgres does the swap; only
  * the changed products cross the wire. Returns the new product count, or null
  * when there is no snapshot (nothing pulled yet — no "on the store" to correct).
+ *
+ * The snapshot's date is NOT moved: it says when the store was last read
+ * whole. A patch covers the few products just written, and dating the whole
+ * copy by it made a day-old copy read as fresh.
  */
 async function rewriteProducts(
   tx: Tx,
@@ -51,7 +64,8 @@ async function rewriteProducts(
 ): Promise<number | null> {
   const res = await tx.execute(sql`
     with incoming as (
-      select p as product from jsonb_array_elements(${JSON.stringify(incoming)}::jsonb) as p
+      select p || jsonb_build_object(${PATCHED_AT}::text, now()) as product
+      from jsonb_array_elements(${JSON.stringify(incoming)}::jsonb) as p
     ),
     kept as (
       select p as product
@@ -68,8 +82,7 @@ async function rewriteProducts(
                  '{product_count}',
                  to_jsonb(jsonb_array_length(m.arr))
                ),
-        product_count = jsonb_array_length(m.arr),
-        uploaded_at = now()
+        product_count = jsonb_array_length(m.arr)
     from merged m
     where s.id = ${SINGLETON}
     returning s.product_count as n
@@ -116,6 +129,58 @@ export async function saveSnapshot(
       },
     }),
   );
+}
+
+/**
+ * Replace the snapshot with a full pull — keeping the products the Hub
+ * patched since `since` (the pull's start).
+ *
+ * A pull reads the store over minutes, product page by product page, while
+ * the feed cycle, Publish and the Vetrina keep writing. A product the pull
+ * read before one of those writes is older than the patch the write left in
+ * the snapshot; swapping the whole copy in at the end put the old prices
+ * back, and the next plan took the Hub's own write for a price changed in
+ * WordPress. The patch is what the writer read live or wrote: it wins.
+ *
+ * The read and the swap happen under the snapshot's write lock, so a patch
+ * landing meanwhile waits and goes on top.
+ */
+export async function saveSnapshotKeepingPatches(
+  model: StoreModel,
+  since: Date,
+  source: SnapshotSource = "rest",
+): Promise<{ kept: number }> {
+  return withSnapshotWriteLock(async (tx) => {
+    const res = await tx.execute(sql`
+      select p as product
+      from ${storeSnapshot} s, jsonb_array_elements(s.data->'products') as p
+      where s.id = ${SINGLETON}
+        and p ? ${PATCHED_AT}
+        and (p->>${PATCHED_AT})::timestamptz >= ${since.toISOString()}::timestamptz
+    `);
+    const patched = rowsOf<{ product: StoreProductModel }>(res).map((r) => r.product);
+    const ids = new Set(patched.map((p) => p.id));
+    const keys = new Set(patched.map((p) => (p.sku ?? "").trim().toUpperCase()).filter(Boolean));
+    const products = [
+      ...model.products.filter((p) => !ids.has(p.id) && !keys.has((p.sku ?? "").trim().toUpperCase())),
+      ...patched,
+    ];
+    const data = { ...model, product_count: products.length, products };
+    await tx
+      .insert(storeSnapshot)
+      .values({ id: SINGLETON, siteUrl: model.site_url ?? null, productCount: products.length, source, data })
+      .onConflictDoUpdate({
+        target: storeSnapshot.id,
+        set: {
+          siteUrl: sql`excluded.site_url`,
+          productCount: sql`excluded.product_count`,
+          source: sql`excluded.source`,
+          data: sql`excluded.data`,
+          uploadedAt: sql`now()`,
+        },
+      });
+    return { kept: patched.length };
+  });
 }
 
 export async function getActiveSnapshot(): Promise<StoreModel | null> {

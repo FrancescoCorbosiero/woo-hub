@@ -3,11 +3,11 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import { countOf } from "@/server/db/rows";
 import { storePullRuns, storePullProducts, type StorePullRunRow } from "@/server/db/schema";
-import { saveSnapshot } from "@/server/store-json/repo";
+import { saveSnapshotKeepingPatches } from "@/server/store-json/repo";
 import type { StoreModel, StoreProductModel } from "@/server/store-json/model";
 import { registerWooCatalogEntries } from "@/server/catalog/woo-register";
 import { pruneLedgerToSnapshot } from "@/server/sync/ledger";
-import { getWooClient, wooSiteUrl } from "./client";
+import { getWooClient, PULL_VARIATION_FIELDS, wooSiteUrl } from "./client";
 import { toStoreProduct } from "./store-product";
 
 /**
@@ -132,7 +132,7 @@ export async function advancePull(runId: string, pages = 1): Promise<PullProgres
       const staged = await countStaged(runId);
 
       await forEachLimit(products, VARIATIONS_CONCURRENCY, async (p) => {
-        const variations = await client.getAllVariations(p.id);
+        const variations = await client.getAllVariations(p.id, { fields: PULL_VARIATION_FIELDS });
         variationsFetched += variations.length;
         const data = toStoreProduct(p, variations);
         await db
@@ -164,7 +164,7 @@ export async function advancePull(runId: string, pages = 1): Promise<PullProgres
         .where(eq(storePullRuns.id, runId));
 
       if (finished) {
-        await completePull(runId);
+        await completePull(runId, run.startedAt);
         return toProgress((await getRun(runId))!);
       }
     }
@@ -179,8 +179,12 @@ export async function advancePull(runId: string, pages = 1): Promise<PullProgres
   }
 }
 
-/** Assemble staged rows into the active snapshot and close the run. */
-async function completePull(runId: string): Promise<void> {
+/**
+ * Assemble staged rows into the active snapshot and close the run. Products
+ * the Hub wrote while the pull was walking the store keep the snapshot's copy
+ * of them (see saveSnapshotKeepingPatches): the pull may have read them first.
+ */
+async function completePull(runId: string, startedAt: Date): Promise<void> {
   const rows = await db
     .select({ data: storePullProducts.data })
     .from(storePullProducts)
@@ -195,7 +199,8 @@ async function completePull(runId: string): Promise<void> {
     product_count: products.length,
     products,
   };
-  await saveSnapshot(model, "rest");
+  const { kept } = await saveSnapshotKeepingPatches(model, startedAt, "rest");
+  if (kept > 0) console.log(`[woo] pull: ${kept} product(s) written by the Hub during the pull kept as written`);
 
   // The catalog mirrors the whole store: register store-only products
   // (source "woo") so the vendor sees ALL inventory, not just feed-covered.

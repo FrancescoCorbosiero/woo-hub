@@ -3,7 +3,7 @@ import { and, desc, eq, gte, ilike, inArray, lt, lte, ne, notInArray, or, sql, t
 import type { ProductScopeAxes } from "@core/config";
 import type { SourceProduct } from "@core/core-spine";
 import { db } from "@/server/db/client";
-import { catalogProducts, mediaJobs, storeSnapshot } from "@/server/db/schema";
+import { catalogProducts, feedItems, mediaJobs, storeSnapshot } from "@/server/db/schema";
 import { countOf } from "@/server/db/rows";
 import { SNAPSHOT_ID } from "@/server/store-json/repo";
 import { skuKey } from "@/lib/skus";
@@ -206,8 +206,11 @@ export async function listPublishCandidates(market: string): Promise<PublishCand
  * and a store pull re-renders it once per product page — which is how a long
  * pull walked the dev server into an out-of-memory crash.
  *
- * Matches listPublishCandidates' filter exactly, or the number would disagree
- * with the list it describes. Best-effort: 0 on any error.
+ * Matches the Publish tab's list exactly (listPublishTargets), or the number
+ * would disagree with the list it describes: a feed product the feed no longer
+ * carries is not counted while it is off the store — Publish refuses it until
+ * the feed tracks it again. It stays in the catalog all the same, and a copy
+ * already on the store stays there at stock 0. Best-effort: 0 on any error.
  */
 export async function countUnpublishedCandidates(market: string): Promise<number> {
   try {
@@ -226,6 +229,10 @@ export async function countUnpublishedCandidates(market: string): Promise<number
       where c.market = ${market}
         and c.source <> 'woo'
         and c.variant_count >= 1
+        and (c.source <> 'goldensneakers' or exists (
+          select 1 from ${feedItems} f
+          where f.feed = 'goldensneakers' and f.sku = upper(trim(c.sku)) and f.active
+        ))
         and not exists (
           select 1 from store_skus ss where ss.sku = upper(trim(c.sku)) and ss.sizes > 0
         )

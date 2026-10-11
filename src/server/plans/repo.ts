@@ -162,6 +162,25 @@ export async function planRunIds(runId: string): Promise<string[]> {
   return rows.map((r) => r.id);
 }
 
+/** A plan of the run that has sizes the store product lacks ("create" rows). */
+export interface PlanWithCreates {
+  planId: string;
+  sku: string;
+  /** "kicksdb" or the feed that owns the product. */
+  source: string;
+  items: Plan["items"];
+}
+
+/** The run's plans with at least one "create" row — the sizes an apply may add. */
+export async function planRunCreates(runId: string): Promise<PlanWithCreates[]> {
+  const rows = await db
+    .select({ id: plans.id, sku: plans.sku, source: plans.source, items: plans.items })
+    .from(plans)
+    .where(sql`${plans.runId} = ${runId} and coalesce((${plans.summary}->>'create')::int, 0) > 0`)
+    .orderBy(asc(plans.id));
+  return rows.map((r) => ({ planId: r.id, sku: r.sku, source: r.source, items: r.items }));
+}
+
 export interface PlanRunScope {
   /** Store products the run covers — the cleanup never touches anything else. */
   previewedProductIds: number[];
