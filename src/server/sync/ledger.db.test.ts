@@ -250,6 +250,38 @@ describe.skipIf(!enabled)("prices changed on the store (real SQL, stand-in store
     expect(rows.find((r) => r.variationId === 21)).toMatchObject({ price: 90, storePrice: null });
   });
 
+  it("a pull that read a product before the feed cycle wrote it keeps the write — no phantom edit", async () => {
+    const { runPriceSync, saveSnapshotKeepingPatches, countStoreEdits, getSnapshotProductsByIds } = await load();
+    // The pull starts, and reads this product at 120…
+    const pullStarted = new Date(Date.now() - 1000);
+    const staged = { id: 1, sku: SKU, name: "Ledger Low", variations: structuredClone(store.products.get(1)) };
+    // …then the feed cycle writes the feed's 130.
+    expect((await runPriceSync({ skus: [SKU], liveCheck: true })).outcome?.updated).toBe(2);
+    // The pull finishes: the product written meanwhile keeps its written copy.
+    expect((await saveSnapshotKeepingPatches({ products: [staged] } as never, pullStarted)).kept).toBe(1);
+    const [snap] = await getSnapshotProductsByIds([1]);
+    expect(snap.variations.map((v) => v.regular_price)).toEqual(["130.00", "130.00"]);
+    // Nobody touched WordPress, and the Hub does not say otherwise.
+    expect((await runPriceSync({ skus: [SKU], liveCheck: true })).outcome).toBeNull();
+    expect(await countStoreEdits()).toBe(0);
+  });
+
+  it("a pull started after the last write replaces it, and patches never date the copy", async () => {
+    const { runPriceSync, saveSnapshotKeepingPatches, getSnapshotInfo, getSnapshotProductsByIds } = await load();
+    const before = (await getSnapshotInfo())!.uploadedAt;
+    await runPriceSync({ skus: [SKU], liveCheck: true });
+    // "Stato dello store" says when the store was read whole, not when one product was written.
+    expect((await getSnapshotInfo())!.uploadedAt).toBe(before);
+
+    // Changed in WordPress after the write; a pull started later reads it.
+    store.products.get(1)!.find((v) => v.id === 11)!.regular_price = "149.99";
+    const pulled = { id: 1, sku: SKU, name: "Ledger Low", variations: structuredClone(store.products.get(1)) };
+    expect((await saveSnapshotKeepingPatches({ products: [pulled] } as never, new Date(Date.now() + 1000))).kept).toBe(0);
+    const [snap] = await getSnapshotProductsByIds([1]);
+    expect(snap.variations.find((v) => v.id === 11)?.regular_price).toBe("149.99");
+    expect((await getSnapshotInfo())!.uploadedAt).not.toBe(before);
+  });
+
   it("a row the store refuses is a failure, and is not recorded as written", async () => {
     const { runPriceSync } = await load();
     store.refuse.add(12);

@@ -174,6 +174,8 @@ const ApplySchema = z
     // Fill empty GTINs from the source across the whole preview, not just the
     // price selection (a correctly-priced row is a noop and never selectable).
     backfillGtins: z.boolean().default(true),
+    // Add the ticked sizes the store product is missing ("create" rows).
+    addSizes: z.boolean().default(true),
   })
   .refine((v) => v.priceScope === "all" || v.selections.length > 0 || v.sanitize || v.backfillGtins, {
     message: "Nothing to do: no price selection, no cleanup, no identifiers to fill.",
@@ -254,7 +256,7 @@ export async function listRebuildableSkus(): Promise<{
  * Dry-run computes and audits the exact operations without touching Woo.
  */
 export async function applySyncPrices(
-  input: z.infer<typeof ApplySchema>,
+  input: z.input<typeof ApplySchema>,
 ): Promise<ApplyActionResult> {
   const parsed = ApplySchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "invalid input" };
@@ -270,6 +272,7 @@ export async function applySyncPrices(
       dryRun: parsed.data.dryRun,
       sanitize: parsed.data.sanitize,
       backfillGtins: parsed.data.backfillGtins,
+      addSizes: parsed.data.addSizes ? "all" : undefined,
     });
     return { ok: true, outcome };
   } catch (e) {

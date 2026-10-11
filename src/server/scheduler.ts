@@ -251,6 +251,15 @@ async function syncStore(scope: "store" | "feed"): Promise<StepOutcome | null> {
   const { wooConfigured } = await import("@/server/woo/client");
   if (!wooConfigured()) return null;
 
+  // A pull is reading the store into a new copy: writing now would race it
+  // (the pull keeps what is patched meanwhile, but its plan is made from the
+  // copy being replaced). The next cycle writes it, a quarter of an hour on.
+  const { getLatestPullRun, pullInFlight } = await import("@/server/woo/pull");
+  if (pullInFlight(await getLatestPullRun())) {
+    console.log("[scheduler] store sync waits: a store pull is running");
+    return { ok: true, count: 0, note: "a store pull was running: the next cycle writes" };
+  }
+
   let skus: string[] | undefined;
   if (scope === "feed") {
     const { GS_FEED, knownFeedSkus } = await import("@/server/feeds/repo");
@@ -263,14 +272,19 @@ async function syncStore(scope: "store" | "feed"): Promise<StepOutcome | null> {
 
   const { runPriceSync } = await import("@/server/sync/price-sync");
   const limit = store().autoSyncMax;
-  const { outcome, capped } = await runPriceSync({ skus, liveCheck: true, maxChanges: limit });
+  // Sizes the feed lists and the store product lacks are added too — feed-owned
+  // products only: their stock is real, where KicksDB lists every size StockX
+  // has an ask for.
+  const { outcome, capped, sizesHeld } = await runPriceSync({ skus, liveCheck: true, maxChanges: limit, addSizes: "feed" });
   if (capped != null) {
     throw new Error(
       `${capped} changes planned, more than the ${limit} an automatic run may write (AUTO_SYNC_MAX_CHANGES): ` +
         "nothing written. Review and apply them in the Sync tab.",
     );
   }
-  if (!outcome) return { ok: true, count: 0 };
+  const held = sizesHeld != null ? `${sizesHeld} missing size(s) wait for the Sync tab (more than ${limit} changes at once)` : null;
+  if (held) console.log(`[scheduler] store sync: ${held}`);
+  if (!outcome) return { ok: true, count: 0, ...(held ? { note: held } : {}) };
   if (outcome.failedTotal > 0) {
     throw new Error(
       `${outcome.updated} of ${outcome.variations} changes written, ${outcome.failedTotal} failed: ` +
@@ -278,14 +292,21 @@ async function syncStore(scope: "store" | "feed"): Promise<StepOutcome | null> {
     );
   }
   const kept = outcome.keptStoreEdits;
+  const added = outcome.sizes.added;
   console.log(
     `[scheduler] store sync: ${outcome.updated} change(s) written (${scope === "feed" ? "feed products" : "whole store"})` +
+      (added > 0 ? `, ${added} missing size(s) added` : "") +
       (kept > 0 ? `, ${kept} price(s) changed on the store since the last pull kept` : ""),
   );
+  const notes = [
+    ...(added > 0 ? [`${added} missing size(s) added`] : []),
+    ...(held ? [held] : []),
+    ...(kept > 0 ? [`${kept} price(s) changed on the store kept`] : []),
+  ];
   return {
     ok: true,
-    count: outcome.updated,
-    ...(kept > 0 ? { note: `${kept} price(s) changed on the store kept` } : {}),
+    count: outcome.updated + added,
+    ...(notes.length > 0 ? { note: notes.join(", ") } : {}),
   };
 }
 

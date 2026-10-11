@@ -2,9 +2,14 @@ import "server-only";
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import { applyAudit, type ApplyAuditRow } from "@/server/db/schema";
-import { getPlansByIds, planRunIds, planRunScope } from "@/server/plans/repo";
+import { getPlansByIds, planRunCreates, planRunIds, planRunScope } from "@/server/plans/repo";
 import { getActiveConfig } from "@/server/config/repo";
-import { getSnapshotProductsByIds, upsertSnapshotProducts } from "@/server/store-json/repo";
+import {
+  getSnapshotProductsByIds,
+  getSnapshotProductsBySkus,
+  upsertSnapshotProducts,
+} from "@/server/store-json/repo";
+import { planMissingSizes, type MissingSizeRow } from "@/server/store-json/missing-sizes-plan";
 import { planProductSanitize, type ProductSanitizeOps } from "@/server/store-json/sanitize-plan";
 import { planFeedTakeover } from "@/server/store-json/takeover-plan";
 import { variationSizeLabel } from "@/server/store-json/match";
@@ -88,6 +93,28 @@ export interface ApplyOptions {
    * store before planning, does without.
    */
   liveCheck?: boolean;
+  /**
+   * Add the sizes the store product is missing — the run's selected "create"
+   * rows: a size the source sells and the product on the store does not have
+   * (typically one the supplier listed after the product was published).
+   * Nothing is deleted or rewritten; the product is read live first, so a size
+   * that appeared meanwhile is not created twice.
+   *  - "all": every selected one (the Sync tab: the operator ticked them);
+   *  - "feed": only for feed-owned products, whose stock is real (the
+   *    unattended runs — KicksDB lists every size StockX has an ask for);
+   *  - omitted: none.
+   */
+  addSizes?: "all" | "feed";
+}
+
+/** A size added to a product (or, in a dry run, that would be). */
+export interface NewSize {
+  sku: string;
+  storeProductId: number;
+  sizeLabel: string;
+  price: number | null;
+  /** Managed quantity, or null for sell on demand. */
+  stock: number | null;
 }
 
 export interface ApplyChange {
@@ -166,6 +193,70 @@ export interface ApplyOutcome {
    * kept, not written, and listed with the other prices changed on WordPress.
    */
   keptStoreEdits: number;
+  /** Sizes the products were missing: planned, and (live) actually added. */
+  sizes: { planned: number; added: number; sample: NewSize[] };
+}
+
+/** One product's missing sizes, as the run planned them against the snapshot. */
+interface SizeWork {
+  storeProductId: number;
+  sku: string;
+  rows: MissingSizeRow[];
+  planned: NewSize[];
+  /** The rows the plan creates — what a failure is reported against. */
+  plannedIds: string[];
+}
+
+/**
+ * The selected "create" rows of the run, matched to the store products they
+ * belong to and planned against the snapshot. A create row carries no store
+ * ids (the size has no variation yet), so the product is found by its SKU.
+ */
+async function collectMissingSizes(
+  runId: string,
+  isSelected: (planId: string, variantId: string) => boolean,
+  scope: "all" | "feed",
+): Promise<SizeWork[]> {
+  const plans = (await planRunCreates(runId)).filter((p) => scope === "all" || p.source !== "kicksdb");
+  if (plans.length === 0) return [];
+  const products = await getSnapshotProductsBySkus(plans.map((p) => p.sku));
+  const work: SizeWork[] = [];
+  for (const p of plans) {
+    const product = products.get(skuKey(p.sku));
+    if (!product || !(product.id > 0)) continue;
+    const rows: MissingSizeRow[] = p.items
+      .filter((i) => i.action === "create" && i.storeVariationId == null && isSelected(p.planId, i.stockxVariantId))
+      .map((i) => ({
+        stockxVariantId: i.stockxVariantId,
+        sizeLabel: i.sizeLabel,
+        euSize: i.euSize ?? null,
+        proposedPrice: i.proposedPrice,
+        stockQuantity: i.stockQuantity,
+        upc: i.upc,
+      }));
+    if (rows.length === 0) continue;
+    const plan = planMissingSizes({
+      parentSku: product.sku,
+      parentAttributes: (product as { attributes?: unknown }).attributes,
+      variations: product.variations,
+      rows,
+    });
+    if (plan.create.length === 0) continue;
+    work.push({
+      storeProductId: product.id,
+      sku: product.sku,
+      rows,
+      plannedIds: plan.create.map((c) => c.stockxVariantId),
+      planned: plan.create.map((c) => ({
+        sku: product.sku,
+        storeProductId: product.id,
+        sizeLabel: c.label,
+        price: c.price,
+        stock: c.stock,
+      })),
+    });
+  }
+  return work;
 }
 
 async function forEachLimit<T>(items: T[], limit: number, fn: (item: T) => Promise<void>) {
@@ -370,7 +461,12 @@ export async function applySync(options: ApplyOptions): Promise<ApplyOutcome> {
     priceByProduct.set(c.storeProductId, list);
   }
 
-  const productIds = [...new Set([...opsByProduct.keys(), ...priceByProduct.keys()])];
+  // 3. The sizes the products are missing (selected "create" rows).
+  const sizeWork = options.addSizes ? await collectMissingSizes(options.runId, isSelected, options.addSizes) : [];
+  const sizesByProduct = new Map(sizeWork.map((w) => [w.storeProductId, w]));
+  const sizesPlanned = sizeWork.flatMap((w) => w.planned);
+
+  const productIds = [...new Set([...opsByProduct.keys(), ...priceByProduct.keys(), ...sizesByProduct.keys()])];
   const cleanup = options.sanitize ? summarizeCleanup(cleanupOps) : null;
   const cleanupDetails = cleanupOps.map<CleanupDetail>((o) => ({
     storeProductId: o.storeProductId,
@@ -380,17 +476,26 @@ export async function applySync(options: ApplyOptions): Promise<ApplyOutcome> {
     parentRealigned: o.parentAttributes != null,
   }));
 
+  // A live run with nothing to write writes nothing — not even a history row:
+  // the unattended runs would otherwise log a "0/0" every time a plan's work
+  // turned out to be already done.
+  if (!options.dryRun && productIds.length === 0) {
+    return emptyOutcome(cleanup);
+  }
+
+  const result = {
+    products: productIds.length,
+    variations: changes.length,
+    sizes: sizesPlanned.length,
+    droppedByCleanup,
+    cleanup: cleanup as unknown as Record<string, unknown> | null,
+  };
   const [audit] = await db
     .insert(applyAudit)
     .values({
       status: options.dryRun ? "dry_run" : "running",
       dryRun: options.dryRun,
-      result: {
-        products: productIds.length,
-        variations: changes.length,
-        droppedByCleanup,
-        cleanup: cleanup as unknown as Record<string, unknown> | null,
-      },
+      result,
     })
     .returning({ id: applyAudit.id });
 
@@ -413,13 +518,22 @@ export async function applySync(options: ApplyOptions): Promise<ApplyOutcome> {
       cleanupDetailsTotal: cleanupDetails.length,
       gtinsWritten: changes.filter((c) => c.newGtin).length,
       keptStoreEdits: 0,
+      sizes: { planned: sizesPlanned.length, added: 0, sample: sizesPlanned.slice(0, OUTCOME_SAMPLE) },
     };
   }
 
-  // 3. Execute, per parent product: parent PUT → variations batch (writes + deletes).
+  // 4. Execute, per parent product: parent PUT → variations batch (writes +
+  //    deletes) → the missing sizes.
   // A prices-only apply reads the products it writes now: the snapshot patch
   // and the ledger need their names and sizes.
   if (!wholeRun) products = await getSnapshotProductsByIds(productIds);
+  else {
+    // A product whose only rows are missing sizes matched no variation, so the
+    // run's scope does not list it: read it too, for the snapshot patch.
+    const have = new Set(products.map((p) => p.id));
+    const extra = [...sizesByProduct.keys()].filter((id) => !have.has(id));
+    if (extra.length > 0) products = [...products, ...(await getSnapshotProductsByIds(extra))];
+  }
   const config = await getActiveConfig();
   const client = getWooClient();
   const concurrency = Math.max(1, config.apply.concurrency ?? 3);
@@ -436,6 +550,9 @@ export async function applySync(options: ApplyOptions): Promise<ApplyOutcome> {
   const kept: { change: ApplyChange; storePrice: number }[] = [];
   // Variations the store no longer has once this apply is done.
   const gone: number[] = [];
+  // Products that took new sizes: their parent and sizes as the store has them after.
+  const afterSizes = new Map<number, { attributes: unknown; variations: StoreVariation[] }>();
+  const sizesAdded: (NewSize & { variationId: number; euNorm: string })[] = [];
 
   await forEachLimit(productIds, concurrency, async (productId) => {
     const ops = opsByProduct.get(productId);
@@ -505,7 +622,68 @@ export async function applySync(options: ApplyOptions): Promise<ApplyOutcome> {
         failed.push({ stockxVariantId: `product:${productId}`, error: message });
       }
     }
+
+    const work = sizesByProduct.get(productId);
+    if (work) await addMissingSizes(client, work);
   });
+
+  /**
+   * Add one product's missing sizes: read it live (a size that appeared since
+   * the plan is not created twice, and the parent's option list is the store's
+   * own), list the new sizes on the parent, then create them. Creates are not
+   * retried blind (see the client's WRITE_ONCE): the next run reads the product
+   * again and only creates what is still missing.
+   */
+  async function addMissingSizes(client: ReturnType<typeof getWooClient>, work: SizeWork): Promise<void> {
+    const productId = work.storeProductId;
+    try {
+      const [parent, live] = await Promise.all([client.getProduct(productId), client.getAllVariations(productId)]);
+      if (!parent) throw new Error("the product is no longer on the store");
+      const plan = planMissingSizes({
+        parentSku: work.sku,
+        parentAttributes: parent.attributes,
+        variations: live.map(toStoreVariation),
+        rows: work.rows,
+      });
+      if (plan.create.length === 0) return;
+      if (plan.parentAttributes) await client.updateProduct(productId, { attributes: plan.parentAttributes });
+      const res = await client.batchVariations(productId, { create: plan.create.map((c) => c.payload) });
+      plan.create.forEach((c, i) => {
+        const row = res.create[i];
+        if (row?.error != null || row?.id == null) {
+          failed.push({ stockxVariantId: c.stockxVariantId, error: row?.error?.message ?? row?.error?.code ?? "size not created" });
+          return;
+        }
+        sizesAdded.push({
+          sku: work.sku,
+          storeProductId: productId,
+          sizeLabel: c.label,
+          price: c.price,
+          stock: c.stock,
+          variationId: row.id,
+          euNorm: c.euNorm,
+        });
+      });
+      // The store's answer, for the snapshot: what it holds now.
+      const after = await client.getAllVariations(productId).catch(() => null);
+      afterSizes.set(productId, {
+        attributes: plan.parentAttributes ?? parent.attributes ?? null,
+        variations: after
+          ? after.map(toStoreVariation)
+          : [
+              ...live.map(toStoreVariation),
+              ...plan.create.flatMap((c, i) => {
+                const id = res.create[i]?.id;
+                return id != null && res.create[i]?.error == null ? [{ id, ...c.payload } as StoreVariation] : [];
+              }),
+            ],
+      });
+      succeeded.add(productId);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      for (const id of work.plannedIds) failed.push({ stockxVariantId: id, error: message });
+    }
+  }
 
   // 4. Patch the stored snapshot to the post-apply state of succeeded products,
   //    so the next preview reflects reality without a full re-pull — from the
@@ -516,13 +694,24 @@ export async function applySync(options: ApplyOptions): Promise<ApplyOutcome> {
   //    of the copy already in memory, at the end of the heaviest operation the
   //    app has.
   if (succeeded.size > 0 && products.length > 0) {
-    await upsertSnapshotProducts(patchedProducts(products, succeeded, opsByProduct, written, liveSizes));
+    await upsertSnapshotProducts(patchedProducts(products, succeeded, opsByProduct, written, liveSizes, afterSizes));
   }
 
   // 5. The ledger: every price the store took is the Hub's last word on that
   //    variation, and every price the live check kept is a store edit to list.
   //    Best-effort, after the fact: the writes happened either way.
-  await recordLedger(products, written, kept, gone).catch((e) =>
+  const sizeWrites: LedgerWrite[] = sizesAdded
+    .filter((a) => a.price != null)
+    .map((a) => ({
+      variationId: a.variationId,
+      productId: a.storeProductId,
+      sku: a.sku,
+      euSize: a.euNorm,
+      price: a.price!,
+      title: products.find((p) => p.id === a.storeProductId)?.name ?? null,
+      sizeLabel: a.sizeLabel,
+    }));
+  await recordLedger(products, written, kept, gone, sizeWrites).catch((e) =>
     console.error(`[ledger] not recorded for run ${options.runId}: ${e instanceof Error ? e.message : String(e)}`),
   );
 
@@ -530,7 +719,7 @@ export async function applySync(options: ApplyOptions): Promise<ApplyOutcome> {
     failed.length === 0 ? "applied" : succeeded.size > 0 ? "partial" : "failed";
   await db
     .update(applyAudit)
-    .set({ status, updatedCount: updated, failed, finishedAt: new Date() })
+    .set({ status, updatedCount: updated, failed, result: { ...result, sizesAdded: sizesAdded.length }, finishedAt: new Date() })
     .where(eq(applyAudit.id, audit.id));
 
   return {
@@ -550,6 +739,34 @@ export async function applySync(options: ApplyOptions): Promise<ApplyOutcome> {
     cleanupDetailsTotal: cleanupDetails.length,
     gtinsWritten: changes.filter((c) => c.newGtin).length,
     keptStoreEdits: kept.length,
+    sizes: {
+      planned: sizesPlanned.length,
+      added: sizesAdded.length,
+      sample: sizesAdded.slice(0, OUTCOME_SAMPLE).map(({ variationId: _v, euNorm: _e, ...size }) => size),
+    },
+  };
+}
+
+/** A live run that had nothing to write. */
+function emptyOutcome(cleanup: CleanupSummary | null): ApplyOutcome {
+  return {
+    auditId: "",
+    dryRun: false,
+    status: "applied",
+    products: 0,
+    variations: 0,
+    updated: 0,
+    failed: [],
+    failedTotal: 0,
+    changes: [],
+    changesTotal: 0,
+    droppedByCleanup: 0,
+    cleanup,
+    cleanupDetails: [],
+    cleanupDetailsTotal: 0,
+    gtinsWritten: 0,
+    keptStoreEdits: 0,
+    sizes: { planned: 0, added: 0, sample: [] },
   };
 }
 
@@ -562,6 +779,7 @@ async function recordLedger(
   written: ReadonlyMap<number, ApplyChange[]>,
   kept: { change: ApplyChange; storePrice: number }[],
   gone: number[],
+  sizeWrites: LedgerWrite[] = [],
 ): Promise<void> {
   await forgetVariations(gone);
   const byId = new Map(products.map((p) => [p.id, p]));
@@ -581,7 +799,7 @@ async function recordLedger(
   for (const list of written.values()) {
     for (const c of list) if (c.newPrice != null) writes.push({ ...describe(c), price: c.newPrice });
   }
-  await recordPriceWrites(writes);
+  await recordPriceWrites([...writes, ...sizeWrites]);
   await noteStoreEdits(
     kept.map(({ change, storePrice }) => ({
       ...describe(change),
@@ -605,13 +823,19 @@ function patchedProducts(
   opsByProduct: ReadonlyMap<number, ProductSanitizeOps>,
   written: ReadonlyMap<number, ApplyChange[]>,
   liveSizes: ReadonlyMap<number, StoreVariation[]>,
+  afterSizes: ReadonlyMap<number, { attributes: unknown; variations: StoreVariation[] }> = new Map(),
 ): StoreProductModel[] {
   const out: StoreProductModel[] = [];
   for (const p of products) {
     if (!succeeded.has(p.id)) continue;
     const ops = opsByProduct.get(p.id);
     const fresh = liveSizes.get(p.id);
-    const next = ops?.sanitized ?? (fresh ? { ...p, variations: fresh } : p);
+    const added = afterSizes.get(p.id);
+    // A product that took new sizes was read back after: that read is the
+    // whole truth (its prices and stock included), so it wins.
+    const next = added
+      ? { ...(ops?.sanitized ?? p), attributes: added.attributes, variations: added.variations }
+      : (ops?.sanitized ?? (fresh ? { ...p, variations: fresh } : p));
     const byId = new Map(next.variations.map((v) => [v.id, v]));
     for (const c of written.get(p.id) ?? []) {
       const vrt = byId.get(c.storeVariationId);
@@ -631,12 +855,22 @@ function patchedProducts(
 
 export interface ApplyHistoryEntry {
   id: string;
+  /**
+   * What wrote it. Publish and the rebuild log into the same table as the
+   * sync; told apart, their rows stop reading as a sync that wrote "0/0".
+   */
+  kind: "sync" | "publish" | "rebuild";
   status: ApplyAuditRow["status"];
   dryRun: boolean;
   updatedCount: number;
   failedCount: number;
   requestedVariations: number | null;
   cleanupDeletions: number | null;
+  /** Sync: missing sizes added to store products. */
+  sizesAdded: number;
+  /** Publish / rebuild: variations created, and products that failed. */
+  created: number;
+  failedProducts: number;
   startedAt: string;
   finishedAt: string | null;
 }
@@ -650,11 +884,18 @@ export async function listApplyHistory(limit = 10): Promise<ApplyHistoryEntry[]>
     .limit(limit);
   return rows.map((r) => {
     const result = (r.result ?? {}) as {
+      kind?: unknown;
       variations?: unknown;
+      created?: unknown;
+      sizesAdded?: unknown;
+      failedProducts?: unknown;
       cleanup?: { deletions?: unknown } | null;
     };
+    const num = (v: unknown) => (typeof v === "number" ? v : 0);
+    const kind = result.kind === "publish" || result.kind === "rebuild" ? result.kind : "sync";
     return {
       id: r.id,
+      kind,
       status: r.status,
       dryRun: r.dryRun,
       updatedCount: r.updatedCount,
@@ -662,6 +903,10 @@ export async function listApplyHistory(limit = 10): Promise<ApplyHistoryEntry[]>
       requestedVariations: typeof result.variations === "number" ? result.variations : null,
       cleanupDeletions:
         typeof result.cleanup?.deletions === "number" ? result.cleanup.deletions : null,
+      sizesAdded: num(result.sizesAdded),
+      // Publish counts the variations it created as `variations`; the rebuild as `created`.
+      created: kind === "publish" ? num(result.variations) : num(result.created),
+      failedProducts: num(result.failedProducts),
       startedAt: r.startedAt.toISOString(),
       finishedAt: r.finishedAt?.toISOString() ?? null,
     };

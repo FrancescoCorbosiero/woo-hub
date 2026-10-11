@@ -342,9 +342,12 @@ describe.skipIf(!enabled)("the photo queue (real SQL)", () => {
 
   it("counts a product hidden until its photos land as published, not as one to publish", async () => {
     const { db, catalogProducts, inArray, saveSnapshot, queueMedia } = await load();
+    const { feedItems } = await import("@/server/db/schema");
     const { countUnpublishedCandidates } = await import("@/server/catalog/repo");
-    const skus = ["ON-1", "NOSIZE-1", "QUEUED-1", "MISSING-1"];
+    // DELISTED-1: the feed dropped it — Publish refuses it, so it is not counted.
+    const skus = ["ON-1", "NOSIZE-1", "QUEUED-1", "MISSING-1", "DELISTED-1"];
     await db.delete(catalogProducts).where(inArray(catalogProducts.sku, skus));
+    await db.delete(feedItems).where(inArray(feedItems.sku, skus));
     await db.insert(catalogProducts).values(
       skus.map((sku) => ({
         market: "ZZ",
@@ -354,6 +357,9 @@ describe.skipIf(!enabled)("the photo queue (real SQL)", () => {
         variantCount: 3,
         source: "goldensneakers" as const,
       })),
+    );
+    await db.insert(feedItems).values(
+      skus.map((sku) => ({ feed: "goldensneakers", sku, euNorm: "42", sizeLabel: "42", quantity: 1, active: sku !== "DELISTED-1" })),
     );
     await saveSnapshot(
       {
@@ -370,6 +376,7 @@ describe.skipIf(!enabled)("the photo queue (real SQL)", () => {
 
     expect(await countUnpublishedCandidates("ZZ")).toBe(2); // NOSIZE-1 and MISSING-1
     await db.delete(catalogProducts).where(inArray(catalogProducts.sku, skus));
+    await db.delete(feedItems).where(inArray(feedItems.sku, skus));
   });
 
   it("waits out a store that does not answer, without spending the products' tries", async () => {

@@ -3,7 +3,7 @@ import { and, desc, eq, gte, ilike, inArray, lt, lte, ne, notInArray, or, sql, t
 import type { ProductScopeAxes } from "@core/config";
 import type { SourceProduct } from "@core/core-spine";
 import { db } from "@/server/db/client";
-import { catalogProducts, mediaJobs, storeSnapshot } from "@/server/db/schema";
+import { catalogProducts, feedItems, mediaJobs, storeSnapshot } from "@/server/db/schema";
 import { countOf } from "@/server/db/rows";
 import { SNAPSHOT_ID } from "@/server/store-json/repo";
 import { skuKey } from "@/lib/skus";
@@ -165,6 +165,20 @@ export interface PublishCandidate {
  * an unsellable shell. Store presence is subtracted by the caller, which
  * holds the snapshot.
  */
+/**
+ * A supplier-feed product the feed still carries (at least one active row).
+ * One it dropped can never be published — Publish refuses it, rather than
+ * list it as sell-on-demand at a stale price — so it is not a candidate:
+ * counted, it sat on the "not published yet" figure forever.
+ */
+const stillInFeed = sql`(
+  ${catalogProducts.source} <> 'goldensneakers'
+  or exists (
+    select 1 from ${feedItems} f
+    where f.feed = 'goldensneakers' and f.sku = upper(trim(${catalogProducts.sku})) and f.active
+  )
+)`;
+
 export async function listPublishCandidates(market: string): Promise<PublishCandidate[]> {
   try {
     const rows = await db
@@ -186,6 +200,7 @@ export async function listPublishCandidates(market: string): Promise<PublishCand
           eq(catalogProducts.market, market),
           ne(catalogProducts.source, "woo"),
           gte(catalogProducts.variantCount, 1),
+          stillInFeed,
         ),
       )
       .orderBy(desc(catalogProducts.addedAt));
@@ -226,6 +241,10 @@ export async function countUnpublishedCandidates(market: string): Promise<number
       where c.market = ${market}
         and c.source <> 'woo'
         and c.variant_count >= 1
+        and (c.source <> 'goldensneakers' or exists (
+          select 1 from ${feedItems} f
+          where f.feed = 'goldensneakers' and f.sku = upper(trim(c.sku)) and f.active
+        ))
         and not exists (
           select 1 from store_skus ss where ss.sku = upper(trim(c.sku)) and ss.sizes > 0
         )

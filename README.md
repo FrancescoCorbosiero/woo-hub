@@ -135,9 +135,24 @@ filters/sorts/paginates in SQL.
      - **Prices**: the selected `update` rows via
        `products/{id}/variations/batch` (a price aimed at a deleted duplicate
        is dropped — its surviving twin carries its own row).
-     Every run lands in `apply_audit`; after a live run the stored snapshot is
+     - **Missing sizes**: the selected `create` rows ("new" in the tab) — a
+       size the source sells that the product on the store does not have,
+       typically one the supplier listed after the product was published.
+       Each is created exactly as Publish would create it (same SKU,
+       `pa_taglia` label, price, stock, GTIN) and added to the parent's
+       `pa_taglia` options; nothing is deleted or rewritten, the product is
+       read live first so a size that appeared meanwhile is not created
+       twice, and a sold-out feed size is not added. The dry run lists them.
+     Every run lands in `apply_audit` (the history labels Publish and rebuild
+     runs, which log there too); after a live run the stored snapshot is
      patched to the post-apply state, so the next preview reflects reality
      without a re-pull.
+
+  **"Stato dello store" is dated by the last full read** (the daily pull or
+  "Aggiorna dallo store"), not by the patches every write leaves in the copy.
+  A pull keeps the products the Hub wrote while it was walking the store: it
+  may have read them before the write, and putting the older copy back made
+  the Hub's own write look like a price changed on WordPress.
 
   **Prices changed on WordPress are kept.** The Hub records every price the
   store takes from it — the sync, Publish, the rebuild — in the price ledger
@@ -153,10 +168,11 @@ filters/sorts/paginates in SQL.
   dock's Sync station counts them. A lock set or cleared in the Hub is the
   newer word and supersedes the edit.
 - **Publish** (`/publish`) — the catalog→store direction. Every other write
-  path only ADJUSTS products the store already has (the sync walks the
-  snapshot, and its "create" rows are dropped), so a supplier feed's new
-  products reached the catalog and stopped there — visible to the operator,
-  invisible to customers. This lists exactly that delta and creates the
+  path works on products the store already has (the sync walks the snapshot:
+  it adjusts their sizes and adds the ones they are missing), so a supplier
+  feed's new products reached the catalog and stopped there — visible to the
+  operator, invisible to customers. This lists exactly that delta — products
+  the feed no longer carries are left out, Publish refuses them — and creates the
   selected products on WooCommerce: parent, canonical EU `pa_taglia` sizes,
   prices from the margin rules (manual locks winning) and real feed stock.
   **Photos go through a queue** (`src/server/woo/media.ts`, table
@@ -259,7 +275,8 @@ runs four cadences:
   quarter of an hour. KicksDB-priced products wait for the daily sync,
   because planning them asks KicksDB about every one of them, every time. A
   cycle skips its turn while another run is going, and the daily sync waits
-  for a cycle to finish.
+  for a cycle to finish. While a store pull is running (from the Sync tab, say)
+  the cycle syncs the feed but leaves the store for the next one.
 - **The orders pull**, every `SCHEDULER_ORDERS_MINUTES` (default 15; `0` =
   by hand only): the latest orders reach the Orders tab without a click.
 - **The photo queue**, whenever something is due (looked at every minute,
@@ -284,8 +301,12 @@ WooCommerce. `AUTO_SYNC` decides where it runs:
 - `AUTO_SYNC=off`: nowhere. Every change is applied by hand in the Sync tab.
 
 It is narrower than the tab on purpose:
-- It writes **prices and stock only**: no size cleanup (which deletes
-  variations) and no GTINs.
+- It writes **prices and stock, and the sizes a feed product is missing**
+  (in stock in the feed, absent from the product on the store — added, never
+  removed): no size cleanup (which deletes variations) and no GTINs. KicksDB
+  products get no new sizes unattended: StockX lists every size with an ask,
+  which is not the same as the shop selling it. Their missing sizes are added
+  from the Sync tab, where they are ticked by hand.
 - A run that would change more than `AUTO_SYNC_MAX_CHANGES` variations
   (default 500) writes nothing. The Feeds tab shows the reason, and the change
   is reviewed and applied by hand in the Sync tab. A change that large is a

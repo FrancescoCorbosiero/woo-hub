@@ -1,7 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import { getActiveSnapshot } from "@/server/store-json/repo";
+import { getActiveSnapshot, PATCHED_AT } from "@/server/store-json/repo";
 import { buildReimport, type VariationPatch } from "@/server/store-json/patch";
 import { getPlanById } from "@/server/plans/repo";
 
@@ -83,7 +83,8 @@ export async function exportRepricedJson(input: ExportInput): Promise<ExportResu
 
   return {
     ok: true,
-    json: JSON.stringify(built.output, null, 2),
+    // The Hub's own bookkeeping (when it last patched a product) stays out of the file.
+    json: JSON.stringify(built.output, (key, value) => (key === PATCHED_AT ? undefined : value), 2),
     filename: `${sanitize ? "repriced-clean" : "repriced"}-${stamp}.json`,
     summary: {
       productsChanged: built.productsChanged,

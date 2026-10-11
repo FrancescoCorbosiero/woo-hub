@@ -603,6 +603,9 @@ export const it = {
       applied: (n: number) => `${n} varianti aggiornate sullo store ✓`,
       partial: (ok: number, ko: number) => `${ok} aggiornate, ${ko} fallite`,
       failed: "Applicazione fallita",
+      sizesTitle: (n: number) =>
+        `${n === 1 ? "1 taglia mancante" : `${n} taglie mancanti`} sullo store, da aggiungere (le altre taglie non vengono toccate):`,
+      sizesAdded: (n: number) => `${n === 1 ? "1 taglia aggiunta" : `${n} taglie aggiunte`} sullo store ✓`,
     },
     storeEdits: {
       title: "Prezzi cambiati su WordPress",
@@ -669,6 +672,10 @@ export const it = {
         failed: "fallito",
       },
       line: (updated: number, requested: number) => `${updated}/${requested} varianti`,
+      sizes: (n: number) => `${n === 1 ? "1 taglia aggiunta" : `${n} taglie aggiunte`}`,
+      kind: { sync: "sync", publish: "pubblica", rebuild: "ricostruzione" },
+      created: (n: number, failed: number) =>
+        `${n} varianti create${failed > 0 ? ` · ${failed} ${failed === 1 ? "prodotto fallito" : "prodotti falliti"}` : ""}`,
     },
   },
   dbError: {

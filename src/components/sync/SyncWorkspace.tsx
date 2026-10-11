@@ -406,12 +406,15 @@ export function SyncWorkspace({
   const shown = plans.length;
   const hidden = Math.max(0, runProducts - shown);
 
-  /** Update rows on this page the operator has held out of the run. */
+  /**
+   * Rows on this page the operator has held out of the run: price updates, and
+   * sizes the store product is missing ("create" rows — the apply adds them).
+   */
   const excludedUpdates = React.useMemo(() => {
     let n = 0;
     for (const p of plans) {
       for (const i of p.plan.items) {
-        if (i.action === "update" && excluded.has(selKey(p.planId, i.stockxVariantId))) n += 1;
+        if (isActionable(i.action) && excluded.has(selKey(p.planId, i.stockxVariantId))) n += 1;
       }
     }
     return n;
@@ -424,7 +427,7 @@ export function SyncWorkspace({
         .map((p) => ({
           planId: p.planId,
           variantIds: p.plan.items
-            .filter((i) => i.action === "update" && selected.has(selKey(p.planId, i.stockxVariantId)))
+            .filter((i) => isActionable(i.action) && selected.has(selKey(p.planId, i.stockxVariantId)))
             .map((i) => i.stockxVariantId),
         }))
         .filter((sel) => sel.variantIds.length > 0),
@@ -447,7 +450,7 @@ export function SyncWorkspace({
 
   const applyCount =
     priceScope === "all"
-      ? Math.max(0, totals.update - excludedUpdates)
+      ? Math.max(0, totals.update + totals.create - excludedUpdates)
       : listedSelections.reduce((n, sel) => n + sel.variantIds.length, 0);
 
   // A dry run is only valid for the exact same work: run + scope + what was
@@ -457,7 +460,7 @@ export function SyncWorkspace({
   const dryValid = dry != null && dry.signature === signature;
   const canRun = runId != null && runProducts > 0 && (applyCount > 0 || sanitize);
   const dryHasWork =
-    dryValid && dry != null && (dry.outcome.variations > 0 || (dry.outcome.cleanup?.deletions ?? 0) > 0 || (dry.outcome.cleanup?.taglieRealigned ?? 0) > 0 || (dry.outcome.cleanup?.stockSynthesized ?? 0) > 0 || (dry.outcome.cleanup?.parentsRealigned ?? 0) > 0);
+    dryValid && dry != null && (dry.outcome.variations > 0 || (dry.outcome.cleanup?.deletions ?? 0) > 0 || (dry.outcome.cleanup?.taglieRealigned ?? 0) > 0 || (dry.outcome.cleanup?.stockSynthesized ?? 0) > 0 || (dry.outcome.cleanup?.parentsRealigned ?? 0) > 0 || (dry.outcome.sizes?.planned ?? 0) > 0);
 
   // Guided step 3: once the preview is in and idle, fire the dry run exactly once.
   React.useEffect(() => {
@@ -952,6 +955,27 @@ export function SyncWorkspace({
                   </div>
                 )}
 
+                {dry.outcome.sizes.planned > 0 && (
+                  <div className="space-y-1">
+                    <div className="font-semibold text-up">{t.sync.apply.sizesTitle(dry.outcome.sizes.planned)}</div>
+                    <ul className="grid gap-x-6 gap-y-0.5 sm:grid-cols-2">
+                      {dry.outcome.sizes.sample.slice(0, 12).map((n) => (
+                        <li key={`${n.storeProductId}:${n.sizeLabel}`} className="flex items-center gap-2 tnum">
+                          <span className="font-mono text-faint">{n.sku}</span>
+                          <span>{n.sizeLabel}</span>
+                          <span className="ml-auto text-muted">
+                            {n.price != null ? eur.format(n.price) : "—"}
+                            {n.stock != null && <span className="text-warn"> · {t.sync.apply.stockWrite(n.stock)}</span>}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                    {dry.outcome.sizes.planned > 12 && (
+                      <div className="text-faint">{t.sync.apply.dryMore(dry.outcome.sizes.planned - 12)}</div>
+                    )}
+                  </div>
+                )}
+
                 {dry.outcome.gtinsWritten > 0 && (
                   <div className="font-medium text-up">
                     {t.sync.apply.gtinsWritten(dry.outcome.gtinsWritten)}
@@ -995,6 +1019,9 @@ export function SyncWorkspace({
                     ? t.sync.apply.applied(applied.updated)
                     : t.sync.apply.partial(applied.updated, applied.failedTotal)}
                 </p>
+                {applied.sizes.added > 0 && (
+                  <p className="text-xs font-medium text-up">{t.sync.apply.sizesAdded(applied.sizes.added)}</p>
+                )}
                 {applied.cleanup && applied.cleanup.products > 0 && (
                   <p className="text-xs font-normal text-muted tnum">
                     {t.sync.apply.cleanupApplied(
@@ -1041,11 +1068,19 @@ export function SyncWorkspace({
                 >
                   {h.dryRun ? t.sync.history.dry : t.sync.history.live}
                 </span>
+                {h.kind !== "sync" && (
+                  <span className="rounded-full border border-line px-2 py-0.5 text-[11px] font-semibold text-muted">
+                    {t.sync.history.kind[h.kind]}
+                  </span>
+                )}
                 <span className="text-xs font-medium text-muted">
                   {t.sync.history.status[h.status]}
                 </span>
                 <span className="ml-auto text-xs text-muted tnum">
-                  {t.sync.history.line(h.updatedCount, h.requestedVariations ?? 0)}
+                  {h.kind === "sync"
+                    ? t.sync.history.line(h.updatedCount, h.requestedVariations ?? 0)
+                    : t.sync.history.created(h.created, h.failedProducts)}
+                  {h.sizesAdded > 0 && <span className="text-up"> · {t.sync.history.sizes(h.sizesAdded)}</span>}
                   {h.cleanupDeletions != null && h.cleanupDeletions > 0 && (
                     <span className="text-skip"> · {t.sync.apply.deletions(h.cleanupDeletions)}</span>
                   )}

@@ -146,6 +146,16 @@ export type BatchResultRow = z.infer<typeof BatchRowSchema>;
 const VARIATIONS_PER_PAGE = 100;
 
 /**
+ * What the pull keeps of a product and of a variation (see store-product.ts),
+ * asked for by name: WooCommerce then leaves out — and skips computing — the
+ * rest (descriptions, meta, related products, price HTML), which is most of
+ * the work of every page on a large store.
+ */
+const PULL_PRODUCT_FIELDS = "id,sku,name,status,permalink,date_modified,images,attributes,variations";
+export const PULL_VARIATION_FIELDS =
+  "id,sku,regular_price,sale_price,global_unique_id,stock_quantity,manage_stock,stock_status,attributes";
+
+/**
  * Writes that create or delete are never retried blind. A retry is safe only
  * when the first attempt certainly did nothing, and a timeout or a gateway
  * error (Cloudflare's 524 after 100 s) says nothing of the kind: WordPress
@@ -208,6 +218,7 @@ export class WooClient {
         order: "asc",
         page: String(page),
         per_page: String(perPage),
+        _fields: PULL_PRODUCT_FIELDS,
       }),
       { method: "GET", headers: this.headers() },
       this.retry,
@@ -220,7 +231,8 @@ export class WooClient {
 
   /**
    * All variations of one parent product (paged at 100 — sneaker sizes fit in
-   * one page, so the loop below normally runs exactly once).
+   * one page, so the loop below normally runs exactly once). Whole payloads
+   * unless `fields` narrows them: the rebuild carries every field over.
    *
    * It ends on ITS OWN terms. This loop used to run until the store sent a
    * short page, which made the store the only thing standing between a pull
@@ -230,7 +242,7 @@ export class WooClient {
    * ids and a page ceiling now decide instead, and either stop is reported
    * with the product id so the offending endpoint can be found.
    */
-  async getAllVariations(productId: number): Promise<WooRestVariation[]> {
+  async getAllVariations(productId: number, opts: { fields?: string } = {}): Promise<WooRestVariation[]> {
     const out: WooRestVariation[] = [];
     const seen = new Set<number>();
     for (let page = 1; ; page++) {
@@ -240,6 +252,7 @@ export class WooClient {
           per_page: String(VARIATIONS_PER_PAGE),
           orderby: "id",
           order: "asc",
+          ...(opts.fields ? { _fields: opts.fields } : {}),
         }),
         { method: "GET", headers: this.headers() },
         this.retry,

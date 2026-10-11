@@ -589,6 +589,9 @@ export const en: Dictionary = {
       applied: (n) => `${n} variations updated on the store ✓`,
       partial: (ok, ko) => `${ok} updated, ${ko} failed`,
       failed: "Apply failed",
+      sizesTitle: (n) =>
+        `${n === 1 ? "1 size" : `${n} sizes`} missing on the store, to add (the other sizes are left as they are):`,
+      sizesAdded: (n) => `${n === 1 ? "1 size" : `${n} sizes`} added to the store ✓`,
     },
     storeEdits: {
       title: "Prices changed on WordPress",
@@ -654,6 +657,10 @@ export const en: Dictionary = {
         failed: "failed",
       },
       line: (updated, requested) => `${updated}/${requested} variations`,
+      sizes: (n) => `${n === 1 ? "1 size added" : `${n} sizes added`}`,
+      kind: { sync: "sync", publish: "publish", rebuild: "rebuild" },
+      created: (n, failed) =>
+        `${n} variations created${failed > 0 ? ` · ${failed} ${failed === 1 ? "product failed" : "products failed"}` : ""}`,
     },
   },
   dbError: {
