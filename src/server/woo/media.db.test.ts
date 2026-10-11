@@ -375,6 +375,9 @@ describe.skipIf(!enabled)("the photo queue (real SQL)", () => {
     await queueMedia({ sku: "NOSIZE-1", storeProductId: 2, title: "N", urls: [U(1)], publish: true });
 
     expect(await countUnpublishedCandidates("ZZ")).toBe(2); // NOSIZE-1 and MISSING-1
+    // Not counted as one to publish, but still a catalog product: nothing is removed.
+    const { listPublishCandidates } = await import("@/server/catalog/repo");
+    expect((await listPublishCandidates("ZZ")).map((c) => c.sku)).toContain("DELISTED-1");
     await db.delete(catalogProducts).where(inArray(catalogProducts.sku, skus));
     await db.delete(feedItems).where(inArray(feedItems.sku, skus));
   });

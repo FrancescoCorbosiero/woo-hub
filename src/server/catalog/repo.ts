@@ -165,20 +165,6 @@ export interface PublishCandidate {
  * an unsellable shell. Store presence is subtracted by the caller, which
  * holds the snapshot.
  */
-/**
- * A supplier-feed product the feed still carries (at least one active row).
- * One it dropped can never be published — Publish refuses it, rather than
- * list it as sell-on-demand at a stale price — so it is not a candidate:
- * counted, it sat on the "not published yet" figure forever.
- */
-const stillInFeed = sql`(
-  ${catalogProducts.source} <> 'goldensneakers'
-  or exists (
-    select 1 from ${feedItems} f
-    where f.feed = 'goldensneakers' and f.sku = upper(trim(${catalogProducts.sku})) and f.active
-  )
-)`;
-
 export async function listPublishCandidates(market: string): Promise<PublishCandidate[]> {
   try {
     const rows = await db
@@ -200,7 +186,6 @@ export async function listPublishCandidates(market: string): Promise<PublishCand
           eq(catalogProducts.market, market),
           ne(catalogProducts.source, "woo"),
           gte(catalogProducts.variantCount, 1),
-          stillInFeed,
         ),
       )
       .orderBy(desc(catalogProducts.addedAt));
@@ -221,8 +206,11 @@ export async function listPublishCandidates(market: string): Promise<PublishCand
  * and a store pull re-renders it once per product page — which is how a long
  * pull walked the dev server into an out-of-memory crash.
  *
- * Matches listPublishCandidates' filter exactly, or the number would disagree
- * with the list it describes. Best-effort: 0 on any error.
+ * Matches the Publish tab's list exactly (listPublishTargets), or the number
+ * would disagree with the list it describes: a feed product the feed no longer
+ * carries is not counted while it is off the store — Publish refuses it until
+ * the feed tracks it again. It stays in the catalog all the same, and a copy
+ * already on the store stays there at stock 0. Best-effort: 0 on any error.
  */
 export async function countUnpublishedCandidates(market: string): Promise<number> {
   try {

@@ -17,6 +17,7 @@ import { getAnyBySkus, listPublishCandidates, type PublishCandidate } from "@/se
 import { getOverrides } from "@/server/overrides/repo";
 import { manualPriceFor } from "@/server/overrides/model";
 import { gsOwnedProducts } from "@/server/feeds/owner";
+import { activeFeedSkus, GS_FEED } from "@/server/feeds/repo";
 import { sourceEuSize } from "@/server/store-json/match";
 import type { StoreProductModel } from "@/server/store-json/model";
 import { skuKey } from "@/lib/skus";
@@ -258,17 +259,19 @@ export async function listPublishTargets(
   // this runs on every render of the tab, including the one that follows each
   // publish call, and deserializing the whole store to ask "does it have X"
   // is how the dev server ran out of heap.
-  const [info, storeSkus, sizeless, rows, photosQueued] = await Promise.all([
+  const [info, storeSkus, sizeless, rows, photosQueued, inFeed] = await Promise.all([
     getSnapshotInfo().catch(() => null),
     listStoreSkus(),
     listSizelessStoreSkus(),
     listPublishCandidates(config.source.market),
     openMediaSkus().catch(() => new Set<string>()),
+    activeFeedSkus(GS_FEED),
   ]);
   // Filtered and sliced HERE: the whole delta stays on the server, and only a
   // page of it is serialized into the page the browser has to parse.
   const page = pagePublishTargets(
-    rows.map((r) => ({
+    rows
+      .map((r) => ({
       sku: r.sku,
       title: r.title,
       brand: r.brand,
@@ -285,7 +288,12 @@ export async function listPublishTargets(
       onStore: (storeSkus.has(skuKey(r.sku)) || photosQueued.has(skuKey(r.sku))) && !sizeless.has(skuKey(r.sku)),
       sizeless: sizeless.has(skuKey(r.sku)),
       awaitingPhotos: photosQueued.has(skuKey(r.sku)),
-    })),
+    }))
+      // A feed product the feed stopped tracking, and not on the store: Publish
+      // refuses it (feedDelisted), so it is not offered. It stays in the catalog,
+      // and comes back here the day the feed tracks it again. One on the store
+      // stays listed, and stays on the store at stock 0.
+      .filter((t) => t.source !== GS_FEED || t.onStore || inFeed.has(skuKey(t.sku))),
     query,
     limit,
   );
