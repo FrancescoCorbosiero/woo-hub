@@ -16,13 +16,17 @@ import {
   advanceStorePull,
   applySyncPrices,
   cancelStorePull,
+  getSyncApplyJob,
   getSyncState,
   startStorePull,
+  startSyncApply,
+  type ApplyJobResult,
   type SyncPageState,
 } from "@/server/actions/sync";
 import { setProductSaleRule, setVariationManualPrice } from "@/server/actions/overrides";
 import type { PullProgress } from "@/server/woo/pull";
 import type { ApplyOutcome, ApplyHistoryEntry } from "@/server/woo/apply";
+import type { ApplyJob } from "@/server/sync/apply-job";
 import type { SnapshotInfo } from "@/server/store-json/repo";
 import type { PricingSummary } from "@/server/config/summary";
 import type { PreviewPlan } from "@/lib/plan";
@@ -62,6 +66,16 @@ const MAX_PULL_STEPS = 5000;
  * runaway backstop, like the pull's: a store never gets near it.
  */
 const MAX_SYNC_STEPS = 5000;
+
+/** How often the tab asks how the live apply is going. */
+const APPLY_POLL_MS = 2000;
+/**
+ * Questions in a row the server may leave unanswered (a proxy hiccup, a
+ * deploy) before the tab stops following — the apply goes on regardless.
+ */
+const APPLY_POLL_MISSES = 15;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export function SyncWorkspace({
   defaultMarket,
@@ -128,7 +142,14 @@ export function SyncWorkspace({
   const [dry, setDry] = React.useState<{ outcome: ApplyOutcome; signature: string } | null>(null);
   const [applied, setApplied] = React.useState<ApplyOutcome | null>(null);
   const [applyError, setApplyError] = React.useState<string | null>(null);
-  const [applying, setApplying] = React.useState<"dry" | "live" | null>(null);
+  const [applying, setApplying] = React.useState<"dry" | "live" | null>(
+    initialState.runningApply ? "live" : null,
+  );
+  // The live apply runs on the server, in the background (startSyncApply): the
+  // job as last read while the tab follows it, and how following it ended.
+  const [liveJob, setLiveJob] = React.useState<ApplyJob | null>(initialState.runningApply);
+  const [liveError, setLiveError] = React.useState<string | null>(null);
+  const mountedRef = React.useRef(true);
   // Align sizes (delete orphan/duplicate variations, realign pa_taglia) before
   // pricing — the standardization pass. Default on.
   const [sanitize, setSanitize] = React.useState(true);
@@ -230,7 +251,6 @@ export function SyncWorkspace({
     setExcluded(new Set());
     setAllOpen(res.plans.length <= 3);
     setDry(null);
-    setApplied(null);
   }
 
   /**
@@ -244,10 +264,10 @@ export function SyncWorkspace({
     setError(null);
     setSyncing(true);
     syncCancelRef.current = false;
-    // The previous run is superseded the moment a new one starts.
+    // The previous run is superseded the moment a new one starts. The last
+    // apply's result stays: the re-preview right after it must not wipe it.
     setRunId(null);
     setDry(null);
-    setApplied(null);
     const fail = (message: string) => applyResult({ ok: false, error: message, plans: [] });
     try {
       const started = await startStoreSync(defaultMarket, skus);
@@ -305,6 +325,23 @@ export function SyncWorkspace({
       loadPreview();
     }
   }
+
+  React.useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  // A live apply already writing when the page loaded — started before a
+  // reload, or from another tab: follow it to the end.
+  const resumedOnce = React.useRef(false);
+  React.useEffect(() => {
+    if (resumedOnce.current || !initialState.runningApply) return;
+    resumedOnce.current = true;
+    void watchApply(initialState.runningApply);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // A drawer "Sync to Woo" link seeds ?skus= — auto-preview that subset once.
   const seededOnce = React.useRef(false);
@@ -481,14 +518,19 @@ export function SyncWorkspace({
   }, [guided, pulling, pending, applying, plans, dryValid, error, applyError, pullError]);
 
   async function refreshHistory() {
-    const state = await getSyncState();
-    setHistory(state.history);
+    try {
+      const state = await getSyncState();
+      setHistory(state.history);
+    } catch {
+      // The list catches up on the next refresh.
+    }
   }
 
   function runDry() {
     if (!canRun) return;
     setApplyError(null);
     setApplied(null);
+    setLiveError(null);
     setApplying("dry");
     void (async () => {
       try {
@@ -504,46 +546,154 @@ export function SyncWorkspace({
         if (!res.ok || !res.outcome) setApplyError(res.error ?? t.sync.apply.failed);
         else setDry({ outcome: res.outcome, signature });
         await refreshHistory();
+      } catch {
+        // No answer at all (a proxy timeout): without this the button just
+        // came back, as if nothing had been asked.
+        setApplyError(t.sync.apply.noAnswer);
       } finally {
         setApplying(null);
       }
     })();
   }
 
+  /**
+   * The live apply: started on the server, where it runs in the background
+   * however long it takes, then followed from here (see watchApply). One
+   * request for the whole apply was cut by Cloudflare after 100 seconds, and
+   * the tab took the cut for the end of it.
+   */
   function runApply() {
     if (!dryValid || !canRun) return;
     setApplyError(null);
+    setLiveError(null);
+    setApplied(null);
     setApplying("live");
     void (async () => {
+      let job: ApplyJob | null = null;
       try {
-        const res = await applySyncPrices({
+        const res = await startSyncApply({
           runId: runId!,
           priceScope,
           selections: priceScope === "listed" ? listedSelections : [],
           excluded: priceScope === "all" ? excludedSelections : [],
-          dryRun: false,
           sanitize,
           backfillGtins,
         });
-        if (!res.ok || !res.outcome) {
-          setApplyError(res.error ?? t.sync.apply.failed);
-          return;
-        }
-        setApplied(res.outcome);
-        setDry(null);
-        await refreshHistory();
-        // The snapshot was patched server-side — recompute so applied rows go
-        // noop and deleted orphans disappear from the diff.
-        rerun();
-      } finally {
-        setApplying(null);
+        if (!res.ok || !res.job) setApplyError(res.error ?? t.sync.apply.failed);
+        else job = res.job;
+      } catch {
+        setApplyError(t.sync.apply.noAnswer);
       }
+      if (job) await watchApply(job, true);
+      else setApplying(null);
     })();
+  }
+
+  /**
+   * Follow a live apply to its end, then show what it did — and, when it
+   * applied the preview on screen, preview again: the snapshot was patched
+   * server-side, so applied rows go noop and deleted orphans disappear.
+   */
+  async function watchApply(job: ApplyJob, previewAfter = false) {
+    setApplying("live");
+    setLiveJob(job);
+    try {
+      const outcome = await followApply(job.id);
+      if (outcome) {
+        setApplied(outcome);
+        setDry(null);
+        if (previewAfter && mountedRef.current) rerun();
+      }
+    } finally {
+      setApplying(null);
+      setLiveJob(null);
+      await refreshHistory();
+    }
+  }
+
+  /**
+   * Ask the server how the apply is going until it ends: its outcome, or null
+   * when it failed or the tab lost track of it (liveError says which).
+   */
+  async function followApply(jobId: string): Promise<ApplyOutcome | null> {
+    let misses = 0;
+    while (mountedRef.current) {
+      await sleep(APPLY_POLL_MS);
+      let res: ApplyJobResult;
+      try {
+        res = await getSyncApplyJob({ id: jobId });
+      } catch {
+        res = { ok: false };
+      }
+      if (!res.ok) {
+        if (++misses < APPLY_POLL_MISSES) continue;
+        setLiveError(t.sync.apply.lostContact);
+        return null;
+      }
+      misses = 0;
+      const job = res.job;
+      if (!job) {
+        setLiveError(t.sync.apply.lost);
+        return null;
+      }
+      setLiveJob(job);
+      if (job.status === "done") return job.outcome;
+      if (job.status === "failed") {
+        setLiveError(job.error ?? t.sync.apply.failed);
+        return null;
+      }
+    }
+    return null;
   }
 
   const snapshotAge = snapshotInfo
     ? Math.floor((Date.now() - new Date(snapshotInfo.uploadedAt).getTime()) / 86_400_000)
     : null;
+
+  /** The live apply: how far it is while it writes, then how it ended. */
+  const liveStatus =
+    applying === "live" ? (
+      <div className="space-y-1.5" role="status">
+        <div className="flex items-center gap-2 text-sm font-medium tnum">
+          <span className="spin h-4 w-4 rounded-full border-2 border-accent/30 border-t-accent" />
+          {liveJob?.total != null ? t.sync.apply.writing(liveJob.done, liveJob.total) : t.sync.apply.preparing}
+        </div>
+        {liveJob?.total ? (
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
+            <div
+              className="h-full rounded-full bg-accent transition-all"
+              style={{ width: `${Math.min(100, Math.round((liveJob.done / liveJob.total) * 100))}%` }}
+            />
+          </div>
+        ) : null}
+        <p className="text-xs text-muted">{t.sync.apply.writingHint}</p>
+      </div>
+    ) : applied || liveError ? (
+      <div className="space-y-0.5 text-sm font-medium">
+        {applied && (
+          <>
+            <p className={applied.status === "applied" ? "text-up" : "text-skip"}>
+              {applied.status === "applied"
+                ? t.sync.apply.applied(applied.updated)
+                : t.sync.apply.partial(applied.updated, applied.failedTotal)}
+            </p>
+            {applied.sizes.added > 0 && (
+              <p className="text-xs font-medium text-up">{t.sync.apply.sizesAdded(applied.sizes.added)}</p>
+            )}
+            {applied.cleanup && applied.cleanup.products > 0 && (
+              <p className="text-xs font-normal text-muted tnum">
+                {t.sync.apply.cleanupApplied(
+                  applied.cleanup.deletions,
+                  applied.cleanup.taglieRealigned,
+                  applied.cleanup.parentsRealigned,
+                )}
+              </p>
+            )}
+          </>
+        )}
+        {liveError && <p className="text-skip">{liveError}</p>}
+      </div>
+    ) : null;
 
   return (
     <div className="space-y-5">
@@ -706,6 +856,11 @@ export function SyncWorkspace({
         <p className="rounded-lg border border-skip/25 bg-skip/10 px-4 py-3 text-sm text-skip">
           {pullError}
         </p>
+      )}
+
+      {/* No preview on screen (a reload while the apply writes): its own card */}
+      {runProducts === 0 && liveStatus && (
+        <div className="rounded-xl border border-line bg-surface p-4 shadow-xs animate-fade-up">{liveStatus}</div>
       )}
 
       {scope && scope.length > 0 && (
@@ -901,6 +1056,7 @@ export function SyncWorkspace({
               </div>
             </div>
 
+            {liveStatus && <div className="mt-2">{liveStatus}</div>}
             {applyError && <p className="mt-2 text-sm text-skip">{applyError}</p>}
 
             {dryValid && dry && (
@@ -1012,27 +1168,6 @@ export function SyncWorkspace({
               </div>
             )}
 
-            {applied && (
-              <div className="mt-2 space-y-0.5 text-sm font-medium">
-                <p className={applied.status === "applied" ? "text-up" : "text-skip"}>
-                  {applied.status === "applied"
-                    ? t.sync.apply.applied(applied.updated)
-                    : t.sync.apply.partial(applied.updated, applied.failedTotal)}
-                </p>
-                {applied.sizes.added > 0 && (
-                  <p className="text-xs font-medium text-up">{t.sync.apply.sizesAdded(applied.sizes.added)}</p>
-                )}
-                {applied.cleanup && applied.cleanup.products > 0 && (
-                  <p className="text-xs font-normal text-muted tnum">
-                    {t.sync.apply.cleanupApplied(
-                      applied.cleanup.deletions,
-                      applied.cleanup.taglieRealigned,
-                      applied.cleanup.parentsRealigned,
-                    )}
-                  </p>
-                )}
-              </div>
-            )}
           </div>
         </div>
       )}

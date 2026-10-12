@@ -232,11 +232,12 @@ async function refreshCatalog(): Promise<{ refreshed: number; error: string | nu
  * store (the daily run) or the products the feed has ever listed (the feed
  * cycle; dropped ones included, so their sizes go to 0).
  *
- * Narrower than the tab, on purpose: prices and stock only — no size cleanup
- * (it deletes variations) and no identifiers. A run that would change more
- * than AUTO_SYNC_MAX_CHANGES variations writes nothing: a change that large is
- * a pricing edit or a broken feed, and either is reviewed in the Sync tab
- * first. Every write lands in the Sync tab's history like a manual apply.
+ * Narrower than the tab, on purpose: prices, stock and the sizes a product is
+ * missing — no size cleanup (it deletes variations) and no identifiers. A run
+ * that would change more than AUTO_SYNC_MAX_CHANGES variations writes nothing:
+ * a change that large is a pricing edit or a broken feed, and either is
+ * reviewed in the Sync tab first. Every write lands in the Sync tab's history
+ * like a manual apply.
  *
  * And more careful, because nobody is watching: a price changed on the store
  * is never written over. The plan keeps the ones the snapshot already shows
@@ -272,10 +273,17 @@ async function syncStore(scope: "store" | "feed"): Promise<StepOutcome | null> {
 
   const { runPriceSync } = await import("@/server/sync/price-sync");
   const limit = store().autoSyncMax;
-  // Sizes the feed lists and the store product lacks are added too — feed-owned
-  // products only: their stock is real, where KicksDB lists every size StockX
-  // has an ask for.
-  const { outcome, capped, sizesHeld } = await runPriceSync({ skus, liveCheck: true, maxChanges: limit, addSizes: "feed" });
+  // The sizes a product lacks are added too. The whole-store run adds every
+  // one, as the Sync tab does: KicksDB-priced sizes included, sold on demand
+  // like the rest of those products' sizes. The feed cycle, every quarter of
+  // an hour, only the feed's: their stock is real, where KicksDB lists every
+  // size StockX has an ask for.
+  const { outcome, capped, sizesHeld } = await runPriceSync({
+    skus,
+    liveCheck: true,
+    maxChanges: limit,
+    addSizes: scope === "store" ? "all" : "feed",
+  });
   if (capped != null) {
     throw new Error(
       `${capped} changes planned, more than the ${limit} an automatic run may write (AUTO_SYNC_MAX_CHANGES): ` +

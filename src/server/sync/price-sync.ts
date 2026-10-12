@@ -29,7 +29,7 @@ export interface PriceSyncOptions {
   maxSteps?: number;
   /**
    * Also add the sizes a product is missing (see ApplyOptions.addSizes) —
-   * "feed": the feed-owned products only, the unattended runs' choice.
+   * "feed": the feed-owned products only, the feed cycle's choice.
    */
   addSizes?: "all" | "feed";
 }

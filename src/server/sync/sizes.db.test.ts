@@ -190,14 +190,21 @@ describe.skipIf(!enabled)("sizes a store product is missing (real SQL, stand-in 
     expect(store.creates).toBe(0);
 
     // The operator unticks 40.
+    const steps: [number, number][] = [];
     const live = await applySync({
       ...base,
       dryRun: false,
       excluded: [{ planId: (await planIdOf(runId))!, variantIds: [`gs:${SKU}:40`] }],
+      onProgress: (done, total) => steps.push([done, total]),
     });
     expect(live.status).toBe("applied");
     expect(live.sizes.added).toBe(1);
     expect(labels()).toEqual(["36", "38"]);
+    // What the tab shows while the apply runs in the background.
+    expect(steps).toEqual([
+      [0, 1],
+      [1, 1],
+    ]);
   });
 });
 

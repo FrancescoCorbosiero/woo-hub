@@ -99,12 +99,19 @@ export interface ApplyOptions {
    * (typically one the supplier listed after the product was published).
    * Nothing is deleted or rewritten; the product is read live first, so a size
    * that appeared meanwhile is not created twice.
-   *  - "all": every selected one (the Sync tab: the operator ticked them);
-   *  - "feed": only for feed-owned products, whose stock is real (the
-   *    unattended runs — KicksDB lists every size StockX has an ask for);
+   *  - "all": every selected one (the Sync tab: the operator ticked them; the
+   *    whole-store sync of AUTO_SYNC=on, which does what the tab does);
+   *  - "feed": only for feed-owned products, whose stock is real (the feed
+   *    cycle — KicksDB lists every size StockX has an ask for);
    *  - omitted: none.
    */
   addSizes?: "all" | "feed";
+  /**
+   * A live run's progress: once the products to write are known, then after
+   * each one. The Sync tab shows it while the apply runs in the background
+   * (see sync/apply-job.ts).
+   */
+  onProgress?: (done: number, total: number) => void;
 }
 
 /** A size added to a product (or, in a dry run, that would be). */
@@ -553,6 +560,8 @@ export async function applySync(options: ApplyOptions): Promise<ApplyOutcome> {
   // Products that took new sizes: their parent and sizes as the store has them after.
   const afterSizes = new Map<number, { attributes: unknown; variations: StoreVariation[] }>();
   const sizesAdded: (NewSize & { variationId: number; euNorm: string })[] = [];
+  let finished = 0;
+  options.onProgress?.(0, productIds.length);
 
   await forEachLimit(productIds, concurrency, async (productId) => {
     const ops = opsByProduct.get(productId);
@@ -625,6 +634,7 @@ export async function applySync(options: ApplyOptions): Promise<ApplyOutcome> {
 
     const work = sizesByProduct.get(productId);
     if (work) await addMissingSizes(client, work);
+    options.onProgress?.(++finished, productIds.length);
   });
 
   /**
