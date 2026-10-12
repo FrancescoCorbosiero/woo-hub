@@ -302,16 +302,17 @@ WooCommerce. `AUTO_SYNC` decides where it runs:
   feed owns them, and keeping the store in step with it is the cycle's job.
   The daily sync writes nothing;
 - `AUTO_SYNC=on`: in the daily sync too, for the whole store (KicksDB prices
-  included);
+  and missing sizes included);
 - `AUTO_SYNC=off`: nowhere. Every change is applied by hand in the Sync tab.
 
 It is narrower than the tab on purpose:
-- It writes **prices and stock, and the sizes a feed product is missing**
-  (in stock in the feed, absent from the product on the store — added, never
-  removed): no size cleanup (which deletes variations) and no GTINs. KicksDB
-  products get no new sizes unattended: StockX lists every size with an ask,
-  which is not the same as the shop selling it. Their missing sizes are added
-  from the Sync tab, where they are ticked by hand.
+- It writes **prices and stock, and the sizes a product is missing** (added,
+  never removed): no size cleanup (which deletes variations) and no GTINs.
+  The feed cycle adds the sizes of the feed's products that are in stock in
+  the feed. The daily sync of `AUTO_SYNC=on` adds every missing size, as the
+  Sync tab does, KicksDB-priced ones included: a size StockX started listing
+  after the product was published, created as Publish creates every size it
+  lists and sold on demand like the product's other sizes.
 - A run that would change more than `AUTO_SYNC_MAX_CHANGES` variations
   (default 500) writes nothing. The Feeds tab shows the reason, and the change
   is reviewed and applied by hand in the Sync tab. A change that large is a

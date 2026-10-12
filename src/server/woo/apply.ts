@@ -99,9 +99,10 @@ export interface ApplyOptions {
    * (typically one the supplier listed after the product was published).
    * Nothing is deleted or rewritten; the product is read live first, so a size
    * that appeared meanwhile is not created twice.
-   *  - "all": every selected one (the Sync tab: the operator ticked them);
-   *  - "feed": only for feed-owned products, whose stock is real (the
-   *    unattended runs — KicksDB lists every size StockX has an ask for);
+   *  - "all": every selected one (the Sync tab: the operator ticked them; the
+   *    whole-store sync of AUTO_SYNC=on, which does what the tab does);
+   *  - "feed": only for feed-owned products, whose stock is real (the feed
+   *    cycle — KicksDB lists every size StockX has an ask for);
    *  - omitted: none.
    */
   addSizes?: "all" | "feed";
