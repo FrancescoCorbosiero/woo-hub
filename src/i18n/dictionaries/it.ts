@@ -603,6 +603,14 @@ export const it = {
       applied: (n: number) => `${n} varianti aggiornate sullo store ✓`,
       partial: (ok: number, ko: number) => `${ok} aggiornate, ${ko} fallite`,
       failed: "Applicazione fallita",
+      noAnswer: "Il server non ha risposto: riprova tra poco.",
+      preparing: "Scrittura sullo store: preparazione…",
+      writing: (done: number, total: number) => `Scrittura sullo store: ${done} / ${total} prodotti`,
+      writingHint:
+        "Continua sul server anche se chiudi o ricarichi la pagina: riaprendo Sync ne vedi l'avanzamento.",
+      lost: "Il server non ha più notizie di questa applicazione (si è riavviato?): la cronologia qui sotto dice cosa ha scritto.",
+      lostContact:
+        "Il server non risponde da un po': l'applicazione continua lì. Ricarica la pagina per seguirla di nuovo.",
       sizesTitle: (n: number) =>
         `${n === 1 ? "1 taglia mancante" : `${n} taglie mancanti`} sullo store, da aggiungere (le altre taglie non vengono toccate):`,
       sizesAdded: (n: number) => `${n === 1 ? "1 taglia aggiunta" : `${n} taglie aggiunte`} sullo store ✓`,

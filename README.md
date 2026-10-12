@@ -146,7 +146,12 @@ filters/sorts/paginates in SQL.
      Every run lands in `apply_audit` (the history labels Publish and rebuild
      runs, which log there too); after a live run the stored snapshot is
      patched to the post-apply state, so the next preview reflects reality
-     without a re-pull.
+     without a re-pull. The live apply runs in the background on the server
+     (`src/server/sync/apply-job.ts`), one at a time, and the tab follows it
+     with a progress bar: a whole-store apply writes for many minutes, and
+     behind Cloudflare one request for all of it was cut after 100 seconds
+     while the server went on writing. Reloading or closing the tab doesn't
+     stop it; opening Sync again picks up its progress.
 
   **"Stato dello store" is dated by the last full read** (the daily pull or
   "Aggiorna dallo store"), not by the patches every write leaves in the copy.

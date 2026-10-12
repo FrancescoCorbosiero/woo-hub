@@ -19,6 +19,7 @@ import { getActiveConfig } from "@/server/config/repo";
 import { countUnpublishedCandidates } from "@/server/catalog/repo";
 import { rebuildProducts, type RebuildOutcome } from "@/server/woo/rebuild";
 import { syncRunApplicable } from "@/server/sync/runs";
+import { getApplyJob, runningApplyJob, startApplyJob, type ApplyJob } from "@/server/sync/apply-job";
 import { loadStoreEdits, type StoreEditsState } from "@/server/sync/store-edits";
 import { snapshotSiteMatch } from "@/server/woo/site-guard";
 import { env } from "@/lib/env";
@@ -109,6 +110,8 @@ export interface SyncPageState {
   timeZone: string;
   /** Prices changed on WordPress that the sync is keeping, for a person to decide. */
   storeEdits: StoreEditsState | null;
+  /** A live apply still writing (started before the page loaded): the tab follows it. */
+  runningApply: ApplyJob | null;
 }
 
 /** Everything the sync page header needs (also used to refresh after actions). */
@@ -129,6 +132,7 @@ export async function getSyncState(): Promise<SyncPageState> {
     timeZone: env.SCHEDULER_TIMEZONE ?? DEFAULT_TIMEZONE,
     unpublished,
     storeEdits,
+    runningApply: runningApplyJob(),
     siteMismatch:
       site.status === "mismatch" ? { snapshot: site.snapshot, connected: site.connected } : null,
     runningPull:
@@ -250,10 +254,26 @@ export async function listRebuildableSkus(): Promise<{
   }
 }
 
+const UNFINISHED_RUN = "This sync did not finish walking the store — run it again before applying.";
+
+function applyOptions(data: z.output<typeof ApplySchema>) {
+  return {
+    runId: data.runId,
+    priceScope: data.priceScope,
+    selections: data.selections,
+    excluded: data.excluded,
+    dryRun: data.dryRun,
+    sanitize: data.sanitize,
+    backfillGtins: data.backfillGtins,
+    addSizes: data.addSizes ? ("all" as const) : undefined,
+  };
+}
+
 /**
  * Execute (or dry-run) the sync against the live store: size cleanup first
  * (orphan deletion + pa_taglia alignment), then the selected price writes.
  * Dry-run computes and audits the exact operations without touching Woo.
+ * The tab's live apply goes through startSyncApply: it outlasts a request.
  */
 export async function applySyncPrices(
   input: z.input<typeof ApplySchema>,
@@ -261,21 +281,48 @@ export async function applySyncPrices(
   const parsed = ApplySchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "invalid input" };
   try {
-    if (!(await syncRunApplicable(parsed.data.runId))) {
-      return { ok: false, error: "This sync did not finish walking the store — run it again before applying." };
-    }
-    const outcome = await applySync({
-      runId: parsed.data.runId,
-      priceScope: parsed.data.priceScope,
-      selections: parsed.data.selections,
-      excluded: parsed.data.excluded,
-      dryRun: parsed.data.dryRun,
-      sanitize: parsed.data.sanitize,
-      backfillGtins: parsed.data.backfillGtins,
-      addSizes: parsed.data.addSizes ? "all" : undefined,
-    });
+    if (!(await syncRunApplicable(parsed.data.runId))) return { ok: false, error: UNFINISHED_RUN };
+    const outcome = await applySync(applyOptions(parsed.data));
     return { ok: true, outcome };
   } catch (e) {
     return { ok: false, error: errMessage(e) };
   }
+}
+
+export interface ApplyJobResult {
+  ok: boolean;
+  error?: string;
+  /** The job; null when the server no longer knows it (it restarted since). */
+  job?: ApplyJob | null;
+}
+
+/**
+ * The live apply, in the background (see sync/apply-job.ts): answers at once
+ * with its job, which the tab follows with getSyncApplyJob until it ends. A
+ * whole-store apply writes for many minutes, and behind Cloudflare a request
+ * past 100 seconds is cut while the server goes on writing.
+ */
+export async function startSyncApply(
+  input: Omit<z.input<typeof ApplySchema>, "dryRun">,
+): Promise<ApplyJobResult> {
+  const parsed = ApplySchema.safeParse({ ...input, dryRun: false });
+  if (!parsed.success) return { ok: false, error: "invalid input" };
+  try {
+    if (!(await syncRunApplicable(parsed.data.runId))) return { ok: false, error: UNFINISHED_RUN };
+    const options = applyOptions(parsed.data);
+    const job = startApplyJob((onProgress) => applySync({ ...options, onProgress }));
+    if (!job) return { ok: false, error: "Another apply is still writing to the store — wait for it to finish." };
+    return { ok: true, job };
+  } catch (e) {
+    return { ok: false, error: errMessage(e) };
+  }
+}
+
+const JobSchema = z.object({ id: z.uuid() });
+
+/** How the live apply is going. */
+export async function getSyncApplyJob(input: z.infer<typeof JobSchema>): Promise<ApplyJobResult> {
+  const parsed = JobSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "invalid input" };
+  return { ok: true, job: getApplyJob(parsed.data.id) };
 }

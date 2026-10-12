@@ -589,6 +589,14 @@ export const en: Dictionary = {
       applied: (n) => `${n} variations updated on the store ✓`,
       partial: (ok, ko) => `${ok} updated, ${ko} failed`,
       failed: "Apply failed",
+      noAnswer: "The server did not answer: try again shortly.",
+      preparing: "Writing to the store: preparing…",
+      writing: (done, total) => `Writing to the store: ${done} / ${total} products`,
+      writingHint:
+        "It carries on on the server even if you close or reload the page: open Sync again to see how far it is.",
+      lost: "The server no longer knows this apply (did it restart?): the history below says what it wrote.",
+      lostContact:
+        "The server has not answered for a while: the apply carries on there. Reload the page to follow it again.",
       sizesTitle: (n) =>
         `${n === 1 ? "1 size" : `${n} sizes`} missing on the store, to add (the other sizes are left as they are):`,
       sizesAdded: (n) => `${n === 1 ? "1 size" : `${n} sizes`} added to the store ✓`,

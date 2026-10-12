@@ -201,7 +201,9 @@ Two consequences of the proxy:
 
 - **A click that takes over 100 seconds** gets an error page from Cloudflare
   (524), while the server finishes the job anyway. The scheduled syncs don't
-  go through Cloudflare, so they aren't affected.
+  go through Cloudflare, so they aren't affected, and neither is the Sync
+  tab's apply: it runs in the background and the tab follows it with short
+  requests.
 - **The IP may already be on record** from the hours it was public. To make it
   useless, allow ports 80 and 443 only from Cloudflare's IP ranges in your
   hosting provider's firewall. Use the provider's firewall rather than `ufw`,

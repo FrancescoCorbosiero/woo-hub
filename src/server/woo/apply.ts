@@ -105,6 +105,12 @@ export interface ApplyOptions {
    *  - omitted: none.
    */
   addSizes?: "all" | "feed";
+  /**
+   * A live run's progress: once the products to write are known, then after
+   * each one. The Sync tab shows it while the apply runs in the background
+   * (see sync/apply-job.ts).
+   */
+  onProgress?: (done: number, total: number) => void;
 }
 
 /** A size added to a product (or, in a dry run, that would be). */
@@ -553,6 +559,8 @@ export async function applySync(options: ApplyOptions): Promise<ApplyOutcome> {
   // Products that took new sizes: their parent and sizes as the store has them after.
   const afterSizes = new Map<number, { attributes: unknown; variations: StoreVariation[] }>();
   const sizesAdded: (NewSize & { variationId: number; euNorm: string })[] = [];
+  let finished = 0;
+  options.onProgress?.(0, productIds.length);
 
   await forEachLimit(productIds, concurrency, async (productId) => {
     const ops = opsByProduct.get(productId);
@@ -625,6 +633,7 @@ export async function applySync(options: ApplyOptions): Promise<ApplyOutcome> {
 
     const work = sizesByProduct.get(productId);
     if (work) await addMissingSizes(client, work);
+    options.onProgress?.(++finished, productIds.length);
   });
 
   /**
