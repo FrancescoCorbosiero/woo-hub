@@ -1,4 +1,5 @@
 import type { RoundingMode } from "@/server/config/summary";
+import { catalogIt } from "./catalog/it";
 
 /**
  * Italian dictionary — the source of truth. Every other locale must match this
@@ -1345,6 +1346,8 @@ export const it = {
     shown: (shown: number, total: number) => `${shown} di ${total} mostrati — usa Copia per l'elenco completo`,
     failed: "Impossibile caricare il catalogo",
   },
+  /** The Vetrina's catalog tab: its own files under ./catalog. */
+  vetrinaCatalog: catalogIt,
   vetrina: {
     title: "Vetrina",
     demo: "Negozio demo — nulla va sul sito",

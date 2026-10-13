@@ -1,4 +1,5 @@
 import type { Dictionary } from "../dictionary";
+import { catalogEn } from "./catalog/en";
 
 /** English dictionary. Must match the shape of the Italian source of truth. */
 export const en: Dictionary = {
@@ -1306,6 +1307,7 @@ export const en: Dictionary = {
     shown: (shown, total) => `${shown} of ${total} shown — use Copy for the full list`,
     failed: "Could not load the catalog",
   },
+  vetrinaCatalog: catalogEn,
   vetrina: {
     title: "Showcase",
     demo: "Demo shop — nothing reaches the site",
