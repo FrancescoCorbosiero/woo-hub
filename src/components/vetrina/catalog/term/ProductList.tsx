@@ -7,6 +7,7 @@ import { useI18n } from "@/i18n/provider";
 import { skuKey } from "@/lib/skus";
 import { toProductCard, type CatalogPage, type CatalogProduct, type CatalogQuery } from "@/lib/vetrina/catalog";
 import { ProductSheet } from "../../ProductSheet";
+import { Search, Stack } from "./glyphs";
 import { ProductRow } from "./ProductRow";
 import { SkeletonRows } from "./TermSkeleton";
 import { useCatalogPages, type CatalogPages } from "./use-catalog-pages";
@@ -80,8 +81,9 @@ export function ProductList({
 
   const sentinel = useAutoLoad(phase === "ready" && hasMore, loadMore);
   const empty = loaded.products.length === 0;
-  // No count before the first page, nor for a query that failed.
-  const counted = !(empty && stale) && phase !== "failed";
+  // A count and a sort only over rows: an empty list says so below, and
+  // "0 prodotti · Ordina" would only repeat it. The header keeps its height.
+  const counted = !empty && phase !== "failed";
 
   return (
     <>
@@ -90,7 +92,7 @@ export function ProductList({
           {counted ? t.vetrinaCatalog.term.products(loaded.total) : "\u00a0"}
         </span>
         {phase === "loading" && <Preloader className="!h-4 !w-4" />}
-        <span className="ms-auto">{toolbar}</span>
+        {!empty && <span className="ms-auto">{toolbar}</span>}
       </div>
 
       {phase === "failed" ? (
@@ -201,8 +203,12 @@ function Failure({ message, onRetry }: { message: string; onRetry: () => void })
 function Empty({ q, onClearFilters }: { q?: string; onClearFilters?: () => void }) {
   const { t } = useI18n();
   const l = t.vetrinaCatalog.term.list;
+  const Icon = q ? Search : Stack;
   return (
-    <div className="px-6 py-10 text-center">
+    <div className="flex flex-col items-center px-6 py-10 text-center">
+      <span className="mb-3 grid h-14 w-14 place-items-center rounded-full bg-black/[0.05] dark:bg-white/10" aria-hidden>
+        <Icon className="h-7 w-7 opacity-40" />
+      </span>
       <p className="text-[17px] font-semibold leading-snug">{q ? l.emptySearch(q) : l.empty}</p>
       {onClearFilters && (
         <>

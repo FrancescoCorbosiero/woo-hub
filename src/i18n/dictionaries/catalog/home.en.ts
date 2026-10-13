@@ -34,8 +34,8 @@ export const homeEn: typeof homeIt = {
   hideEmptyBrands: "Hide the empty brands",
   noCategories: "The shop has no categories yet.",
   noBrands: "The shop has no brands yet.",
-  soldOut: (n: number) => `${n} sold out`,
-  hidden: (n: number) => `${n} hidden`,
+  soldOut: (n: number) => `${n.toLocaleString("en-GB")} sold out`,
+  hidden: (n: number) => `${n.toLocaleString("en-GB")} hidden`,
 
   firstRead: {
     title: "Reading the shop…",
@@ -49,7 +49,6 @@ export const homeEn: typeof homeIt = {
     products: "Products",
     none: (q: string) => `No results for “${q}”`,
     hint: "Search by name or SKU: every word counts, in any order.",
-    showAll: (n: number) => `Show all ${n} products`,
     showMore: (n: number) => (n === 1 ? "Show the last one" : `Show ${n} more`),
     failed: "The search didn't work.",
     retry: "Try again",

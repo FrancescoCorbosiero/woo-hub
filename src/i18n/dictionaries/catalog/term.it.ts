@@ -3,13 +3,18 @@
  * views and the product list they share. Italian is the source of truth (see
  * ../catalog/it.ts).
  */
+/** A count as the owner reads it: "1.234". */
+const n = (count: number) => count.toLocaleString("it-IT");
+
 export const termIt = {
   catalog: "Catalogo",
   back: "Indietro",
-  products: (n: number) => (n === 1 ? "1 prodotto" : `${n} prodotti`),
+  products: (count: number) => (count === 1 ? "1 prodotto" : `${n(count)} prodotti`),
   backTo: (name: string) => `Torna a ${name}`,
   backToCatalog: "Torna al catalogo",
   searchIn: (name: string) => `Cerca in ${name}`,
+  // A quick view's name is not a place: "Cerca in Senza categoria" reads badly.
+  searchView: "Cerca in questa lista",
   searchAll: (q: string) => `Cerca «${q}» in tutto il catalogo`,
 
   panel: {
@@ -17,9 +22,9 @@ export const termIt = {
     makeHint: "I prodotti entrano ed escono da soli, secondo una regola: per esempio tutti quelli col tag «saldi».",
     inHomepage: (section: string) => `In homepage: ${section}`,
     notInHomepage: "Non è in homepage",
-    soldOut: (n: number) => (n === 1 ? "1 esaurito" : `${n} esauriti`),
-    hidden: (n: number) => (n === 1 ? "1 nascosto" : `${n} nascosti`),
-    onSale: (n: number) => `${n} in saldo`,
+    soldOut: (count: number) => (count === 1 ? "1 esaurito" : `${n(count)} esauriti`),
+    hidden: (count: number) => (count === 1 ? "1 nascosto" : `${n(count)} nascosti`),
+    onSale: (count: number) => `${n(count)} in saldo`,
     allGood: "Tutto disponibile e visibile",
   },
 
@@ -67,7 +72,7 @@ export const termIt = {
     section: (title: string, position: number) => `${title} #${position}`,
     sectionLabel: (title: string, position: number, pinned: boolean) =>
       `In homepage: ${title}, posizione ${position}${pinned ? ", fissato" : ""}`,
-    moreSections: (n: number) => `+${n}`,
+    moreSections: (count: number) => `+${count}`,
     locked: "Prezzo bloccato",
     noPhoto: "Senza foto",
     hidden: "Nascosto",
@@ -77,6 +82,7 @@ export const termIt = {
       draft: "Bozza",
       pending: "In revisione",
       private: "Privato",
+      future: "Programmato",
       other: "Non pubblicato",
     } as Record<string, string>,
   },

@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { App } from "konsta/react";
 import { Toaster } from "sonner";
 import { SheetMountContext, StandaloneContext } from "./sheet-mount";
+import { useScreenTrail } from "./use-back";
 import { TABBAR_SPACE, VetrinaTabbar, tabOf } from "./VetrinaTabbar";
 
 /**
@@ -28,6 +29,8 @@ export function VetrinaApp({
 }) {
   const [mount, setMount] = React.useState<HTMLDivElement | null>(null);
   const tab = tabOf(usePathname());
+  // What the back buttons go back to (./use-back.ts).
+  useScreenTrail();
   // The tab bar's room, for every page's TabbarSpacer: 0 where it is hidden.
   const frameStyle = { "--vetrina-tabbar": tab ? TABBAR_SPACE : "0px" } as React.CSSProperties;
   return (

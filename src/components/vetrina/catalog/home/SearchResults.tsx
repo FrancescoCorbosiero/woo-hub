@@ -7,14 +7,13 @@ import { toast } from "sonner";
 import { useI18n } from "@/i18n/provider";
 import { skuKey } from "@/lib/skus";
 import { toProductCard, type CatalogProduct, type CatalogSearch } from "@/lib/vetrina/catalog";
-import type { ProductCard } from "@/lib/vetrina/types";
 import type { VetrinaResult } from "@/server/vetrina/service";
-import { loadVetrinaCards } from "@/server/actions/vetrina";
 import { loadCatalogPage, searchCatalog } from "@/server/actions/vetrina-catalog";
 import { ProductSheet } from "../../ProductSheet";
+import { formatCount } from "../format";
 import { ProductRow } from "../term/ProductRow";
+import { useProductCards } from "../term/use-product-cards";
 import { TermRow } from "./TermGroups";
-import { formatCount } from "./ui";
 
 /**
  * The catalog's search, in place of the lists: categories, brands and
@@ -85,7 +84,10 @@ export function SearchResults({
     return more && more.q === data.q ? [...found.products, ...more.products] : found.products;
   }, [found, data, more]);
 
-  const { cards, locks, fetchCards, setLocks } = useCards(products);
+  const ids = React.useMemo(() => products.map((p) => p.id), [products]);
+  const { cards, refresh: refreshCard } = useProductCards(ids);
+  // Locks changed in the sheet since the search was read, by SKU.
+  const [locks, setLocks] = React.useState<ReadonlyMap<string, number>>(() => new Map());
   const [open, setOpen] = React.useState<CatalogProduct | null>(null);
 
   async function loadMore() {
@@ -95,19 +97,28 @@ export function SearchResults({
     setLoadingMore(true);
     try {
       // The first answer's products are ranked; the rest come by name, minus
-      // those already shown, so nothing moves and nothing repeats.
-      const res = await loadCatalogPage({ q: forQ, sort: "name", offset: from.offset, limit: MORE_PAGE });
+      // those already shown, so nothing moves and nothing repeats. The page
+      // asked has room for every ranked one it may skip: a tap brings
+      // exactly the MORE_PAGE its button promised (or the last few).
+      const res = await loadCatalogPage({
+        q: forQ,
+        sort: "name",
+        offset: from.offset,
+        limit: MORE_PAGE + found.products.length,
+      });
       if (!res.ok) {
         toast.error(t.vetrina.errors[res.code] ?? res.error);
         return;
       }
       const shown = new Set([...found.products, ...from.products].map((p) => p.id));
-      setMore({
-        q: forQ,
-        products: [...from.products, ...res.data.products.filter((p) => !shown.has(p.id))],
-        offset: from.offset + res.data.products.length,
-        total: res.data.total,
-      });
+      const fresh: CatalogProduct[] = [];
+      let used = 0;
+      for (const p of res.data.products) {
+        if (fresh.length === MORE_PAGE) break;
+        used += 1;
+        if (!shown.has(p.id)) fresh.push(p);
+      }
+      setMore({ q: forQ, products: [...from.products, ...fresh], offset: from.offset + used, total: res.data.total });
     } catch {
       toast.error(t.vetrina.errors.failed);
     } finally {
@@ -124,7 +135,13 @@ export function SearchResults({
         <Button rounded tonal onClick={() => void mutate()}>
           {r.retry}
         </Button>
-        <p className="break-words text-[13px] opacity-50">{data.result.error}</p>
+        {/* The technical words ("Failed to fetch") only for whoever asks, as ErrorState does. */}
+        {data.result.error && (
+          <details className="text-left text-[13px] opacity-60">
+            <summary className="cursor-pointer">{t.vetrina.errors.details}</summary>
+            <p className="mt-2 whitespace-pre-wrap break-words font-mono">{data.result.error}</p>
+          </details>
+        )}
       </Block>
     );
   }
@@ -177,19 +194,14 @@ export function SearchResults({
                       key={p.id}
                       product={p}
                       card={cards.get(p.id)}
-                      locks={locks[skuKey(p.sku)] ?? p.locks}
+                      locks={locks.get(skuKey(p.sku)) ?? p.locks}
                       onOpen={setOpen}
                     />
                   ))}
                   {remaining > 0 && (
+                    // Says what a tap brings: the next MORE_PAGE, or the last few.
                     <ListButton onClick={() => void loadMore()}>
-                      {loadingMore ? (
-                        <Preloader className="!h-5 !w-5" />
-                      ) : more?.q === data.q ? (
-                        r.showMore(remaining)
-                      ) : (
-                        r.showAll(s.totalProducts)
-                      )}
+                      {loadingMore ? <Preloader className="!h-5 !w-5" /> : r.showMore(Math.min(MORE_PAGE, remaining))}
                     </ListButton>
                   )}
                 </List>
@@ -202,8 +214,8 @@ export function SearchResults({
       <ProductSheet
         card={open ? (cards.get(open.id) ?? toProductCard(open)) : null}
         onClose={() => setOpen(null)}
-        onLocksChanged={(sku, count) => setLocks((prev) => ({ ...prev, [skuKey(sku)]: count }))}
-        onPricesChanged={(id) => fetchCards([id])}
+        onLocksChanged={(sku, count) => setLocks((prev) => new Map(prev).set(skuKey(sku), count))}
+        onPricesChanged={refreshCard}
         onTagsChanged={onChanged}
         demo={demo}
       />
@@ -214,46 +226,6 @@ export function SearchResults({
 function CountLabel({ n }: { n: number }) {
   const { locale } = useI18n();
   return <span className="text-[15px] font-normal tabular-nums opacity-55">{formatCount(n, locale)}</span>;
-}
-
-/**
- * The store's own cards for the products on screen: the thumbnail (never
- * the full photo), the live price and the Hub's locks. Each product is asked
- * for once, so a failing request cannot loop.
- */
-function useCards(products: CatalogProduct[]) {
-  const [cards, setCards] = React.useState(() => new Map<number, ProductCard>());
-  const [locks, setLocks] = React.useState<Record<string, number>>({});
-  const requested = React.useRef(new Set<number>());
-
-  // A batch that fails leaves its rows on the neutral placeholder.
-  const fetchCards = React.useCallback((ids: number[]) => {
-    loadVetrinaCards({ ids })
-      .then((res) => {
-        if (!res.ok) return;
-        setCards((prev) => {
-          const next = new Map(prev);
-          for (const c of res.data.cards) next.set(c.id, c);
-          return next;
-        });
-        setLocks((prev) => ({ ...prev, ...res.data.locks }));
-      })
-      .catch(() => undefined);
-  }, []);
-
-  const wantedKey = products
-    .filter((p) => !cards.has(p.id) && !requested.current.has(p.id))
-    .slice(0, 100)
-    .map((p) => p.id)
-    .join(",");
-  React.useEffect(() => {
-    if (!wantedKey) return;
-    const ids = wantedKey.split(",").map(Number);
-    for (const id of ids) requested.current.add(id);
-    fetchCards(ids);
-  }, [wantedKey, fetchCards]);
-
-  return { cards, locks, fetchCards, setLocks };
 }
 
 /** The first search's place holder: the shape of a few results, nothing that jumps when they come. */

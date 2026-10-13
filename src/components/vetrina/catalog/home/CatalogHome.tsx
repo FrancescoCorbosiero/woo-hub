@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Block, Button, Link as KLink, Navbar, Page, Preloader, Searchbar, Segmented, SegmentedButton } from "konsta/react";
+import { Block, Button, Link as KLink, Navbar, Page, Preloader, Segmented, SegmentedButton } from "konsta/react";
 import { useI18n } from "@/i18n/provider";
 import type { CatalogOverview } from "@/lib/vetrina/catalog";
 import type { VetrinaResult } from "@/server/vetrina/service";
@@ -11,7 +11,9 @@ import { ChevronLeft, Refresh } from "../../icons";
 import { SEGMENTED_COLORS } from "../../segmented";
 import { useStandalone } from "../../sheet-mount";
 import { TabbarSpacer } from "../TabbarSpacer";
-import { readParams, withParams, type HomeTab, type TermOrder } from "./model";
+import { replaceAddress, SearchField } from "../term/browse";
+import { searchWords } from "../term/list-model";
+import { readParams, type HomeTab, type TermOrder } from "./model";
 import { QuickViewChips } from "./QuickViewChips";
 import { SearchResults, revalidateSearches } from "./SearchResults";
 import { BrandIndex, CategoryGroups } from "./TermGroups";
@@ -44,7 +46,6 @@ export function CatalogHome({ result }: { result: VetrinaResult<CatalogOverview>
 
   const { query, setQuery, searched } = useAddressSearch(addressQ);
   const searching = query.trim() !== "";
-  const searchRef = useSearchInput(h.search);
   const pageRef = useTopOnSwap(searching);
   const overview = result.ok ? result.data : null;
 
@@ -58,6 +59,9 @@ export function CatalogHome({ result }: { result: VetrinaResult<CatalogOverview>
         centerTitle
         title={h.title}
         subtitle={overview?.demo ? t.vetrina.demo : undefined}
+        // Folded, the small title stays clear of the side buttons.
+        titleClassName={`truncate ${standalone ? "max-w-[calc(100%-152px)]" : "max-w-[calc(100%-224px)]"}`}
+        subtitleClassName="truncate"
         left={
           standalone ? undefined : (
             <KLink href="/" component="a" className="gap-0.5">
@@ -71,24 +75,16 @@ export function CatalogHome({ result }: { result: VetrinaResult<CatalogOverview>
             {refreshing ? <Preloader className="!h-5 !w-5" /> : <Refresh className="h-5 w-5" />}
           </KLink>
         }
-        subnavbar={
-          <Searchbar
-            ref={searchRef}
-            value={query}
-            placeholder={h.search}
-            disableButton
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQuery(e.target.value)}
-            onClear={() => setQuery("")}
-            // "Cerca" on the keyboard puts it away, so the results show whole.
-            onKeyDown={(e) => {
-              if (e.key === "Enter") (e.target as HTMLElement).blur();
-            }}
-          />
-        }
+        subnavbar={<SearchField value={query} onChange={setQuery} placeholder={h.search} />}
       />
 
       {searching ? (
-        <SearchResults q={searched} typing={query.trim() !== searched} demo={overview?.demo ?? false} onChanged={refresh} />
+        <SearchResults
+          q={searched}
+          typing={searchWords(query) !== searched}
+          demo={overview?.demo ?? false}
+          onChanged={refresh}
+        />
       ) : !result.ok ? (
         <ErrorState code={result.code} error={result.error} />
       ) : result.data.indexProducts === 0 ? (
@@ -113,10 +109,10 @@ function Lists({ overview, tab, order }: { overview: CatalogOverview; tab: HomeT
     <>
       <div className="px-4 pt-2">
         <Segmented strong rounded colors={SEGMENTED_COLORS}>
-          <SegmentedButton className="!h-10" active={tab === "category"} onClick={() => choose("category")}>
+          <SegmentedButton className="!h-11" active={tab === "category"} onClick={() => choose("category")}>
             {h.segments.category}
           </SegmentedButton>
-          <SegmentedButton className="!h-10" active={tab === "brand"} onClick={() => choose("brand")}>
+          <SegmentedButton className="!h-11" active={tab === "brand"} onClick={() => choose("brand")}>
             {h.segments.brand}
           </SegmentedButton>
         </Segmented>
@@ -168,12 +164,6 @@ function FirstRead({ refreshing, onRetry }: { refreshing: boolean; onRetry: () =
   );
 }
 
-/** The address with some parameters changed, in place: no new history entry, no server round trip, no scroll. */
-function replaceAddress(patch: Record<string, string | null>): void {
-  const { pathname, search } = window.location;
-  window.history.replaceState(null, "", withParams(`${pathname}${search}`, patch));
-}
-
 /**
  * The search bar's words, and the same words once typing pauses: those are
  * searched and written to the address (?q=). A new ?q= from outside (a link
@@ -181,15 +171,16 @@ function replaceAddress(patch: Record<string, string | null>): void {
  */
 function useAddressSearch(addressQ: string) {
   const [query, setQuery] = React.useState(addressQ);
-  const searched = useSettled(query.trim(), SEARCH_PAUSE_MS);
+  // No longer than the server takes: a long paste still searches.
+  const searched = useSettled(searchWords(query), SEARCH_PAUSE_MS);
   // What the address holds as far as this screen knows: its own writes are not news.
-  const known = React.useRef(addressQ.trim());
+  const known = React.useRef(searchWords(addressQ));
   // The last words searched. Effects can run again with nothing new (a screen
   // Next kept alive in the back comes forward): only a change is written.
   const lastSearched = React.useRef(searched);
 
   React.useEffect(() => {
-    const fromAddress = addressQ.trim();
+    const fromAddress = searchWords(addressQ);
     if (fromAddress === known.current) return;
     known.current = fromAddress;
     setQuery(addressQ);
@@ -231,23 +222,4 @@ function useSettled<T>(value: T, ms: number): T {
     return () => window.clearTimeout(timer);
   }, [value, ms]);
   return settled;
-}
-
-/**
- * Konsta's search field takes no input attributes: set the ones a phone
- * needs here. No autocorrect ("dunk" is not a typo), a "Cerca" key.
- */
-function useSearchInput(label: string) {
-  const ref = React.useRef<HTMLElement>(null);
-  React.useEffect(() => {
-    const input = ref.current?.querySelector("input");
-    if (!input) return;
-    input.enterKeyHint = "search";
-    input.autocomplete = "off";
-    input.spellcheck = false;
-    input.setAttribute("autocorrect", "off");
-    input.setAttribute("autocapitalize", "off");
-    input.setAttribute("aria-label", label);
-  }, [label]);
-  return ref;
 }

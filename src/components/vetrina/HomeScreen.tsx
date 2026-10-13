@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Navbar, Page, Link as KLink } from "konsta/react";
+import { Navbar, Page, Preloader, Link as KLink } from "konsta/react";
 import { toast } from "sonner";
 import { useI18n } from "@/i18n/provider";
 import { blockConfig } from "@/config";
@@ -39,8 +39,6 @@ export function HomeScreen({ result }: { result: VetrinaResult<VetrinaHome> }) {
   const { t } = useI18n();
   const router = useRouter();
   const v = t.vetrina;
-  // On the Vetrina's own address the operator Hub is not served: no way back to it.
-  const standalone = useStandalone();
 
   // A block's texts, edited in a sheet and saved straight to the site.
   const [editingPath, setEditingPath] = React.useState<string | null>(null);
@@ -71,20 +69,8 @@ export function HomeScreen({ result }: { result: VetrinaResult<VetrinaHome> }) {
 
   return (
     <Page>
-      <Navbar
-        large
-        transparent
-        centerTitle
-        title={v.title}
+      <HomeNavbar
         subtitle={result.ok && result.data.source === "fixture" ? v.demo : undefined}
-        left={
-          standalone ? undefined : (
-            <KLink href="/" component="a" className="gap-0.5">
-              <ChevronLeft className="h-5 w-5" />
-              {v.backToHub}
-            </KLink>
-          )
-        }
         right={
           <KLink onClick={() => router.refresh()} aria-label={v.refresh}>
             <Refresh className="h-5 w-5" />
@@ -95,7 +81,8 @@ export function HomeScreen({ result }: { result: VetrinaResult<VetrinaHome> }) {
       {!result.ok ? (
         <ErrorState code={result.code} error={result.error} />
       ) : (
-        <div className="space-y-3 px-4 pb-[calc(env(safe-area-inset-bottom)+24px)] pt-1">
+        // No bottom room of its own: TabbarSpacer leaves it, the safe area included.
+        <div className="space-y-3 px-4 pb-1 pt-1">
           <p className="px-1 text-[15px] leading-snug opacity-60">{v.home.intro}</p>
           <a
             href={result.data.home.link}
@@ -131,6 +118,78 @@ export function HomeScreen({ result }: { result: VetrinaResult<VetrinaHome> }) {
         onSubmit={(fields) => (editing ? saveBlock(editing, fields) : true)}
         onClose={() => setEditingPath(null)}
       />
+    </Page>
+  );
+}
+
+/**
+ * The homepage tab's navbar: a large title named like its tab, the way back
+ * to the Hub (not on the Vetrina's own address) and, folded, a title that
+ * stays clear of the side buttons.
+ */
+function HomeNavbar({ subtitle, right }: { subtitle?: string; right: React.ReactNode }) {
+  const { t } = useI18n();
+  // On the Vetrina's own address the operator Hub is not served: no way back to it.
+  const standalone = useStandalone();
+  return (
+    <Navbar
+      large
+      transparent
+      centerTitle
+      title={t.vetrinaCatalog.home.tabs.homepage}
+      subtitle={subtitle}
+      titleClassName={`truncate ${standalone ? "max-w-[calc(100%-152px)]" : "max-w-[calc(100%-224px)]"}`}
+      subtitleClassName="truncate"
+      left={
+        standalone ? undefined : (
+          <KLink href="/" component="a" className="gap-0.5">
+            <ChevronLeft className="h-5 w-5" />
+            {t.vetrina.backToHub}
+          </KLink>
+        )
+      }
+      right={right}
+    />
+  );
+}
+
+/**
+ * The homepage tab while the site answers (it is read live on every visit):
+ * the same navbar, then the shape of its cards, so switching tabs does not
+ * make the title jump from small to large. For vetrina/loading.tsx.
+ */
+export function HomeScreenSkeleton() {
+  const { t } = useI18n();
+  const bar = "block rounded-full bg-black/[0.08] dark:bg-white/[0.12]";
+  const box = "block rounded-xl bg-black/[0.05] dark:bg-white/10";
+  return (
+    <Page>
+      <HomeNavbar
+        right={
+          <KLink aria-label={t.vetrina.refresh}>
+            <Preloader className="!h-5 !w-5" />
+          </KLink>
+        }
+      />
+      <div aria-hidden className="space-y-3 px-4 pb-1 pt-1 motion-safe:animate-pulse">
+        <div className="space-y-2 px-1 py-0.5">
+          <span className={`${bar} h-3.5 w-[92%]`} />
+          <span className={`${bar} h-3.5 w-[64%]`} />
+        </div>
+        <span className={`${bar} mx-1 h-3.5 w-24`} />
+        {[0, 1, 2].map((card) => (
+          <div key={card} className="overflow-hidden rounded-2xl bg-white px-4 pb-3.5 pt-3.5 shadow-sm dark:bg-[#1c1c1e]">
+            <span className={`${bar} h-4 w-40`} />
+            <div className="mt-3 flex gap-2 overflow-hidden pb-1">
+              {[0, 1, 2, 3, 4].map((i) => (
+                <span key={i} className={`${box} h-[72px] w-[72px] shrink-0`} />
+              ))}
+            </div>
+            <span className={`${bar} mt-2 h-3 w-28`} />
+          </div>
+        ))}
+      </div>
+      <TabbarSpacer />
     </Page>
   );
 }

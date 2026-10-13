@@ -6,8 +6,9 @@ import { Chip } from "konsta/react";
 import { useI18n } from "@/i18n/provider";
 import type { CatalogOverview, QuickView } from "@/lib/vetrina/catalog";
 import { EyeOff } from "../../icons";
-import { viewHref } from "./model";
-import { Draft, Empty, Folder, NoPhoto, Tag, formatCount } from "./ui";
+import { formatCount } from "../format";
+import { Draft, Empty, Folder, NoPhoto, Tag } from "../term/glyphs";
+import { viewHref } from "../term/list-model";
 
 const ICONS: Record<QuickView, (props: { className?: string }) => ReactNode> = {
   soldout: Empty,
@@ -18,10 +19,13 @@ const ICONS: Record<QuickView, (props: { className?: string }) => ReactNode> = {
   unpublished: Draft,
 };
 
-/** Sold out and on sale stand out; the rest are housekeeping. */
+/**
+ * Sold out and on sale stand out, in the colours the product rows give them
+ * (gold is the homepage's alone); the rest are housekeeping.
+ */
 const TONE: Partial<Record<QuickView, string>> = {
-  soldout: "text-red-600 dark:text-red-400",
-  onsale: "text-[#b8860b] dark:text-[#e8c35a]",
+  soldout: "text-orange-600 dark:text-orange-400",
+  onsale: "text-red-600 dark:text-red-400",
 };
 
 /**

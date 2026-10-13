@@ -9,8 +9,11 @@ import { describeRule } from "@/lib/collections/describe";
 import type { RailCollection } from "@/lib/collections/types";
 import type { CatalogTerm } from "@/lib/vetrina/catalog";
 import { Funnel } from "../../icons";
-import { byLetter, statsLine, termHref, topLevel, type TermOrder } from "./model";
-import { CountAfter, House, NextLinkTag, SortArrows, Tile } from "./ui";
+import { ruleState } from "../rule-state";
+import { House, SortArrows } from "../term/glyphs";
+import { termHref } from "../term/list-model";
+import { byLetter, statsLine, topLevel, type TermOrder } from "./model";
+import { CountAfter, NextLinkTag, Tile } from "./ui";
 
 /**
  * The catalog home's two lists. Categories: the ones behind a homepage
@@ -43,7 +46,7 @@ export function TermRow({
     <ListItem
       link
       linkComponent={NextLinkTag}
-      href={termHref(term)}
+      href={termHref(term.taxonomy, term.id)}
       strongTitle={false}
       media={media}
       title={<span className={term.count === 0 ? "opacity-45" : undefined}>{title ?? term.name}</span>}
@@ -113,7 +116,7 @@ export function CategoryGroups({
                 title={term.path}
                 text={ruleLine(term.automatic, t)}
                 media={
-                  <Tile tone={ruleWorking(term.automatic) ? "gold" : "muted"}>
+                  <Tile tone={ruleState(term.automatic) === "working" ? "gold" : "muted"}>
                     <Funnel className="h-[18px] w-[18px]" />
                   </Tile>
                 }
@@ -201,15 +204,10 @@ function EmptyNote({ text }: { text: string }) {
   );
 }
 
-/** The rule fills the category on its own: on, not waiting, no error. */
-function ruleWorking(rule: RailCollection): boolean {
-  return rule.enabled && !rule.held && !rule.lastError;
-}
-
 /** The rule in words, after its state when it is not simply working: "In pausa · Tag «saldi»". */
 function ruleLine(rule: RailCollection, t: Dictionary): string {
   const words = describeRule(rule, t.collections.words);
   const auto = t.vetrina.auto;
-  const state = !rule.enabled ? auto.off : rule.held ? auto.held : rule.lastError ? auto.problem : null;
+  const state = { working: null, paused: auto.off, held: auto.held, problem: auto.problem }[ruleState(rule)];
   return state ? `${state} · ${words}` : words;
 }

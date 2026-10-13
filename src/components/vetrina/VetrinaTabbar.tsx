@@ -6,6 +6,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { Tabbar, TabbarLink, ToolbarPane } from "konsta/react";
 import { useI18n } from "@/i18n/provider";
+import { House } from "./catalog/term/glyphs";
 
 /**
  * The Vetrina's two tabs, Homepage and Catalogo: Konsta's floating glass tab
@@ -55,10 +56,31 @@ function useLastCatalog(active: VetrinaTab | null): string {
   return last;
 }
 
+/**
+ * On a touch, Konsta's iOS tab bar opens the tab itself, with a click of its
+ * own on the link (which next/link turns into an in-app navigation), and then
+ * only stops the finger's real click from spreading — it does not cancel it,
+ * so the browser would follow the link too and reload the whole app. This
+ * cancels that one real click. React sees it first: its listener sits on the
+ * document, Konsta's on the bar.
+ */
+function useNoDoubleClick(): (e: React.MouseEvent) => void {
+  const pending = React.useRef(false);
+  return React.useCallback((e: React.MouseEvent) => {
+    if (!e.nativeEvent.isTrusted) {
+      pending.current = true;
+    } else if (pending.current) {
+      pending.current = false;
+      e.preventDefault();
+    }
+  }, []);
+}
+
 export function VetrinaTabbar({ active }: { active: VetrinaTab | null }) {
   const { t } = useI18n();
   const tabs = t.vetrinaCatalog.home.tabs;
   const lastCatalog = useLastCatalog(active);
+  const onClickCapture = useNoDoubleClick();
   // On its own tab, a tab leads back to its first screen.
   const hrefOf = (tab: VetrinaTab) => (tab === "catalog" && active !== "catalog" ? lastCatalog : HREF[tab]);
 
@@ -94,10 +116,11 @@ export function VetrinaTabbar({ active }: { active: VetrinaTab | null }) {
           exit={{ y: "100%" }}
           transition={{ type: "spring", damping: 30, stiffness: 340 }}
           className="pointer-events-none fixed inset-x-0 bottom-0 z-20"
+          onClickCapture={onClickCapture}
         >
           <Tabbar labels icons>
             <ToolbarPane className="pointer-events-auto">
-              {link("home", tabs.homepage, <HomeIcon className={iconSize} />)}
+              {link("home", tabs.homepage, <House className={iconSize} />)}
               {link("catalog", tabs.catalog, <CatalogIcon className={iconSize} />)}
             </ToolbarPane>
           </Tabbar>
@@ -116,16 +139,6 @@ const stroke = {
   strokeLinecap: "round" as const,
   strokeLinejoin: "round" as const,
 };
-
-/** A house: the shop's front page. */
-function HomeIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className={className} {...stroke}>
-      <path d="M3.5 10.6 12 3.8l8.5 6.8" />
-      <path d="M5.5 9.2V19a1 1 0 0 0 1 1H10v-5.2a.8.8 0 0 1 .8-.8h2.4a.8.8 0 0 1 .8.8V20h3.5a1 1 0 0 0 1-1V9.2" />
-    </svg>
-  );
-}
 
 /** Four tiles: the shop by category and brand. */
 function CatalogIcon({ className }: { className?: string }) {

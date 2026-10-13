@@ -38,8 +38,8 @@ export const homeIt = {
   hideEmptyBrands: "Nascondi i brand vuoti",
   noCategories: "Nel negozio non ci sono ancora categorie.",
   noBrands: "Nel negozio non ci sono ancora brand.",
-  soldOut: (n: number) => (n === 1 ? "1 esaurito" : `${n} esauriti`),
-  hidden: (n: number) => (n === 1 ? "1 nascosto" : `${n} nascosti`),
+  soldOut: (n: number) => (n === 1 ? "1 esaurito" : `${n.toLocaleString("it-IT")} esauriti`),
+  hidden: (n: number) => (n === 1 ? "1 nascosto" : `${n.toLocaleString("it-IT")} nascosti`),
 
   firstRead: {
     title: "Sto leggendo il negozio…",
@@ -53,7 +53,6 @@ export const homeIt = {
     products: "Prodotti",
     none: (q: string) => `Nessun risultato per «${q}»`,
     hint: "Cerca per nome o per SKU: contano tutte le parole, in qualsiasi ordine.",
-    showAll: (n: number) => `Mostra tutti i ${n} prodotti`,
     showMore: (n: number) => (n === 1 ? "Mostra l'ultimo" : `Mostra altri ${n}`),
     failed: "La ricerca non è andata a buon fine.",
     retry: "Riprova",

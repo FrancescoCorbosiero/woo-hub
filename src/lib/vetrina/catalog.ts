@@ -131,7 +131,12 @@ export interface CatalogPage {
   /** Products matching the query, not only this page. */
   total: number;
   offset: number;
-  /** Counts over everything the query matches, before stock / visibility / sale / within narrow it. */
+  /**
+   * The chips' counts: each one's number is what tapping it shows, the other
+   * chips staying as they are. So the stock / visibility / sale counts take in
+   * `within` but not themselves, the `within` counts take in stock /
+   * visibility / sale but not `within`, and `children` ignore every chip.
+   */
   facets: {
     instock: number;
     outofstock: number;
@@ -139,7 +144,11 @@ export interface CatalogPage {
     onSale: number;
     /** The term's direct sub-terms that hold any of these products. */
     children: FacetCount[];
-    /** The other taxonomy's terms these products carry (brands in a category, categories in a brand). */
+    /**
+     * The other taxonomy's terms these products carry (brands in a category,
+     * categories in a brand); the one chosen in `within` is always there, at
+     * 0 when nothing carries it, so its chip keeps its name.
+     */
     within: FacetCount[];
   };
 }
@@ -160,6 +169,16 @@ export interface ProductPlacement {
   categories: { id: number; name: string; path: string; automatic: boolean }[];
   brands: { id: number; name: string }[];
   sections: ProductSection[];
+}
+
+const RAIL_TAXONOMIES = new Map<string, CatalogTaxonomy>([
+  ["product_cat", "category"],
+  ["product_brand", "brand"],
+]);
+
+/** The catalog's name for a homepage section's taxonomy; null for tags, or none. */
+export function railTaxonomy(taxonomy: string | null | undefined): CatalogTaxonomy | null {
+  return (taxonomy && RAIL_TAXONOMIES.get(taxonomy)) || null;
 }
 
 /** WooCommerce shows the product in the shop's listings and search. */

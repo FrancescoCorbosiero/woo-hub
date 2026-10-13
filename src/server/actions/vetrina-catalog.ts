@@ -13,7 +13,13 @@ import {
   type CatalogTermDetail,
   type ProductPlacement,
 } from "@/lib/vetrina/catalog";
-import { readOverview, readPage, readPlacement, readTerm, search } from "@/server/vetrina/catalog";
+import {
+  readOverview,
+  readPage,
+  readPlacement,
+  readTerm,
+  search,
+} from "@/server/vetrina/catalog";
 import { attempt, type VetrinaResult } from "@/server/vetrina/service";
 
 /**

@@ -3,20 +3,29 @@ import type { CatalogPage, CatalogProduct } from "@/lib/vetrina/catalog";
 import {
   appendPage,
   backTarget,
+  DEFAULT_LIST,
   filterQuery,
   fromPage,
   hasFilters,
   joinPages,
+  listParams,
+  listQuery,
   NO_FILTER,
+  paramReader,
   parseQuickView,
   parseTermId,
   queryKey,
+  readListState,
+  sameList,
   searchHref,
+  searchWords,
   sliceRequests,
   statusCount,
   summaryParts,
   termHref,
+  viewHref,
   withinChips,
+  withParams,
 } from "./list-model";
 
 const product = (id: number): CatalogProduct => ({
@@ -57,9 +66,10 @@ const page = (ids: number[], total: number, offset = 0): CatalogPage => ({
 });
 
 describe("routes", () => {
-  it("links terms and searches", () => {
+  it("links terms, quick views and searches", () => {
     expect(termHref("category", 12)).toBe("/vetrina/catalogo/categoria/12");
     expect(termHref("brand", 7)).toBe("/vetrina/catalogo/brand/7");
+    expect(viewHref("soldout")).toBe("/vetrina/catalogo/vista/soldout");
     expect(searchHref("dunk «low» & co")).toBe("/vetrina/catalogo?q=dunk%20%C2%ABlow%C2%BB%20%26%20co");
   });
 
@@ -74,9 +84,13 @@ describe("routes", () => {
     expect(parseQuickView("toString")).toBeNull();
   });
 
-  it("goes back to the parent, or to the catalog at the top level", () => {
+  it("goes back to the parent, or to the catalog's own list at the top level", () => {
     const term = { taxonomy: "brand" as const, id: 9 };
-    expect(backTarget({ term: term as never, ancestors: [] })).toEqual({ href: "/vetrina/catalogo", name: null });
+    expect(backTarget({ term: term as never, ancestors: [] })).toEqual({ href: "/vetrina/catalogo?tab=brand", name: null });
+    expect(backTarget({ term: { taxonomy: "category", id: 9 } as never, ancestors: [] })).toEqual({
+      href: "/vetrina/catalogo",
+      name: null,
+    });
     expect(
       backTarget({
         term: term as never,
@@ -86,6 +100,50 @@ describe("routes", () => {
         ],
       }),
     ).toEqual({ href: "/vetrina/catalogo/brand/4", name: "Jordan" });
+  });
+});
+
+describe("the list's address", () => {
+  it("reads the defaults from a plain address, and from anything unknown", () => {
+    expect(readListState(new URLSearchParams(""))).toEqual(DEFAULT_LIST);
+    expect(readListState(new URLSearchParams("filter=cheap&sort=random&within=abc&q=%20%20"))).toEqual(DEFAULT_LIST);
+  });
+
+  it("reads a search, a chip, a term and an order, and writes them back the same", () => {
+    const state = readListState(new URLSearchParams("q=%20dunk%20&filter=outofstock&within=12&sort=priceAsc"));
+    expect(state).toEqual({ q: "dunk", status: "outofstock", within: 12, sort: "priceAsc" });
+    expect(withParams("/vetrina/catalogo/categoria/3", listParams(state))).toBe(
+      "/vetrina/catalogo/categoria/3?q=dunk&filter=outofstock&within=12&sort=priceAsc",
+    );
+    // Back to the defaults, back to a plain address.
+    expect(withParams("/vetrina/catalogo/categoria/3?q=dunk&filter=outofstock", listParams(DEFAULT_LIST))).toBe(
+      "/vetrina/catalogo/categoria/3",
+    );
+  });
+
+  it("keeps a search no longer than the server takes", () => {
+    expect(readListState(new URLSearchParams(`q=${"a".repeat(150)}`)).q).toHaveLength(100);
+    expect(searchWords(`  ${"b".repeat(99)} c`)).toBe("b".repeat(99));
+  });
+
+  it("reads a page's searchParams like the browser's", () => {
+    const params = paramReader({ q: ["dunk", "panda"], sort: "name", none: undefined });
+    expect(params.get("q")).toBe("dunk");
+    expect(params.get("sort")).toBe("name");
+    expect(params.get("none")).toBeNull();
+    expect(params.get("missing")).toBeNull();
+  });
+
+  it("turns into the server's query, and tells two lists apart", () => {
+    expect(listQuery(DEFAULT_LIST)).toEqual({ sort: "shop" });
+    expect(listQuery({ q: "dunk", status: "hidden", within: 4, sort: "name" })).toEqual({
+      q: "dunk",
+      sort: "name",
+      visibility: "hidden",
+      within: 4,
+    });
+    expect(sameList(DEFAULT_LIST, { ...DEFAULT_LIST })).toBe(true);
+    expect(sameList(DEFAULT_LIST, { ...DEFAULT_LIST, within: 4 })).toBe(false);
   });
 });
 

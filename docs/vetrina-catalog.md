@@ -1,8 +1,10 @@
 # Vetrina — the catalog (design + spec, v1)
 
-Status: **phase 1 done** (this branch): the Hub's Catalog tab is gone, the store
-index stays fresh with what a catalog lists, and every live price write reads
-the store first. Phases 2–4 are not started. See [Phases](#7-phases).
+Status: **phases 1 and 2 done** (this branch): the Hub's Catalog tab is gone,
+the store index stays fresh with what a catalog lists, every live price write
+reads the store first, and the Vetrina has its Catalogo tab — browsing by
+category and brand, search, quick views, the product sheet's place in the
+shop. Phases 3–4 are not started. See [Phases](#7-phases).
 
 The Vetrina gets a second tab, **Catalogo**, next to the homepage editor: the
 shop by **category and brand** — the store's own `product_cat` and
@@ -30,6 +32,7 @@ tree; that is the operator's view, and it is gone.
 | Hiding a category | **Its products are hidden, everywhere** (`catalog_visibility = hidden`), and "Mostra" restores exactly what was hidden: a product already hidden before stays hidden. No plugin change. A product also in other categories disappears there too, and the sheet says so before acting. |
 | Plugins | **woo-hub only.** See [§2](#2-where-things-live). |
 | Prices | The Hub engine stays the only writer of regular prices. The catalog's price actions are inputs to it. See [§3](#3-prices-one-engine-one-way-in). |
+| Sales | **The owner's own call.** A sale is a percentage off the regular price, rounded down, with no end date unless the owner picks one. No cost checks, no price history, no monitors: the owner answers for his prices, the app just makes them quick to set and to undo. |
 
 ## 2. Where things live
 
@@ -60,7 +63,7 @@ Ideas taken from golden-hive-plugin, and what we do differently:
 | There | Here |
 |---|---|
 | Filter & Act: conditions → select all → act | The automatic categories' rule language *is* the filter, and a filter can be saved as an automatic category |
-| Bulk sale % / remove sale / rounding | Saldo, guarded by cost and by the 30-day rule ([§3.4](#34-planned-guards-for-the-catalogs-price-actions)) |
+| Bulk sale % / remove sale / rounding | Saldo and Togli saldo, with a preview and "Annulla" ([§3.4](#34-the-catalogs-price-actions)) |
 | "Saldo fittizio" (raise the regular price, sell at the old one) | **Not ported**: art. 17-bis of the Codice del Consumo measures an announced discount from the lowest price of the previous 30 days |
 | A sorter writing one global `menu_order` | Not ported: one number per product, shared by every category, last sort wins |
 | No undo; snapshots without restore | Every bulk action logged with the previous values; "Annulla" restores them |
@@ -116,7 +119,8 @@ action. Both record what they write in the ledger.)
 ### 3.3 The races, and what pins each one down
 
 Each row is a test against real SQL and a stand-in store
-(`src/server/sync/ledger.db.test.ts`); the last group is planned.
+(`src/server/sync/ledger.db.test.ts`), except the last two, which say how the
+design behaves.
 
 | Situation | What happens |
 |---|---|
@@ -127,21 +131,22 @@ Each row is a test against real SQL and a stand-in store
 | A sale is started (in WordPress, or the Vetrina) after the snapshot was read | The size's regular price is left alone; its stock still syncs; the snapshot learns the sale |
 | A locked size goes on sale | The lock is written: a lock wins over a sale price, as in the plan |
 | "Use the Hub's price" on 42 while 43 was changed in WordPress meanwhile | 42 is written; 43 is kept and listed |
-| *Planned:* the store-wide "reprice discounted" switch is on and the owner runs a Saldo | The Vetrina's sales are recorded in the Hub, and the engine holds their sizes whatever the switch |
-| *Planned:* the cost of a size on sale rises above its sale price | Listed as "Saldo sotto costo", with "Termina saldo" |
-| *Planned:* the engine's own price falls below an active sale price | Listed as "Saldo più caro del prezzo normale", with "Termina saldo" |
-| *Planned:* a store-only product, priced by hand, later gets a source | The owner's prices become locks when they are typed, so they survive it |
+| The store-wide "reprice discounted" switch is on and the owner runs a Saldo | The engine keeps pricing those sizes' regular price, as the switch says; the sale price stays the owner's. The Saldo's preview says so before it runs |
+| A store-only product, priced by hand, later gets a source | The engine prices it from then on, like any product with a source; a lock keeps the owner's price |
 
-### 3.4 Planned guards for the catalog's price actions
+### 3.4 The catalog's price actions
 
 The catalog offers prices by **intention**, never by field:
 
-| Action | Mechanism | Guards |
+| Action | Mechanism | What it takes care of |
 |---|---|---|
-| **Metti in saldo** (x %, until a date) | The sale price of each size, written through the same batch path, recorded in a Hub table of sales | Rounded down, so the discount is never smaller than announced. Never below cost (ask or supplier price + the rules' minimum margin): those sizes are skipped and named. Computed from the **lowest price of the last 30 days** (Omnibus, art. 17-bis Codice del Consumo), which needs a per-size price history the Hub keeps from its own writes. An end date written as WooCommerce's own (`date_on_sale_to`). Preview naming every product, background run, log, "Annulla". |
-| **Togli saldo** | Clears the sale price; the next plan prices the sizes again | Logged; restorable |
-| **Cambia il ricarico** (a category or a brand) | A margin rule scoped to the store term (Vetrina doc §8, never built): previewed, then applied by the engine's own targeted sync | Feed prices (GoldenSneakers) pass through and are never touched; the preview says how many products are concerned |
+| **Metti in saldo** (x %, until a date or not) | The sale price of each size, read live and written through the store's batch endpoints; the sizes' previous sale prices and dates kept for "Annulla" | Rounded down — to ,99 from 10 € up, or to the cent — so the discount is never smaller than announced. A size with no regular price, or where the sale would not be lower, is skipped and named. The end date is WooCommerce's own (`date_on_sale_to`). Preview naming the products, background run, log, "Annulla". The regular price is never written. |
+| **Togli il saldo** | Clears the sale price and dates; the next plan prices the sizes again | Logged; "Annulla" puts the sale back |
+| **Cambia il ricarico** (a category or a brand) | A margin rule scoped to the store term: previewed, then applied by the engine's own targeted sync (phase 4) | Feed prices (GoldenSneakers) pass through and are never touched; the preview says how many products are concerned |
 | **Fissa il prezzo** (one product) | Locks, as the product sheet does today | Below-market warning (exists) |
+
+No cost checks, no 30-day price history, no sale monitors: the owner sets his
+own prices ([§1](#1-decisions)).
 
 ## 4. The screens
 
@@ -193,8 +198,15 @@ products, a background run with progress, a log with the previous values,
   and at every server start. It holds every product but the binned ones, with
   categories, tags, brands, attributes, price, sale, stock, dates, and (phase
   1) the first photo, the catalog visibility, `menu_order` and the sales count.
-  Lists, counts per term and filters are SQL over it; a filter is a rule,
-  decided by the automatic categories' engine (`core/collections.ts`).
+  Each answer (`src/server/vetrina/catalog.ts`) reads the index's light
+  columns once, then filters, counts and sorts in memory — names with an
+  Italian collator, so "Jordan 4" comes before "Jordan 11" — and reads whole
+  only the rows of the page on screen. 10 000 products take a few tens of
+  milliseconds.
+- **Known gap**: the 5-minute check asks WooCommerce for what changed with
+  `status=any`, which leaves the bin out, so a product trashed or deleted in
+  WordPress keeps its last state in the index (and in the catalog's counts and
+  quick views) until the daily full read drops it.
 - **Thumbnails**: never the full-size photo on mobile data. The plan for phase
   2: the storefront's own `woocommerce_thumbnail` through the existing
   `wc-gh/v1/products` cards (one request per page of rows, as the section
@@ -210,19 +222,14 @@ products, a background run with progress, a log with the previous values,
 | Phase | Scope | State |
 |---|---|---|
 | 1 · Foundations | The Hub's Catalog tab removed (drawer on every page); the store index fresh whatever the rules, with photo, visibility, order and sales; every live price write reads the store first | **Done** |
-| 2 · Browse | The tab bar; Catalogo; a category's and a brand's screen; search; quick views; the product sheet extended; homepage ↔ catalog links | — |
-| 3 · Act | Selection and bulk actions; the operations log and "Annulla"; new automatic category, filter → category; Saldo with the guards of §3.4 and the sales table; owner-typed prices as locks | — |
+| 2 · Browse | The tab bar; Catalogo; a category's and a brand's screen; search; quick views; the product sheet extended; homepage ↔ catalog links | **Done** |
+| 3 · Act | Selection and bulk actions; the operations log and "Annulla"; new automatic category, filter → category; Saldo and Togli saldo (§3.4); hide and show a whole category or brand | — |
 | 4 · Margins | A margin rule per store category or brand, previewed, applied by the engine | — |
 
 ## 8. Open questions
 
-1. **Sales first, margins later?** Saldo works on every product; a margin rule
-   never changes a GoldenSneakers price (the supplier's passes through).
-   Roughly what share of the shop is GoldenSneakers, KicksDB, store-only?
-2. **The struck price during a sale**: WooCommerce shows the regular price
-   struck through. When the lowest price of the last 30 days is lower than
-   today's regular price, should the sale lower the regular price to it for
-   its duration, or show "prezzo più basso degli ultimi 30 giorni" next to it
-   (a storefront change)?
-3. **A sale's default length**: none, a week, until Sunday?
-4. **iPhone or Android** (Konsta's theme: `ios` today).
+1. **iPhone or Android** (Konsta's theme: `ios` today).
+
+Answered: sales work on every product and come first, margins (phase 4) never
+change a GoldenSneakers price; a sale has no end date unless the owner picks
+one; and the owner, not the app, answers for what a sale announces.

@@ -1,10 +1,12 @@
 import {
   CATALOG_PAGE_MAX,
   CATALOG_PAGE_SIZE,
+  CATALOG_SORTS,
   QUICK_VIEWS,
   type CatalogPage,
   type CatalogProduct,
   type CatalogQuery,
+  type CatalogSort,
   type CatalogTaxonomy,
   type CatalogTermDetail,
   type FacetCount,
@@ -12,12 +14,15 @@ import {
 } from "@/lib/vetrina/catalog";
 
 /**
- * The catalog list's pure parts: routes, the chips as a query, and how pages
- * of products join up. The screens and hooks next to this file use them;
- * keeping them free of React keeps them testable.
+ * The catalog's pure parts: routes, what a list keeps in its address, the
+ * chips as a query, and how pages of products join up. The screens and hooks
+ * use them; keeping them free of React keeps them testable.
  */
 
 export const CATALOG_HOME = "/vetrina/catalogo";
+
+/** The longest search the server takes. */
+export const MAX_QUERY = 100;
 
 const TERM_SEGMENT: Record<CatalogTaxonomy, string> = { category: "categoria", brand: "brand" };
 
@@ -25,8 +30,37 @@ export function termHref(taxonomy: CatalogTaxonomy, id: number): string {
   return `${CATALOG_HOME}/${TERM_SEGMENT[taxonomy]}/${id}`;
 }
 
+export function viewHref(view: QuickView): string {
+  return `${CATALOG_HOME}/vista/${view}`;
+}
+
 export function searchHref(q: string): string {
   return `${CATALOG_HOME}?q=${encodeURIComponent(q)}`;
+}
+
+/** Words as they are searched: trimmed, and no longer than the server takes. */
+export function searchWords(text: string): string {
+  return text.trim().slice(0, MAX_QUERY).trim();
+}
+
+/** The same address with some parameters set (a value) or dropped (null or ""): "/vetrina/catalogo?tab=brand". */
+export function withParams(href: string, patch: Record<string, string | null>): string {
+  const url = new URL(href, "http://x");
+  for (const [name, value] of Object.entries(patch)) {
+    if (value) url.searchParams.set(name, value);
+    else url.searchParams.delete(name);
+  }
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
+/** A page's searchParams, read like the browser's: the first value of a repeated one. */
+export function paramReader(params: Record<string, string | string[] | undefined>): { get(name: string): string | null } {
+  return {
+    get: (name) => {
+      const value = params[name];
+      return (Array.isArray(value) ? value[0] : value) ?? null;
+    },
+  };
 }
 
 /** A term id from the URL: digits only, so "12abc" or "1e3" never reads as a number. */
@@ -40,10 +74,15 @@ export function parseQuickView(param: string): QuickView | null {
   return (QUICK_VIEWS as readonly string[]).includes(param) ? (param as QuickView) : null;
 }
 
-/** Where a term's back button goes: its parent's screen, or the catalog's home. */
+/**
+ * Where a term's back button goes when there is no screen to go back to (a
+ * link opened from outside, a reload): its parent, or the catalog's home on
+ * the term's own list.
+ */
 export function backTarget(detail: Pick<CatalogTermDetail, "term" | "ancestors">): { href: string; name: string | null } {
   const parent = detail.ancestors.at(-1);
-  return parent ? { href: termHref(detail.term.taxonomy, parent.id), name: parent.name } : { href: CATALOG_HOME, name: null };
+  if (parent) return { href: termHref(detail.term.taxonomy, parent.id), name: parent.name };
+  return { href: detail.term.taxonomy === "brand" ? `${CATALOG_HOME}?tab=brand` : CATALOG_HOME, name: null };
 }
 
 /* ---------------------------------------------------------------- *
@@ -66,7 +105,10 @@ export function hasFilters(f: ListFilter): boolean {
   return f.status !== "all" || f.within != null;
 }
 
-export function filterQuery(f: ListFilter): Pick<CatalogQuery, "stock" | "visibility" | "onSale" | "within"> {
+export function filterQuery(f: {
+  status: StatusFilter;
+  within: { id: number; name?: string } | null;
+}): Pick<CatalogQuery, "stock" | "visibility" | "onSale" | "within"> {
   const out: Pick<CatalogQuery, "stock" | "visibility" | "onSale" | "within"> = {};
   if (f.status === "instock" || f.status === "outofstock") out.stock = f.status;
   if (f.status === "hidden") out.visibility = "hidden";
@@ -75,7 +117,7 @@ export function filterQuery(f: ListFilter): Pick<CatalogQuery, "stock" | "visibi
   return out;
 }
 
-/** What a status chip would show: facets are counted before the chips narrow the list. */
+/** What a status chip would show: its facet leaves its own choice out (see CatalogPage.facets). */
 export function statusCount(status: StatusFilter, facets: CatalogPage["facets"]): number {
   switch (status) {
     case "all":
@@ -107,6 +149,62 @@ export function summaryParts(
   if (counts.hidden > 0) parts.push(words.hidden(counts.hidden));
   if (counts.onSale > 0) parts.push(words.onSale(counts.onSale));
   return parts;
+}
+
+/* ---------------------------------------------------------------- *
+ * What a list keeps in its address
+ * ---------------------------------------------------------------- */
+
+/**
+ * A list screen as the owner left it: the search, the chips, the order. It
+ * lives in the address (?q=, ?filter=, ?within=, ?sort=), so going back to
+ * the screen, the tab bar or a reload opens it the same.
+ */
+export interface ListState {
+  q: string;
+  status: StatusFilter;
+  within: number | null;
+  sort: CatalogSort;
+}
+
+export const DEFAULT_LIST: ListState = { q: "", status: "all", within: null, sort: "shop" };
+
+const oneOf = <T extends string>(list: readonly T[], value: string | null): T | null =>
+  value != null && (list as readonly string[]).includes(value) ? (value as T) : null;
+
+/** The address's list state; anything unknown reads as the default. */
+export function readListState(params: { get(name: string): string | null }): ListState {
+  return {
+    q: searchWords(params.get("q") ?? ""),
+    status: oneOf(STATUS_FILTERS, params.get("filter")) ?? "all",
+    within: parseTermId(params.get("within") ?? ""),
+    sort: oneOf(CATALOG_SORTS, params.get("sort")) ?? "shop",
+  };
+}
+
+/** The parameters for a state, for withParams: the defaults dropped, so an untouched list keeps a plain address. */
+export function listParams(state: ListState): Record<string, string | null> {
+  return {
+    q: state.q || null,
+    filter: state.status === "all" ? null : state.status,
+    within: state.within != null ? String(state.within) : null,
+    sort: state.sort === "shop" ? null : state.sort,
+  };
+}
+
+export function sameList(a: ListState, b: ListState): boolean {
+  const pa = listParams(a);
+  const pb = listParams(b);
+  return Object.keys(pa).every((name) => pa[name] === pb[name]);
+}
+
+/** What a list state asks the server, the screen's term or view aside. */
+export function listQuery(state: ListState): Pick<CatalogQuery, "q" | "sort" | "stock" | "visibility" | "onSale" | "within"> {
+  return {
+    ...(state.q ? { q: state.q } : {}),
+    sort: state.sort,
+    ...filterQuery({ status: state.status, within: state.within != null ? { id: state.within } : null }),
+  };
 }
 
 /* ---------------------------------------------------------------- *

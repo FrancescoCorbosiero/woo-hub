@@ -1,9 +1,11 @@
-import type { CatalogTaxonomy, CatalogTerm, QuickView } from "@/lib/vetrina/catalog";
+import type { CatalogTaxonomy, CatalogTerm } from "@/lib/vetrina/catalog";
+import { MAX_QUERY } from "../term/list-model";
 
 /**
- * The catalog home's pure helpers: where a row leads, how the lists are
- * ordered and grouped, and what the address keeps (?q=, ?tab=brand,
- * ?sort=count). No React here, so the tests can reach every rule.
+ * The catalog home's pure helpers: how the lists are ordered and grouped,
+ * and what the address keeps (?q=, ?tab=brand, ?sort=count). Routes live
+ * with the rest of the catalog's, in ../term/list-model.ts. No React here,
+ * so the tests can reach every rule.
  */
 
 export type HomeTab = CatalogTaxonomy;
@@ -15,31 +17,16 @@ const collator = new Intl.Collator("it", { sensitivity: "base", numeric: true })
 const byName = (a: CatalogTerm, b: CatalogTerm) => collator.compare(a.name, b.name) || a.id - b.id;
 const byCount = (a: CatalogTerm, b: CatalogTerm) => b.count - a.count || byName(a, b);
 
-export function termHref(term: Pick<CatalogTerm, "taxonomy" | "id">): string {
-  return `/vetrina/catalogo/${term.taxonomy === "brand" ? "brand" : "categoria"}/${term.id}`;
-}
-
-export function viewHref(view: QuickView): string {
-  return `/vetrina/catalogo/vista/${view}`;
-}
-
-/** The address's state: which list, in which order, which search. Anything unknown reads as the default. */
+/**
+ * The address's state: which list, in which order, which search (no longer
+ * than the server takes). Anything unknown reads as the default.
+ */
 export function readParams(params: { get(name: string): string | null }): { tab: HomeTab; order: TermOrder; q: string } {
   return {
     tab: params.get("tab") === "brand" ? "brand" : "category",
     order: params.get("sort") === "count" ? "count" : "name",
-    q: params.get("q") ?? "",
+    q: (params.get("q") ?? "").slice(0, MAX_QUERY),
   };
-}
-
-/** The same address with some parameters set (a value) or dropped (null or ""): "/vetrina/catalogo?tab=brand". */
-export function withParams(href: string, patch: Record<string, string | null>): string {
-  const url = new URL(href, "http://x");
-  for (const [name, value] of Object.entries(patch)) {
-    if (value) url.searchParams.set(name, value);
-    else url.searchParams.delete(name);
-  }
-  return `${url.pathname}${url.search}${url.hash}`;
 }
 
 /**

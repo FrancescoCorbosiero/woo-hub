@@ -475,7 +475,7 @@ const background = (run: Promise<unknown>) => void run.catch(() => undefined);
 /** From the Hub: read every product again (the editor's previews need the index), then decide. */
 export function requestFullRead(): void {
   const s = state();
-  if (!storeReady() || s.queued.includes("full")) return;
+  if (!storeReady() || s.running === "full" || s.queued.includes("full")) return;
   background(
     exclusive("full", async () => {
       const woo = await storeClient();

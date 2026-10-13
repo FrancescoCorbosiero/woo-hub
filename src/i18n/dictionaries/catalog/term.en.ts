@@ -1,12 +1,16 @@
 import type { termIt } from "./term.it";
 
+/** A count as the owner reads it: "1,234". */
+const n = (count: number) => count.toLocaleString("en-GB");
+
 export const termEn: typeof termIt = {
   catalog: "Catalog",
   back: "Back",
-  products: (n: number) => (n === 1 ? "1 product" : `${n} products`),
+  products: (count: number) => (count === 1 ? "1 product" : `${n(count)} products`),
   backTo: (name: string) => `Back to ${name}`,
   backToCatalog: "Back to the catalog",
   searchIn: (name: string) => `Search in ${name}`,
+  searchView: "Search this list",
   searchAll: (q: string) => `Search “${q}” in the whole catalog`,
 
   panel: {
@@ -14,9 +18,9 @@ export const termEn: typeof termIt = {
     makeHint: "Products come and go on their own, by a rule: for example every product tagged “sale”.",
     inHomepage: (section: string) => `On the homepage: ${section}`,
     notInHomepage: "Not on the homepage",
-    soldOut: (n: number) => `${n} sold out`,
-    hidden: (n: number) => `${n} hidden`,
-    onSale: (n: number) => `${n} on sale`,
+    soldOut: (count: number) => `${n(count)} sold out`,
+    hidden: (count: number) => `${n(count)} hidden`,
+    onSale: (count: number) => `${n(count)} on sale`,
     allGood: "Everything in stock and visible",
   },
 
@@ -64,7 +68,7 @@ export const termEn: typeof termIt = {
     section: (title: string, position: number) => `${title} #${position}`,
     sectionLabel: (title: string, position: number, pinned: boolean) =>
       `On the homepage: ${title}, position ${position}${pinned ? ", pinned" : ""}`,
-    moreSections: (n: number) => `+${n}`,
+    moreSections: (count: number) => `+${count}`,
     locked: "Price locked",
     noPhoto: "No photo",
     hidden: "Hidden",
@@ -74,6 +78,7 @@ export const termEn: typeof termIt = {
       draft: "Draft",
       pending: "In review",
       private: "Private",
+      future: "Scheduled",
       other: "Not published",
     } as Record<string, string>,
   },

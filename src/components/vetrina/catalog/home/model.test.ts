@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CatalogTerm } from "@/lib/vetrina/catalog";
-import { byLetter, letterOf, readParams, statsLine, termHref, topLevel, viewHref, withParams } from "./model";
+import { withParams } from "../term/list-model";
+import { byLetter, letterOf, readParams, statsLine, topLevel } from "./model";
 
 const term = (id: number, name: string, extra: Partial<CatalogTerm> = {}): CatalogTerm => ({
   taxonomy: "category",
@@ -19,18 +20,14 @@ const term = (id: number, name: string, extra: Partial<CatalogTerm> = {}): Catal
   ...extra,
 });
 
-describe("catalog home links", () => {
-  it("opens a category, a brand and a quick view on their own screens", () => {
-    expect(termHref({ taxonomy: "category", id: 12 })).toBe("/vetrina/catalogo/categoria/12");
-    expect(termHref({ taxonomy: "brand", id: 7 })).toBe("/vetrina/catalogo/brand/7");
-    expect(viewHref("soldout")).toBe("/vetrina/catalogo/vista/soldout");
-  });
-});
-
 describe("readParams / withParams", () => {
   it("reads the defaults when the address says nothing, or something unknown", () => {
     expect(readParams(new URLSearchParams(""))).toEqual({ tab: "category", order: "name", q: "" });
     expect(readParams(new URLSearchParams("tab=tags&sort=price"))).toEqual({ tab: "category", order: "name", q: "" });
+  });
+
+  it("keeps a search no longer than the server takes", () => {
+    expect(readParams(new URLSearchParams(`q=${"a".repeat(150)}`)).q).toHaveLength(100);
   });
 
   it("reads the brand list, the count order and the search", () => {

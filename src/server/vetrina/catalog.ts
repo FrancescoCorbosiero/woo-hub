@@ -5,6 +5,7 @@ import {
   CATALOG_PAGE_SIZE,
   QUICK_VIEWS,
   isListed,
+  railTaxonomy,
   type CatalogOverview,
   type CatalogPage,
   type CatalogProduct,
@@ -25,6 +26,7 @@ import type { Homepage } from "@/lib/vetrina/types";
 import { skuKey } from "@/lib/skus";
 import { decodeEntities, type IndexRow } from "@/server/collections/index-rows";
 import { readIndexFacts, readIndexRowsById, type IndexFacts } from "@/server/collections/repo";
+import { getRunnerStatus } from "@/server/collections/runner";
 import { collectionsByTerm, freshen } from "@/server/collections/service";
 import { demoMode, storeClient, storeReady } from "@/server/collections/store";
 import { lockedPriceCounts } from "@/server/overrides/model";
@@ -212,26 +214,35 @@ export function inView(view: QuickView, f: IndexFacts, defaultCategories: Readon
  * Text search
  * ---------------------------------------------------------------- */
 
-/** Lower case, accents off, spaces squeezed: "Ébène  Runner" → "ebene runner". */
+/**
+ * Lower case, accents off, hyphens and slashes read as spaces, spaces
+ * squeezed: "Ébène  Air-Force" → "ebene air force".
+ */
 export function fold(text: string): string {
   return text
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
+    .replace(/[-_/]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
+
+/** Letters and digits only: a style code typed without its separators ("dd1391100") still finds "DD1391-100". */
+const compact = (text: string) => fold(text).replace(/[^a-z0-9]/g, "");
 
 const wordsOf = (q: string) => fold(q).split(" ").filter(Boolean);
 const hasWords = (text: string, words: readonly string[]) => words.every((w) => text.includes(w));
 
 /**
  * The products a search finds: every word of it in the name or the SKU, in
- * any order — "dunk panda" finds "Nike Dunk Low Panda".
+ * any order — "dunk panda" finds "Nike Dunk Low Panda" — or the SKU written
+ * with or without its separators.
  */
 export function productMatcher(q: string): (f: IndexFacts) => boolean {
   const words = wordsOf(q);
-  return (f) => hasWords(fold(`${f.name} ${f.sku}`), words);
+  const code = compact(q);
+  return (f) => hasWords(fold(`${f.name} ${f.sku}`), words) || (code !== "" && compact(f.sku).includes(code));
 }
 
 const byName = (a: IndexFacts, b: IndexFacts) => collator.compare(a.name, b.name) || a.id - b.id;
@@ -239,10 +250,11 @@ const byName = (a: IndexFacts, b: IndexFacts) => collator.compare(a.name, b.name
 /** What a search finds, best first: the exact SKU, then a SKU or a name starting with it, then the rest. */
 export function rankProducts(facts: readonly IndexFacts[], q: string): IndexFacts[] {
   const needle = fold(q);
+  const code = compact(q);
   const rank = (f: IndexFacts) => {
-    const sku = fold(f.sku);
-    if (sku === needle) return 0;
-    return sku.startsWith(needle) || fold(f.name).startsWith(needle) ? 1 : 2;
+    const sku = compact(f.sku);
+    if (sku !== "" && sku === code) return 0;
+    return (code !== "" && sku.startsWith(code)) || fold(f.name).startsWith(needle) ? 1 : 2;
   };
   return facts
     .filter(productMatcher(q))
@@ -316,16 +328,21 @@ function baseFilter(query: CatalogQuery, trees: CatalogTrees): (f: IndexFacts) =
     (!term || holdsAny(f, taxonomy, term)) && (!query.view || inView(query.view, f, defaults)) && (!text || text(f));
 }
 
-/** The chips that narrow a page: stock, visibility, sale, a term of the other taxonomy. */
-function narrowFilter(query: CatalogQuery, trees: CatalogTrees): (f: IndexFacts) => boolean {
-  const other = otherTaxonomy(query.taxonomy ?? "category");
-  const within = query.within != null ? withDescendants(query.within, trees[other].children) : null;
+/** The status chips: stock, visibility, sale. */
+function statusFilter(query: CatalogQuery): (f: IndexFacts) => boolean {
   return (f) =>
     // Back-orderable is buyable: "in stock" is everything not sold out.
     (!query.stock || isSoldOut(f) === (query.stock === "outofstock")) &&
     (!query.visibility || isListed(f.visibility) === (query.visibility === "visible")) &&
-    (query.onSale == null || f.onSale === query.onSale) &&
-    (!within || holdsAny(f, other, within));
+    (query.onSale == null || f.onSale === query.onSale);
+}
+
+/** The other row of chips: a term of the other taxonomy, its sub-terms included. */
+function withinFilter(query: CatalogQuery, trees: CatalogTrees): (f: IndexFacts) => boolean {
+  if (query.within == null) return () => true;
+  const other = otherTaxonomy(query.taxonomy ?? "category");
+  const within = withDescendants(query.within, trees[other].children);
+  return (f) => holdsAny(f, other, within);
 }
 
 /** These terms with their products, the fullest first; the empty ones left out. */
@@ -339,20 +356,35 @@ function facetList(counts: Map<number, TermCounts>, ids: Iterable<number>, tree:
   return out.sort((a, b) => b.count - a.count || collator.compare(a.name, b.name) || a.id - b.id);
 }
 
+/** The chosen term stays among the facets, at 0 when nothing carries it: its chip keeps its name. */
+function withChosen(list: FacetCount[], chosen: number | undefined, tree: TermTree): FacetCount[] {
+  const term = chosen != null ? tree.terms.get(chosen) : undefined;
+  if (!term || list.some((f) => f.id === term.id)) return list;
+  return [...list, { id: term.id, name: term.name, count: 0 }];
+}
+
+/**
+ * Each chip counts what tapping it would show, the other chips staying on:
+ * the status chips over the chosen brand (or category), that row's chips
+ * over the chosen status. A chip never counts itself in.
+ */
 function facetsOf(base: readonly IndexFacts[], query: CatalogQuery, trees: CatalogTrees): CatalogPage["facets"] {
   const taxonomy = query.taxonomy ?? "category";
   const own = trees[taxonomy];
-  const other = trees[otherTaxonomy(taxonomy)];
-  const outofstock = base.filter(isSoldOut).length;
+  const otherName = otherTaxonomy(taxonomy);
+  const other = trees[otherName];
+  const forStatus = base.filter(withinFilter(query, trees));
+  const forWithin = base.filter(statusFilter(query));
+  const outofstock = forStatus.filter(isSoldOut).length;
   return {
-    instock: base.length - outofstock,
+    instock: forStatus.length - outofstock,
     outofstock,
-    hidden: base.filter((f) => !isListed(f.visibility)).length,
-    onSale: base.filter((f) => f.onSale).length,
+    hidden: forStatus.filter((f) => !isListed(f.visibility)).length,
+    onSale: forStatus.filter((f) => f.onSale).length,
     children:
       query.termId != null ? facetList(rollUp(base, taxonomy, own.parents), own.children.get(query.termId) ?? [], own) : [],
-    // Rolled up like the counts, so a chip's number is what tapping it shows.
-    within: facetList(rollUp(base, otherTaxonomy(taxonomy), other.parents), other.terms.keys(), other),
+    // Rolled up like the counts: "Nike" holds what "Nike Dunk" holds.
+    within: withChosen(facetList(rollUp(forWithin, otherName, other.parents), other.terms.keys(), other), query.within, other),
   };
 }
 
@@ -370,7 +402,9 @@ const wholeOr = (value: number | undefined, fallback: number) =>
 /** Which products a query shows, in which order, and the counts around them — before any row is read. */
 export function selectPage(facts: readonly IndexFacts[], query: CatalogQuery, trees: CatalogTrees): PageSelection {
   const base = facts.filter(baseFilter(query, trees));
-  const matching = base.filter(narrowFilter(query, trees)).sort(compareFacts(query.sort ?? "shop"));
+  const byStatus = statusFilter(query);
+  const byWithin = withinFilter(query, trees);
+  const matching = base.filter((f) => byStatus(f) && byWithin(f)).sort(compareFacts(query.sort ?? "shop"));
   const offset = Math.max(0, wholeOr(query.offset, 0));
   const limit = Math.min(CATALOG_PAGE_MAX, Math.max(1, wholeOr(query.limit, CATALOG_PAGE_SIZE)));
   return {
@@ -394,11 +428,6 @@ export interface HomepagePresence {
 
 export const termKey = (taxonomy: CatalogTaxonomy, id: number) => `${taxonomy}:${id}`;
 
-const RAIL_TAXONOMIES = new Map<string, CatalogTaxonomy>([
-  ["product_cat", "category"],
-  ["product_brand", "brand"],
-]);
-
 function pushTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
   const list = map.get(key);
   if (list) list.push(value);
@@ -417,7 +446,7 @@ export function presenceOf(home: Homepage): HomepagePresence {
     if (block.kind !== "rail") continue;
     const { rail } = block;
     const section: SectionRef = { key: rail.key, title: rail.title.trim() || rail.key };
-    const taxonomy = rail.taxonomy ? RAIL_TAXONOMIES.get(rail.taxonomy) : undefined;
+    const taxonomy = railTaxonomy(rail.taxonomy);
     if (taxonomy && rail.terms.length === 1) pushTo(out.terms, termKey(taxonomy, rail.terms[0].id), section);
     const pinned = new Set(rail.pin);
     let position = 0;
@@ -459,7 +488,9 @@ const g = globalThis as { __vetrinaCatalogPresence?: PresenceCache };
 function readPresence(previous: HomepagePresence | null): PresenceCache {
   const cache: PresenceCache = { at: Date.now(), reading: Promise.resolve(NO_PRESENCE), settled: previous };
   cache.reading = (async () => presenceOf((await readHome()).home))()
-    .catch(() => NO_PRESENCE)
+    // A site that fails once (a timeout, a 502) has not emptied its homepage:
+    // what was known stays until a read succeeds.
+    .catch(() => previous ?? NO_PRESENCE)
     .then((presence) => (cache.settled = presence));
   return cache;
 }
@@ -490,7 +521,7 @@ export async function homepagePresence(): Promise<HomepagePresence> {
   return cache.settled ?? atMost(cache.reading, PRESENCE_WAIT_MS, NO_PRESENCE);
 }
 
-/** Forget the sections (after a homepage publish): the next answer waits for the homepage as it is now. */
+/** Forget the sections (after a section is published): the next answer waits for the homepage as it is now. */
 export function forgetHomepagePresence(): void {
   delete g.__vetrinaCatalogPresence;
 }
@@ -597,28 +628,41 @@ async function catalogProducts(ids: number[], ctx: CatalogContext, locks: Map<st
   });
 }
 
+// The index was empty the last time the catalog looked, and the full read
+// filling it may still be going: its first pages are a fraction of the shop.
+const filling = globalThis as { __vetrinaCatalogFilling?: boolean };
+
+/** The index is read whole for the first time: its counts are not the shop's yet. */
+function firstReadUnderWay(indexProducts: number, fullRead: boolean): boolean {
+  if (indexProducts === 0) filling.__vetrinaCatalogFilling = true;
+  else if (!fullRead) filling.__vetrinaCatalogFilling = false;
+  return filling.__vetrinaCatalogFilling === true;
+}
+
 /** The catalog's home: every category and brand with its counts, and the quick views. */
 export async function readOverview(): Promise<CatalogOverview> {
+  const runner = getRunnerStatus();
+  const fullRead = runner.running === "full" || runner.queued.includes("full");
   const [facts, ctx] = await Promise.all([
     readIndexFacts(),
     loadContext(),
     // Opening the catalog brings the index up to date in the background (an
-    // empty one is read whole); this answer shows the index as it is now.
-    freshen().catch(() => undefined),
+    // empty one is read whole); this answer shows the index as it is now. A
+    // full read already under way is not asked for twice.
+    fullRead ? undefined : freshen().catch(() => undefined),
   ]);
   const defaults = defaultCategoryIds(ctx.category);
   return {
     categories: catalogTerms("category", facts, ctx),
     brands: catalogTerms("brand", facts, ctx),
     views: QUICK_VIEWS.map((view) => ({ view, count: facts.filter((f) => inView(view, f, defaults)).length })),
-    indexProducts: facts.length,
+    // Until the first read is done the screen keeps saying it is reading.
+    indexProducts: firstReadUnderWay(facts.length, fullRead) ? 0 : facts.length,
     demo: ctx.demo,
   };
 }
 
-/** A category's or a brand's screen: the term, where it sits, its sub-terms. */
-export async function readTerm(taxonomy: CatalogTaxonomy, id: number): Promise<CatalogTermDetail> {
-  const [facts, ctx] = await Promise.all([readIndexFacts(), loadContext()]);
+function termDetail(taxonomy: CatalogTaxonomy, id: number, facts: readonly IndexFacts[], ctx: CatalogContext): CatalogTermDetail {
   const tree = ctx[taxonomy];
   if (!tree.terms.has(id)) {
     throw new VetrinaError(
@@ -636,9 +680,12 @@ export async function readTerm(taxonomy: CatalogTaxonomy, id: number): Promise<C
   };
 }
 
-/** A page of products: a term's, a quick view's or a search's, narrowed, sorted, with its facets. */
-export async function readPage(query: CatalogQuery): Promise<CatalogPage> {
-  const [facts, ctx, locks] = await Promise.all([readIndexFacts(), loadContext(), lockCounts()]);
+async function pageOf(
+  facts: readonly IndexFacts[],
+  query: CatalogQuery,
+  ctx: CatalogContext,
+  locks: Map<string, number>,
+): Promise<CatalogPage> {
   const page = selectPage(facts, query, ctx);
   return {
     products: await catalogProducts(page.ids, ctx, locks),
@@ -646,6 +693,32 @@ export async function readPage(query: CatalogQuery): Promise<CatalogPage> {
     offset: page.offset,
     facets: page.facets,
   };
+}
+
+/** A category's or a brand's screen: the term, where it sits, its sub-terms. */
+export async function readTerm(taxonomy: CatalogTaxonomy, id: number): Promise<CatalogTermDetail> {
+  const [facts, ctx] = await Promise.all([readIndexFacts(), loadContext()]);
+  return termDetail(taxonomy, id, facts, ctx);
+}
+
+/** A page of products: a term's, a quick view's or a search's, narrowed, sorted, with its facets. */
+export async function readPage(query: CatalogQuery): Promise<CatalogPage> {
+  const [facts, ctx, locks] = await Promise.all([readIndexFacts(), loadContext(), lockCounts()]);
+  return pageOf(facts, query, ctx, locks);
+}
+
+/**
+ * A term's whole screen at once — the term and its first page of products —
+ * from one read of the index and one of its context, not one each.
+ */
+export async function readTermScreen(
+  taxonomy: CatalogTaxonomy,
+  id: number,
+  query: Omit<CatalogQuery, "taxonomy" | "termId" | "view">,
+): Promise<{ detail: CatalogTermDetail; page: CatalogPage }> {
+  const [facts, ctx, locks] = await Promise.all([readIndexFacts(), loadContext(), lockCounts()]);
+  const detail = termDetail(taxonomy, id, facts, ctx);
+  return { detail, page: await pageOf(facts, { ...query, taxonomy, termId: id }, ctx, locks) };
 }
 
 const SEARCH_TERMS = 5;

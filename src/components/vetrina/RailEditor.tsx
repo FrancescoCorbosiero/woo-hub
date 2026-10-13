@@ -14,6 +14,7 @@ import {
   DialogButton,
   Link as KLink,
   Navbar,
+  NavbarBackLink,
   Page,
   Preloader,
   Segmented,
@@ -48,8 +49,9 @@ import { FieldsSheet } from "./FieldsSheet";
 import { HistorySheet } from "./HistorySheet";
 import { ProductSheet } from "./ProductSheet";
 import { formatFromPrice } from "./format";
-import { ChevronLeft, ChevronRight, EyeOff, Funnel, Grip, Lock, More, Pin } from "./icons";
+import { ChevronRight, EyeOff, Funnel, Grip, Lock, More, Pin } from "./icons";
 import { SEGMENTED_COLORS } from "./segmented";
+import { useBack } from "./use-back";
 
 export interface EditorOptions {
   fallbacks: RailFallback[];
@@ -91,20 +93,23 @@ export function RailEditor({
   return <Editor railKey={railKey} initial={initial.data} options={options} />;
 }
 
+/**
+ * Back to where the editor was opened from — the homepage, or a category's
+ * screen in the catalog — or the homepage when there is none (a link from
+ * outside). An arrow alone: the screen behind is not always the homepage,
+ * and the section's title keeps its room.
+ */
 function BackLink({ dirty }: { dirty: boolean }) {
   const { t } = useI18n();
-  const router = useRouter();
+  const back = useBack("/vetrina");
   return (
-    <KLink
+    <NavbarBackLink
       onClick={() => {
         if (dirty && !window.confirm(t.vetrina.editor.leaveConfirm)) return;
-        router.push("/vetrina");
+        back();
       }}
-      className="gap-0.5"
-    >
-      <ChevronLeft className="h-5 w-5" />
-      {t.vetrina.title}
-    </KLink>
+      aria-label={t.vetrinaCatalog.term.back}
+    />
   );
 }
 
@@ -377,6 +382,9 @@ function Editor({ railKey, initial, options }: { railKey: string; initial: Vetri
       <Navbar
         title={shownTitle || base.key}
         subtitle={shownEyebrow || undefined}
+        // Clear of the back arrow and the menu, however long the section's title.
+        titleClassName="max-w-[calc(100%-152px)] truncate"
+        subtitleClassName="truncate"
         left={<BackLink dirty={dirty} />}
         right={
           <KLink onClick={() => setSectionMenu(true)} aria-label={v.menu.title}>

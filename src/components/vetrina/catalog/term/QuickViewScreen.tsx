@@ -7,9 +7,9 @@ import type { CatalogPage, CatalogQuery, QuickView } from "@/lib/vetrina/catalog
 import type { VetrinaResult } from "@/server/vetrina/service";
 import { ErrorState } from "../../ErrorState";
 import { TabbarSpacer } from "../TabbarSpacer";
-import { BackButton, SearchEverywhere, SearchField, useListControls } from "./browse";
+import { BackButton, SearchEverywhere, SearchField, useListControls, useStart } from "./browse";
 import { FilterChips } from "./FilterChips";
-import { CATALOG_HOME, filterQuery, hasFilters, NO_FILTER } from "./list-model";
+import { CATALOG_HOME, filterQuery, hasFilters, NO_FILTER, type ListState } from "./list-model";
 import { ProductList } from "./ProductList";
 import { SortActions } from "./SortActions";
 
@@ -21,18 +21,21 @@ import { SortActions } from "./SortActions";
 export function QuickViewScreen({
   view,
   page,
+  served,
   demo,
 }: {
   view: QuickView;
-  /** Page 1 in the shop's order, read by the server. */
+  /** Page 1 of the list, read by the server. */
   page: VetrinaResult<CatalogPage>;
+  /** The list state (search, brand, order) that page answers. */
+  served: ListState;
   demo: boolean;
 }) {
   const { t } = useI18n();
   const v = t.vetrinaCatalog.term;
   const about = v.views[view];
-  const initial = page.ok ? page.data : undefined;
-  const controls = useListControls(initial?.facets ?? null);
+  const { start, facets, initial } = useStart(page, served, true);
+  const controls = useListControls(facets, start);
   const { q, filter, sort, setFilter } = controls;
 
   const query = React.useMemo<CatalogQuery>(
@@ -41,13 +44,15 @@ export function QuickViewScreen({
   );
 
   return (
-    <Page>
+    // The search bar's close button waits just past the right edge, scaled
+    // to nothing: the page must not scroll sideways to it.
+    <Page className="!overflow-x-hidden">
       <Navbar
         title={about.title}
         subtitle={initial ? v.products(initial.total) : undefined}
         titleClassName="max-w-[calc(100%-152px)] truncate"
         left={<BackButton href={CATALOG_HOME} label={v.backToCatalog} />}
-        subnavbar={<SearchField value={controls.text} onChange={controls.setText} placeholder={v.searchIn(about.title)} />}
+        subnavbar={<SearchField value={controls.text} onChange={controls.setText} placeholder={v.searchView} />}
       />
 
       {!controls.text.trim() && <p className="px-5 pb-1 pt-3 text-[15px] leading-snug opacity-60">{about.hint}</p>}

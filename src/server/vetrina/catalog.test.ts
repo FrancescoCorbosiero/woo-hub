@@ -143,8 +143,9 @@ describe("quick views", () => {
 });
 
 describe("search", () => {
-  it("folds case, accents and spaces", () => {
+  it("folds case, accents, spaces, hyphens and slashes", () => {
     expect(fold("  Ébène   RUNNER ")).toBe("ebene runner");
+    expect(fold("Air-Force 1 / '07")).toBe("air force 1 '07");
   });
 
   it("finds a product by every word of the query, in its name or SKU", () => {
@@ -153,6 +154,18 @@ describe("search", () => {
     expect(match(facts({ id: 1, name: "Nike Dunk Low Grey" }))).toBe(false);
     expect(productMatcher("ebene")(facts({ id: 1, name: "Ébène Runner" }))).toBe(true);
     expect(productMatcher("dd1391")(facts({ id: 1, sku: "DD1391-100" }))).toBe(true);
+  });
+
+  it("finds a style code typed with or without its separators, and a hyphenated name", () => {
+    const shoe = facts({ id: 1, name: "Nike Air Force 1 Low", sku: "DD1391-100" });
+    expect(productMatcher("dd1391100")(shoe)).toBe(true);
+    expect(productMatcher("DD1391-100")(shoe)).toBe(true);
+    expect(productMatcher("dd1391 100")(shoe)).toBe(true);
+    expect(productMatcher("air-force")(shoe)).toBe(true);
+    expect(productMatcher("dd1391101")(shoe)).toBe(false);
+    // The exact code ranks first, however it was typed.
+    const other = facts({ id: 2, name: "DD1391100 Tee", sku: "TEE-1" });
+    expect(ids(rankProducts([other, shoe], "dd1391100"))).toEqual([1, 2]);
   });
 
   it("ranks the exact SKU first, then what starts with the query, then the rest, by name", () => {
@@ -215,22 +228,46 @@ describe("a page of products", () => {
     facts({ id: 6, name: "F", categories: [], brands: [], menuOrder: 6, status: "draft" }),
   ];
 
-  it("takes a term with its sub-terms, and counts the facets before the chips narrow it", () => {
+  it("takes a term with its sub-terms; each chip counts with the other chips on, never itself", () => {
     const page = selectPage(list, { taxonomy: "category", termId: 10, stock: "instock" }, trees());
     expect(page.ids).toEqual([1, 2, 4]);
     expect(page.total).toBe(3);
+    // The status chips leave their own choice out: "Esauriti" still says 1.
     expect(page.facets).toMatchObject({ instock: 3, outofstock: 1, hidden: 1, onSale: 1 });
     expect(page.facets.children).toEqual([
       { id: 11, name: "Basse", count: 3 },
       { id: 13, name: "Alte", count: 1 },
     ]);
-    // Brands rolled up like the counts: Nike holds 1, 2 and 3 once each.
+    // The brands count the in-stock products, rolled up: Nike holds 1 and 2 once each.
     expect(page.facets.within).toEqual([
-      { id: 100, name: "Nike", count: 3 },
-      { id: 102, name: "Nike Air Force 1", count: 2 },
+      { id: 100, name: "Nike", count: 2 },
       { id: 101, name: "Nike Dunk", count: 2 },
       { id: 200, name: "Adidas", count: 1 },
+      { id: 102, name: "Nike Air Force 1", count: 1 },
     ]);
+  });
+
+  it("with a brand chosen, the status chips count inside it, and the brands with no status on", () => {
+    const page = selectPage(list, { taxonomy: "category", termId: 10, within: 102 }, trees());
+    // Nike Air Force 1 holds 2 (on sale) and 3 (sold out).
+    expect(page.ids).toEqual([2, 3]);
+    expect(page.facets).toMatchObject({ instock: 1, outofstock: 1, hidden: 0, onSale: 1 });
+    expect(page.facets.within.map((f) => [f.id, f.count])).toEqual([
+      [100, 3],
+      [102, 2],
+      [101, 2],
+      [200, 1],
+    ]);
+  });
+
+  it("keeps the chosen term among the facets at 0 when nothing carries it, and invents none", () => {
+    const t = trees();
+    const page = selectPage(list, { taxonomy: "category", termId: 10, within: 200, stock: "outofstock" }, t);
+    expect(page.ids).toEqual([]);
+    expect(page.facets.within).toContainEqual({ id: 200, name: "Adidas", count: 0 });
+    expect(selectPage(list, { taxonomy: "category", termId: 10, within: 999 }, t).facets.within.some((f) => f.id === 999)).toBe(
+      false,
+    );
   });
 
   it("narrows by visibility, sale and a term of the other taxonomy (its sub-terms included)", () => {
@@ -402,6 +439,20 @@ describe("the homepage's sections, remembered", () => {
     forgetHomepagePresence();
     await homepagePresence();
     expect(readHome).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps the sections it knew when reading the homepage again fails", async () => {
+    vi.useFakeTimers();
+    readHome.mockResolvedValueOnce(homeRead());
+    expect((await homepagePresence()).products.size).toBeGreaterThan(0);
+    readHome.mockRejectedValueOnce(new Error("502 Bad Gateway"));
+    vi.advanceTimersByTime(61_000);
+    await homepagePresence();
+    await vi.advanceTimersByTimeAsync(0);
+    const after = await homepagePresence();
+    expect(readHome).toHaveBeenCalledTimes(2);
+    expect(after.products.get(3)).toHaveLength(1);
+    expect(after.terms.get("category:11")).toHaveLength(1);
   });
 
   it("gives no sections, never an error, when the homepage cannot be read — and does not ask again at once", async () => {

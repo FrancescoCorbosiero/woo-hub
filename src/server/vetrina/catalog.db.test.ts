@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
   readHome: vi.fn(),
   freshen: vi.fn(),
   overrides: null as unknown,
+  runner: { running: null as string | null, queued: [] as string[] },
 }));
 
 vi.mock("@/server/collections/store", () => ({
@@ -42,6 +43,7 @@ vi.mock("@/server/collections/service", () => ({
     return mocks.collections;
   },
 }));
+vi.mock("@/server/collections/runner", () => ({ getRunnerStatus: () => mocks.runner }));
 vi.mock("./service", () => ({ readHome: mocks.readHome }));
 vi.mock("@/server/overrides/repo", () => ({ getOverrides: async () => mocks.overrides }));
 
@@ -263,6 +265,7 @@ describe.skipIf(!enabled)("the Vetrina catalog's reads (real SQL)", () => {
     mocks.readHome.mockResolvedValue({ home: HOME, locks: {}, collections: {}, source: "wordpress" });
     mocks.freshen.mockReset();
     mocks.freshen.mockResolvedValue(undefined);
+    mocks.runner = { running: null, queued: [] };
     forgetHomepagePresence();
   });
 
@@ -317,6 +320,25 @@ describe.skipIf(!enabled)("the Vetrina catalog's reads (real SQL)", () => {
     ]);
   });
 
+  it("keeps saying the shop is being read until its first full read is done, and never asks for it twice", async () => {
+    const { db, storeIndex, upsertIndexRows, readOverview } = await load();
+    await db.delete(storeIndex);
+    expect((await readOverview()).indexProducts).toBe(0);
+    expect(mocks.freshen).toHaveBeenCalledTimes(1);
+    // The full read is under way and has written its first page.
+    mocks.runner = { running: "full", queued: [] };
+    await upsertIndexRows(SHOP.slice(0, 3));
+    expect((await readOverview()).indexProducts).toBe(0);
+    expect(mocks.freshen).toHaveBeenCalledTimes(1);
+    // Done: the whole shop, and the screen shows it.
+    mocks.runner = { running: null, queued: [] };
+    await upsertIndexRows(SHOP);
+    expect((await readOverview()).indexProducts).toBe(8);
+    // A later full read (the daily one) does not hide a filled index.
+    mocks.runner = { running: "full", queued: [] };
+    expect((await readOverview()).indexProducts).toBe(8);
+  });
+
   it("gives each term the homepage sections showing it alone", async () => {
     const { readOverview } = await load();
     const overview = await readOverview();
@@ -365,6 +387,15 @@ describe.skipIf(!enabled)("the Vetrina catalog's reads (real SQL)", () => {
     expect(dunk.ancestors).toEqual([{ id: 100, name: "Nike" }]);
     await expect(readTerm("category", 999)).rejects.toMatchObject({ code: "not_found" });
     await expect(readTerm("brand", 10)).rejects.toMatchObject({ code: "not_found" });
+  });
+
+  it("reads a term's screen at once: the term and its first page, narrowed", async () => {
+    const { readTermScreen } = await load();
+    const { detail, page } = await readTermScreen("category", 10, { stock: "instock", sort: "name" });
+    expect(detail.term).toMatchObject({ id: 10, count: 5 });
+    expect(ids(page.products)).toEqual([3, 8, 2, 1]);
+    expect(page.facets).toMatchObject({ instock: 4, outofstock: 1 });
+    await expect(readTermScreen("brand", 10, {})).rejects.toMatchObject({ code: "not_found" });
   });
 
   it("lists a term's products with its sub-terms', whole, with locks and homepage places", async () => {
@@ -426,7 +457,7 @@ describe.skipIf(!enabled)("the Vetrina catalog's reads (real SQL)", () => {
     expect(past.total).toBe(5);
   });
 
-  it("counts the facets before the chips narrow the list", async () => {
+  it("counts each chip with the other chips on, never itself", async () => {
     const { readPage } = await load();
     const soldOut = await readPage({ taxonomy: "category", termId: 10, stock: "outofstock" });
     expect(ids(soldOut.products)).toEqual([4]);
@@ -440,13 +471,17 @@ describe.skipIf(!enabled)("the Vetrina catalog's reads (real SQL)", () => {
         { id: 11, name: "Basse", count: 3 },
         { id: 13, name: "Alte", count: 1 },
       ],
-      within: [
-        { id: 100, name: "Nike", count: 3 },
-        { id: 102, name: "Nike Air Force 1", count: 2 },
-        { id: 101, name: "Nike Dunk", count: 2 },
-        { id: 200, name: "Adidas", count: 1 },
-      ],
+      // Only the sold-out one: tapping a brand keeps "Esauriti" on.
+      within: [{ id: 200, name: "Adidas", count: 1 }],
     });
+    const dunk = await readPage({ taxonomy: "category", termId: 10, within: 101 });
+    expect(dunk.facets).toMatchObject({ instock: 2, outofstock: 0, hidden: 0, onSale: 0 });
+    expect(dunk.facets.within.map((f) => [f.id, f.count])).toEqual([
+      [100, 3],
+      [102, 2],
+      [101, 2],
+      [200, 1],
+    ]);
     expect(ids((await readPage({ taxonomy: "category", termId: 10, stock: "instock" })).products)).toEqual([3, 2, 1, 8]);
     expect(ids((await readPage({ taxonomy: "category", termId: 10, within: 101 })).products)).toEqual([2, 1]);
     expect(ids((await readPage({ taxonomy: "category", termId: 10, within: 100 })).products)).toEqual([3, 2, 1]);

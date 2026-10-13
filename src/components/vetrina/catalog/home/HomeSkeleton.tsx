@@ -1,6 +1,6 @@
 "use client";
 
-import { Link as KLink, List, Navbar, Page, Preloader, Searchbar } from "konsta/react";
+import { Link as KLink, List, ListItem, Navbar, Page, Preloader, Searchbar } from "konsta/react";
 import { useI18n } from "@/i18n/provider";
 import { ChevronLeft } from "../../icons";
 import { useStandalone } from "../../sheet-mount";
@@ -43,7 +43,7 @@ export function CatalogHomeSkeleton() {
             placeholder={h.search}
             onChange={() => undefined}
             clearButton={false}
-            inputStyle={{ pointerEvents: "none" }}
+            inputStyle={{ pointerEvents: "none", outline: "none" }}
             aria-hidden
           />
         }
@@ -51,7 +51,7 @@ export function CatalogHomeSkeleton() {
 
       <div aria-hidden className="animate-pulse">
         <div className="px-4 pt-2">
-          <div className={`h-11 ${bar}`} />
+          <div className={`h-12 ${bar}`} />
         </div>
         <div className="-mb-2 mt-3 flex h-11 items-center gap-2 overflow-hidden px-4">
           {[96, 112, 104].map((width) => (
@@ -59,12 +59,16 @@ export function CatalogHomeSkeleton() {
           ))}
         </div>
         <div className={`mx-4 mt-8 h-4 w-32 ${bar}`} />
+        {/* Rows like the first group's: a tile, the name, its sections, the count. */}
         <List strong inset className="!mt-3">
-          {[55, 38, 62, 45, 70, 50, 40].map((width, i) => (
-            <li key={i} className="flex h-[52px] items-center justify-between ps-4 pe-4">
-              <span className={`h-3.5 ${bar}`} style={{ width: `${width}%` }} />
-              <span className={`h-3.5 w-8 ${bar}`} />
-            </li>
+          {[55, 38, 62, 45, 70].map((width, i) => (
+            <ListItem
+              key={i}
+              media={<span className="block h-[30px] w-[30px] rounded-[8px] bg-black/[0.08] dark:bg-white/[0.12]" />}
+              title={<span className={`block h-3.5 ${bar}`} style={{ width: `${width}%` }} />}
+              text={<span className={`mt-2 block h-3 w-24 ${bar}`} />}
+              after={<span className={`block h-3.5 w-8 ${bar}`} />}
+            />
           ))}
         </List>
       </div>

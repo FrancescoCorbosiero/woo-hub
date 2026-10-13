@@ -207,8 +207,13 @@ export function ProductSheet({
           {card && (
             <div className="px-4 pb-[calc(env(safe-area-inset-bottom)+24px)]">
               <div className="flex items-center gap-3">
+                {/* A catalog row opened before its store card arrived has no photo yet: an empty tile, not src="". */}
                 {/* eslint-disable-next-line @next/next/no-img-element -- the shop's own thumbnail sizes */}
-                <img src={card.image} alt="" className="h-20 w-20 shrink-0 rounded-2xl bg-white object-contain dark:bg-white/10" />
+                <img
+                  src={card.image || undefined}
+                  alt=""
+                  className="h-20 w-20 shrink-0 rounded-2xl bg-white object-contain dark:bg-white/10"
+                />
                 <div className="min-w-0 flex-1">
                   <h2 className="line-clamp-2 text-[18px] font-bold leading-snug">{card.name}</h2>
                   <div className="mt-0.5 font-mono text-[12px] opacity-50">{card.sku}</div>

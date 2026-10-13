@@ -1375,7 +1375,7 @@ export const it = {
     } as Record<string, string>,
     editor: {
       termCategory: "Categoria",
-      termBrand: "Marchio",
+      termBrand: "Brand",
       visibleCount: (n: number) => (n === 1 ? "1 prodotto visibile" : `${n} prodotti visibili`),
       fold: (n: number) => `In homepage si vedono i primi ${n}`,
       autoLabel: "Dopo i fissati, in automatico:",

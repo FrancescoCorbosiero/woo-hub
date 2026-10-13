@@ -14,17 +14,27 @@ import type {
   CatalogTerm,
   CatalogTermDetail,
 } from "@/lib/vetrina/catalog";
-import { railKeyToParam } from "@/lib/vetrina/order";
 import type { VetrinaErrorCode } from "@/lib/vetrina/types";
 import type { VetrinaResult } from "@/server/vetrina/service";
 import { CollectionSheet } from "../../CollectionSheet";
 import { ErrorState } from "../../ErrorState";
 import { Funnel } from "../../icons";
+import { ruleState } from "../rule-state";
+import { sectionHref } from "../sheet/links";
 import { TabbarSpacer } from "../TabbarSpacer";
-import { BackButton, SearchEverywhere, SearchField, useAppLink, useListControls } from "./browse";
+import { BackButton, SearchEverywhere, SearchField, useAppLink, useListControls, useStart } from "./browse";
 import { ChipRow, FilterChips, NavChip } from "./FilterChips";
 import { House, Stack } from "./glyphs";
-import { backTarget, CATALOG_HOME, filterQuery, hasFilters, NO_FILTER, summaryParts, termHref } from "./list-model";
+import {
+  backTarget,
+  CATALOG_HOME,
+  filterQuery,
+  hasFilters,
+  NO_FILTER,
+  summaryParts,
+  termHref,
+  type ListState,
+} from "./list-model";
 import { ProductList } from "./ProductList";
 import { SortActions } from "./SortActions";
 
@@ -38,24 +48,35 @@ export function TermScreen({
   taxonomy,
   detail,
   page,
+  served,
 }: {
   taxonomy: CatalogTaxonomy;
   detail: VetrinaResult<CatalogTermDetail>;
-  /** Page 1 in the shop's order, read with the term. */
+  /** Page 1 of the list, read with the term. */
   page: VetrinaResult<CatalogPage>;
+  /** The list state (search, chips, order) that page answers: the address's when the server read it. */
+  served: ListState;
 }) {
   if (!detail.ok) return <TermError taxonomy={taxonomy} code={detail.code} error={detail.error} />;
-  // Keyed: moving to a sibling term starts from a clean search and clean chips.
-  return <Term key={`${taxonomy}:${detail.data.term.id}`} detail={detail.data} page={page} />;
+  // Keyed: moving to a sibling term starts from its own address, clean or not.
+  return <Term key={`${taxonomy}:${detail.data.term.id}`} detail={detail.data} page={page} served={served} />;
 }
 
-function Term({ detail, page }: { detail: CatalogTermDetail; page: VetrinaResult<CatalogPage> }) {
+function Term({
+  detail,
+  page,
+  served,
+}: {
+  detail: CatalogTermDetail;
+  page: VetrinaResult<CatalogPage>;
+  served: ListState;
+}) {
   const { t } = useI18n();
   const router = useRouter();
   const v = t.vetrinaCatalog.term;
   const { term, ancestors, children } = detail;
-  const initial = page.ok ? page.data : undefined;
-  const controls = useListControls(initial?.facets ?? null);
+  const { start, facets, initial } = useStart(page, served);
+  const controls = useListControls(facets, start);
   const { q, filter, sort, setFilter } = controls;
   const [ruleOpen, setRuleOpen] = React.useState(false);
   // Bumped when a rule moved products: the list reads its rows again.
@@ -71,7 +92,9 @@ function Term({ detail, page }: { detail: CatalogTermDetail; page: VetrinaResult
   const refreshCounts = React.useCallback(() => router.refresh(), [router]);
 
   return (
-    <Page>
+    // The search bar's close button waits just past the right edge, scaled
+    // to nothing: the page must not scroll sideways to it.
+    <Page className="!overflow-x-hidden">
       <Navbar
         title={term.name}
         subtitle={subtitle}
@@ -160,7 +183,7 @@ function ControlPanel({ term, onRule }: { term: CatalogTerm; onRule: () => void 
           <ListItem
             key={section.key}
             link
-            linkProps={appLink(`/vetrina/sezione/${railKeyToParam(section.key)}`)}
+            linkProps={appLink(sectionHref(section.key))}
             media={
               <PanelIcon tone="ink">
                 <House className="h-[18px] w-[18px]" />
@@ -198,7 +221,15 @@ function RuleRow({ collection, onOpen }: { collection: RailCollection | null; on
   const { t } = useI18n();
   const p = t.vetrinaCatalog.term.panel;
   const auto = t.vetrina.auto;
-  const state = collection ? ruleState(collection, auto) : null;
+  const state = collection ? ruleState(collection) : null;
+  const note =
+    state === "paused"
+      ? { text: auto.cardPaused, warn: false }
+      : state === "held"
+        ? { text: auto.heldHint, warn: true }
+        : state === "problem"
+          ? { text: auto.problem, warn: true }
+          : null;
 
   return (
     <ListItem
@@ -207,7 +238,7 @@ function RuleRow({ collection, onOpen }: { collection: RailCollection | null; on
       linkProps={{ type: "button", onClick: onOpen }}
       contentClassName="w-full text-start"
       media={
-        <PanelIcon tone={collection?.enabled ? "gold" : "muted"}>
+        <PanelIcon tone={state === "working" ? "gold" : "muted"}>
           <Funnel className="h-[18px] w-[18px]" />
         </PanelIcon>
       }
@@ -218,24 +249,13 @@ function RuleRow({ collection, onOpen }: { collection: RailCollection | null; on
       }
       text={
         collection ? (
-          state && <span className={state.warn ? "text-amber-700 dark:text-amber-400" : undefined}>{state.text}</span>
+          note && <span className={note.warn ? "text-amber-700 dark:text-amber-400" : undefined}>{note.text}</span>
         ) : (
           p.makeHint
         )
       }
     />
   );
-}
-
-/** What a rule needs the owner to know, if anything: paused, waiting for a confirmation, a problem. */
-function ruleState(
-  c: RailCollection,
-  auto: { cardPaused: string; heldHint: string; problem: string },
-): { text: string; warn: boolean } | null {
-  if (!c.enabled) return { text: auto.cardPaused, warn: false };
-  if (c.held) return { text: auto.heldHint, warn: true };
-  if (c.lastError) return { text: auto.problem, warn: true };
-  return null;
 }
 
 function TermError({ taxonomy, code, error }: { taxonomy: CatalogTaxonomy; code: VetrinaErrorCode; error: string }) {
