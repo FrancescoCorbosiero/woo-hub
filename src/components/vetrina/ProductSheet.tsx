@@ -11,6 +11,7 @@ import { loadProductPrices, publishProductPrices } from "@/server/actions/vetrin
 import { setProductManualPrices } from "@/server/actions/overrides";
 import { updateStoreVariation } from "@/server/actions/store-edit";
 import { repriceStoreEdits } from "@/server/actions/store-edits";
+import { PlacementSection } from "./catalog/sheet/PlacementSection";
 import { formatCardPrice, formatEuro, parsePrice } from "./format";
 import { External, Lock } from "./icons";
 import { useSheetMount, useStandalone } from "./sheet-mount";
@@ -19,14 +20,16 @@ import { TagsSection } from "./TagsSection";
 const toInput = (n: number | null | undefined) => (n == null ? "" : n.toFixed(2).replace(".", ","));
 
 /**
- * A product's prices, from the rail editor. Each size shows the market ask
- * and the price the Hub computes; typing a price locks it, clearing it
- * unlocks. "Salva e pubblica" saves the locks in the Hub and pushes this one
- * product's prices to the site. Store-only products have no source price:
- * their shelf price is edited directly.
+ * A product's prices, from the rail editor or the catalog. Each size shows
+ * the market ask and the price the Hub computes; typing a price locks it,
+ * clearing it unlocks. "Salva e pubblica" saves the locks in the Hub and
+ * pushes this one product's prices to the site. Store-only products have no
+ * source price: their shelf price is edited directly.
  *
  * Below the prices, the product's tags: what the automatic categories read,
- * so changing them here moves the product in or out of those sections.
+ * so changing them here moves the product in or out of those sections. Then
+ * its place in the shop: visibility, categories, brands and homepage
+ * sections, each a way to that screen.
  */
 export function ProductSheet({
   card,
@@ -34,6 +37,7 @@ export function ProductSheet({
   onLocksChanged,
   onPricesChanged,
   onTagsChanged,
+  confirmLeave,
   demo,
 }: {
   card: ProductCard | null;
@@ -43,6 +47,8 @@ export function ProductSheet({
   onPricesChanged: (id: number) => void;
   /** Its tags moved it in or out of an automatic category: the section reloads. */
   onTagsChanged?: () => void;
+  /** Asked before a link in the sheet leaves the screen; false stays (the section editor's unpublished changes). */
+  confirmLeave?: () => boolean;
   demo: boolean;
 }) {
   const { t } = useI18n();
@@ -53,6 +59,8 @@ export function ProductSheet({
   const [error, setError] = React.useState<string | null>(null);
   const [edits, setEdits] = React.useState<Record<string, string>>({});
   const [saving, setSaving] = React.useState(false);
+  // Tags that moved the product change its categories: its place is read again.
+  const [moved, setMoved] = React.useState(0);
 
   const load = React.useCallback(async (sku: string) => {
     setData(undefined);
@@ -334,9 +342,27 @@ export function ProductSheet({
               </div>
 
               {!card.missing && (
-                <div className="mt-5">
-                  <TagsSection key={card.id} productId={card.id} onChanged={() => onTagsChanged?.()} />
-                </div>
+                <>
+                  <div className="mt-5">
+                    <TagsSection
+                      key={card.id}
+                      productId={card.id}
+                      onChanged={() => {
+                        setMoved((n) => n + 1);
+                        onTagsChanged?.();
+                      }}
+                    />
+                  </div>
+                  <div className="mt-5">
+                    <PlacementSection
+                      key={card.id}
+                      productId={card.id}
+                      refreshKey={moved}
+                      onLeave={onClose}
+                      confirmLeave={confirmLeave}
+                    />
+                  </div>
+                </>
               )}
 
               <div className="mt-5 flex flex-col gap-2 text-[15px]">

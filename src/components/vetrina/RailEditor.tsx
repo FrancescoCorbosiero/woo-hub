@@ -41,6 +41,7 @@ import { changedFields, editableFields } from "@/lib/vetrina/fields";
 import type { HiddenReason, ProductCard, RailDetail, RailFallback, SectionDraft } from "@/lib/vetrina/types";
 import type { VetrinaRail, VetrinaResult } from "@/server/vetrina/service";
 import { loadVetrinaCards, loadVetrinaRail, publishVetrinaRail } from "@/server/actions/vetrina";
+import { railCatalogHref } from "./catalog/sheet/links";
 import { CollectionSheet } from "./CollectionSheet";
 import { ErrorState } from "./ErrorState";
 import { FieldsSheet } from "./FieldsSheet";
@@ -120,6 +121,7 @@ const trimmed = (fields: Record<string, string>) =>
 
 function Editor({ railKey, initial, options }: { railKey: string; initial: VetrinaRail; options: EditorOptions }) {
   const { t } = useI18n();
+  const router = useRouter();
   const v = t.vetrina.editor;
   const demo = initial.source === "fixture";
 
@@ -364,6 +366,10 @@ function Editor({ railKey, initial, options }: { railKey: string; initial: Vetri
   const categoryId = railCategory(base);
   const auto = t.vetrina.auto;
   const termLabel = base.taxonomy === "product_cat" ? v.termCategory : v.termBrand;
+  // A section showing exactly one category or brand opens it in the catalog.
+  const catalogHref = railCatalogHref(base);
+  // Leaving with unpublished changes asks first, as the back link does.
+  const confirmLeave = () => !dirty || window.confirm(v.leaveConfirm);
   const fallbackChoices = options.fallbacks.includes(draft.fallback) ? options.fallbacks : [...options.fallbacks, draft.fallback];
 
   return (
@@ -667,6 +673,16 @@ function Editor({ railKey, initial, options }: { railKey: string; initial: Vetri
               {auto.menu}
             </ActionsButton>
           )}
+          {catalogHref && (
+            <ActionsButton
+              onClick={() => {
+                setSectionMenu(false);
+                if (confirmLeave()) router.push(catalogHref);
+              }}
+            >
+              {t.vetrinaCatalog.sheet.openInCatalog}
+            </ActionsButton>
+          )}
           <ActionsButton
             onClick={() => {
               setSectionMenu(false);
@@ -812,6 +828,7 @@ function Editor({ railKey, initial, options }: { railKey: string; initial: Vetri
           });
         }}
         onTagsChanged={() => void reloadMembers()}
+        confirmLeave={confirmLeave}
         demo={demo}
       />
 

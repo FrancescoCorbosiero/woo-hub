@@ -18,6 +18,7 @@ import type { VetrinaHome, VetrinaResult } from "@/server/vetrina/service";
 import { publishVetrinaBlock } from "@/server/actions/vetrina";
 import { ErrorState } from "./ErrorState";
 import { FieldsSheet } from "./FieldsSheet";
+import { TabbarSpacer } from "./catalog/TabbarSpacer";
 import { useStandalone } from "./sheet-mount";
 import { ChevronLeft, ChevronRight, External, Funnel, Lock, Pin, Refresh } from "./icons";
 
@@ -117,6 +118,7 @@ export function HomeScreen({ result }: { result: VetrinaResult<VetrinaHome> }) {
           ))}
         </div>
       )}
+      <TabbarSpacer />
 
       <FieldsSheet
         open={editing != null}
