@@ -170,6 +170,17 @@ Publish filter/sort/paginate in SQL.
   show the store's price on the size, with the same two answers, and the
   dock's Sync station counts them. A lock set or cleared in the Hub is the
   newer word and supersedes the edit.
+
+  **Every live write reads the product again first** — the tab's apply, the
+  automatic runs, the Vetrina's "Salva e pubblica", "Use the Hub's price" —
+  because a plan can be overtaken before it is written: a size whose price
+  moved since is kept and listed (unless the move was the Hub's own newer
+  write, from the Vetrina say, which is simply left alone); a size put on sale
+  since keeps its price while its product follows the sale rule and the size
+  has no lock; a size a person just decided (a lock set in the Vetrina, a size
+  handed back to the rules) is written all the same. The tab says how many it
+  left alone. The contract, race by race:
+  [docs/vetrina-catalog.md §3](docs/vetrina-catalog.md#3-prices-one-engine-one-way-in).
 - **Publish** (`/publish`) — the catalog→store direction. Every other write
   path works on products the store already has (the sync walks the snapshot:
   it adjusts their sizes and adds the ones they are missing), so a supplier
