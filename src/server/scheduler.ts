@@ -55,8 +55,9 @@ import { schedulerRuns, type SchedulerRunRow } from "@/server/db/schema";
  *
  * And every SCHEDULER_COLLECTIONS_MINUTES (default 5) the automatic
  * categories check the store for changes and take in or let go of the
- * products their rules now say (src/server/collections). Not a single
- * request reaches the store while no category is automatic.
+ * products their rules now say (src/server/collections). While no category
+ * is automatic the check still keeps the store index fresh — the Vetrina's
+ * catalog lists from it — and writes nothing.
  *
  * On by default in production, off in dev; SCHEDULER=on|off overrides.
  * Needs a long-running server (`next start`, Docker) — a serverless
@@ -153,7 +154,7 @@ export interface SchedulerStatus {
   mediaLastAt: number | null; // the photo queue last worked on something
   mediaError: string | null;
   collectionsEveryMinutes: number; // 0 = only in the daily sync
-  collectionsLastAt: number | null; // the last check that had work to do
+  collectionsLastAt: number | null; // the last check that ran
   collectionsLastMoved: number | null; // products it moved
   collectionsError: string | null;
 }

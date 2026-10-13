@@ -16,7 +16,8 @@ import { storeClient, storeReady } from "./store";
 
 /**
  * The automatic categories' runs: keep the store index fresh, decide every
- * product against every rule, write what changes.
+ * product against every rule, write what changes. The index is kept fresh
+ * whatever the rules: the Vetrina's catalog lists the shop from it.
  *
  * - The CHECK (every few minutes, from the scheduler): ask the store what
  *   changed since the newest change the index holds — usually nothing, one
@@ -427,12 +428,12 @@ export interface RunOptions {
 }
 
 /**
- * The scheduler's frequent check. Null when there is nothing to do: the store
- * is not configured, or no category is automatic — then not a single request
- * reaches the store.
+ * The scheduler's frequent check. Null when the store is not configured. The
+ * index is read whether or not a category is automatic — one light request,
+ * usually — and the decision writes nothing while none is.
  */
 export async function runCheck(opts: RunOptions = {}): Promise<{ read: number; moved: number } | null> {
-  if ((!opts.client && !storeReady()) || !(await anyEnabled())) return null;
+  if (!opts.client && !storeReady()) return null;
   return exclusive("check", async () => {
     const woo = opts.client ?? (await storeClient());
     const read = await readChanges(woo);
@@ -444,7 +445,7 @@ export async function runCheck(opts: RunOptions = {}): Promise<{ read: number; m
 
 /** The daily pass: the whole store again, then the decision, then the log's tail trimmed. */
 export async function runFull(opts: RunOptions = {}): Promise<{ read: number; moved: number } | null> {
-  if ((!opts.client && !storeReady()) || !(await anyEnabled())) return null;
+  if (!opts.client && !storeReady()) return null;
   return exclusive("full", async () => {
     const woo = opts.client ?? (await storeClient());
     const read = await readAll(woo);

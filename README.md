@@ -291,7 +291,9 @@ runs four cadences:
   (default 5; `0` = only in the daily sync): one light request asks the store
   what changed, then every automatic category takes in or lets go of the
   products its rule now says. The daily sync re-reads the whole store for
-  them. Nothing reaches the store while no category is automatic.
+  them. The check runs even while no category is automatic: the store index
+  it keeps is also what the Vetrina's catalog lists. It then only reads;
+  nothing is written to the store.
 
 **The store sync** does unattended what the Sync tab does with "apply all":
 it plans the price and stock changes the sources call for and writes them to

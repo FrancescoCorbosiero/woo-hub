@@ -511,6 +511,13 @@ export const storeIndex = pgTable(
     price: numeric("price", { mode: "number" }),
     onSale: boolean("on_sale").notNull().default(false),
     stockStatus: text("stock_status").notNull().default(""),
+    // What the Vetrina's catalog lists: the first photo's address, whether the
+    // shop shows the product ("visible", "catalog", "search", "hidden"), the
+    // shop's own order (menu_order) and how many sold.
+    image: text("image").notNull().default(""),
+    visibility: text("visibility").notNull().default(""),
+    menuOrder: integer("menu_order").notNull().default(0),
+    totalSales: integer("total_sales").notNull().default(0),
     dateCreated: timestamp("date_created", { withTimezone: true }),
     // The store's own last-modified time: the frequent check asks for what
     // changed after the newest one held here.

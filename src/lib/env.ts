@@ -90,7 +90,8 @@ const EnvSchema = z.object({
   // Automatic categories (src/server/collections): every N minutes the store
   // is asked what changed, and every automatic category takes in or lets go
   // of the products its rule now says. Default 5; 0 = off (the daily sync
-  // still runs them once a day). Costs nothing while no category is automatic.
+  // still runs them once a day). The same check keeps the store index fresh
+  // for the Vetrina's catalog, so it reads even while no category is automatic.
   SCHEDULER_COLLECTIONS_MINUTES: blankIsUnset(z.coerce.number().int().min(0).max(1440).optional()),
   // An automatic run that would move more products in or out of one category
   // than this leaves that category alone until the change is confirmed in the

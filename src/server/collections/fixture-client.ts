@@ -70,6 +70,10 @@ function view(p: DemoProduct): WooIndexProduct {
     stock_status: p.inStock ? "instock" : "outofstock",
     date_created_gmt: p.created.slice(0, 19),
     date_modified_gmt: gmt(p.modified),
+    images: p.image ? [{ src: p.image }] : [],
+    catalog_visibility: "visible",
+    menu_order: p.menuOrder,
+    total_sales: p.totalSales,
   };
 }
 

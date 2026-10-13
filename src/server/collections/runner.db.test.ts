@@ -36,6 +36,10 @@ interface FakeProduct {
   stock: string;
   created: number;
   modified: number;
+  image?: string;
+  visibility?: string;
+  menuOrder?: number;
+  totalSales?: number;
 }
 
 type Term = { id: number; name: string; slug: string; parent?: number };
@@ -118,6 +122,10 @@ class FakeStore {
       stock_status: p.stock,
       date_created_gmt: gmt(p.created),
       date_modified_gmt: gmt(p.modified),
+      images: p.image ? [{ src: p.image }] : [],
+      catalog_visibility: p.visibility ?? "visible",
+      menu_order: p.menuOrder ?? 0,
+      total_sales: String(p.totalSales ?? 0),
     };
   }
 
@@ -185,11 +193,25 @@ describe.skipIf(!enabled)("the automatic categories' runs (real SQL)", () => {
     return insertCollection({ termId, name, match: "all", conditions, enabled: true });
   }
 
-  it("does nothing at all while no category is automatic — not one request", async () => {
-    const { runCheck } = await load();
+  it("keeps the index fresh while no category is automatic, and writes nothing", async () => {
+    const { runCheck, readIndex } = await load();
     const store = new FakeStore();
-    expect(await runCheck({ client: store.client })).toBeNull();
-    expect(store.reads).toEqual([]);
+    store.add({ id: 1 });
+    store.add({ id: 2, categories: [10], image: "https://shop/dunk.jpg", visibility: "hidden", menuOrder: 30, totalSales: 17 });
+    expect(await runCheck({ client: store.client })).toEqual({ read: 2, moved: 0 });
+    const index = await readIndex();
+    expect(index.map((p) => p.id)).toEqual([1, 2]);
+    // What the Vetrina's catalog lists, kept with the rest.
+    expect(index[1]).toMatchObject({ image: "https://shop/dunk.jpg", visibility: "hidden", menuOrder: 30, totalSales: 17 });
+    expect(index[0]).toMatchObject({ image: "", visibility: "visible", menuOrder: 0, totalSales: 0 });
+    expect(store.batches).toEqual([]);
+
+    // The next check asks only what changed since (with its overlap).
+    store.edit(2, { name: "Renamed" });
+    expect((await runCheck({ client: store.client }))?.moved).toBe(0);
+    expect(store.reads.at(-1)?.modifiedAfter).toBeDefined();
+    expect((await readIndex()).find((p) => p.id === 2)?.name).toBe("Renamed");
+    expect(store.batches).toEqual([]);
   });
 
   it("reads the store whole the first time, then fills and empties the category by the rule", async () => {

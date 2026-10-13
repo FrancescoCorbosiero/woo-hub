@@ -57,9 +57,11 @@ const IndexTermSchema = z.looseObject({
 });
 
 /**
- * A product as the automatic categories read it (see src/server/collections):
- * its taxonomies and the few facts a rule can ask about. Every field but the id
- * is optional — a store without the brands taxonomy simply sends no `brands`.
+ * A product as the store index keeps it (see src/server/collections): its
+ * taxonomies and the few facts a rule can ask about, plus what the Vetrina's
+ * catalog lists — its first photo, whether the shop shows it, the shop's own
+ * order and how many sold. Every field but the id is optional — a store
+ * without the brands taxonomy simply sends no `brands`.
  */
 const WooIndexProductSchema = z.looseObject({
   id: z.number(),
@@ -85,10 +87,14 @@ const WooIndexProductSchema = z.looseObject({
   stock_status: z.string().nullish(),
   date_created_gmt: z.string().nullish(),
   date_modified_gmt: z.string().nullish(),
+  images: z.array(z.looseObject({ src: z.string().nullish() })).nullish().catch(null),
+  catalog_visibility: z.string().nullish(),
+  menu_order: z.number().nullish().catch(null),
+  total_sales: z.union([z.string(), z.number()]).nullish(),
 });
 export type WooIndexProduct = z.infer<typeof WooIndexProductSchema>;
 
-/** The fields a light listing asks for (`_fields`): no descriptions, no photos, no meta. */
+/** The fields a light listing asks for (`_fields`): no descriptions, no meta. */
 const INDEX_FIELDS = [
   "id",
   "sku",
@@ -105,6 +111,10 @@ const INDEX_FIELDS = [
   "stock_status",
   "date_created_gmt",
   "date_modified_gmt",
+  "images",
+  "catalog_visibility",
+  "menu_order",
+  "total_sales",
 ].join(",");
 
 /**

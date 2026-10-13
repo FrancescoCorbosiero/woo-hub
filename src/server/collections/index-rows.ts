@@ -2,14 +2,21 @@ import { attributeKey, type IndexedProduct, type IndexedTerm } from "@core/colle
 import type { WooIndexProduct } from "@/server/woo/client";
 
 /**
- * A store product as the automatic categories keep it (the store_index row):
- * what a rule reads, plus what the runs need around it — the type, the link,
- * and the store's own last-modified time, which is where the next check for
- * changes starts.
+ * A store product as the store index keeps it (the store_index row): what a
+ * rule reads, what the runs need around it — the type, the link, and the
+ * store's own last-modified time, which is where the next check for changes
+ * starts — and what the Vetrina's catalog lists.
  */
 export interface IndexRow extends IndexedProduct {
   type: string;
   permalink: string;
+  /** The first photo's address, "" when it has none. */
+  image: string;
+  /** WooCommerce's catalog_visibility: "visible", "catalog", "search" or "hidden". */
+  visibility: string;
+  /** The shop's own order (menu_order). */
+  menuOrder: number;
+  totalSales: number;
   /** The store's last-modified time (ISO, UTC), null when it sent none. */
   dateModified: string | null;
 }
@@ -47,6 +54,12 @@ function terms(list: WooIndexProduct["categories"]): IndexedTerm[] {
   return (list ?? []).map((t) => ({ id: t.id, slug: t.slug, name: decodeEntities(t.name) }));
 }
 
+/** A whole number from what the store sent (it sends some counts as strings), 0 when none. */
+function count(value: string | number | null | undefined): number {
+  const n = typeof value === "number" ? value : Number.parseInt(value ?? "", 10);
+  return Number.isFinite(n) ? Math.trunc(n) : 0;
+}
+
 /** The store's answer (a listing row or a batch row), as an index row. */
 export function toIndexRow(p: WooIndexProduct): IndexRow {
   const price = typeof p.price === "number" ? p.price : Number.parseFloat(p.price ?? "");
@@ -68,6 +81,10 @@ export function toIndexRow(p: WooIndexProduct): IndexRow {
     price: Number.isFinite(price) ? price : null,
     onSale: p.on_sale ?? false,
     stockStatus: p.stock_status ?? "",
+    image: p.images?.find((i) => i.src)?.src ?? "",
+    visibility: p.catalog_visibility ?? "",
+    menuOrder: count(p.menu_order),
+    totalSales: count(p.total_sales),
     dateCreated: gmtToIso(p.date_created_gmt),
     dateModified: gmtToIso(p.date_modified_gmt),
   };
