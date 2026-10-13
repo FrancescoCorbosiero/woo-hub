@@ -201,6 +201,55 @@ export async function readIndex(): Promise<IndexRow[]> {
   return rows.map(rowToProduct);
 }
 
+/** These products' index rows, in no particular order; ids the index does not hold are left out. */
+export async function readIndexRowsById(ids: number[]): Promise<IndexRow[]> {
+  if (ids.length === 0) return [];
+  const rows = await db.select().from(storeIndex).where(inArray(storeIndex.productId, ids));
+  return rows.map(rowToProduct);
+}
+
+/**
+ * A product as the Vetrina's catalog counts, filters and sorts it: only the
+ * light columns, with its terms as bare ids. The catalog reads the whole index
+ * this way on every request, so it stays small.
+ */
+export interface IndexFacts {
+  id: number;
+  sku: string;
+  name: string;
+  status: string;
+  visibility: string;
+  stockStatus: string;
+  onSale: boolean;
+  price: number | null;
+  hasImage: boolean;
+  menuOrder: number;
+  totalSales: number;
+  /** Creation time (epoch ms), null when unknown. */
+  created: number | null;
+  categories: number[];
+  brands: number[];
+}
+
+/** Every product of the index, as IndexFacts. */
+export async function readIndexFacts(): Promise<IndexFacts[]> {
+  // A raw query whose columns are already IndexFacts' fields: at 10 000
+  // products the query builder's row mapping costs more than the query. And
+  // plain numbers straight from Postgres — the term ids out of the jsonb, the
+  // price and the date as float8 — not strings and dates parsed one by one.
+  const res = await db.execute(sql`
+    select product_id as "id", sku as "sku", name as "name", status as "status",
+           visibility as "visibility", stock_status as "stockStatus", on_sale as "onSale",
+           price::float8 as "price", image <> '' as "hasImage",
+           menu_order as "menuOrder", total_sales as "totalSales",
+           (extract(epoch from date_created) * 1000)::float8 as "created",
+           jsonb_path_query_array(categories, '$[*].id') as "categories",
+           jsonb_path_query_array(brands, '$[*].id') as "brands"
+    from ${storeIndex}
+  `);
+  return rowsOf<IndexFacts>(res);
+}
+
 export interface IndexInfo {
   products: number;
   /** The newest modification the index holds: where the next check starts. */
