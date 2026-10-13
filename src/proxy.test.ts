@@ -69,7 +69,7 @@ describe("the Vetrina's own address", () => {
     expect(rewrittenTo(await proxy(request(VETRINA, "/")))).toBe("/vetrina");
     expect((await proxy(request(VETRINA, "/vetrina/sezione/category.saldi.0"))).headers.get("x-middleware-next")).toBe("1");
 
-    const tab = await proxy(request(VETRINA, "/catalog"));
+    const tab = await proxy(request(VETRINA, "/sync"));
     expect(tab.status).toBe(307);
     expect(redirectedTo(tab)).toBe("/");
     expect((await proxy(request(VETRINA, "/api/cron/pull-store", { method: "POST" }))).status).toBe(404);
@@ -78,13 +78,13 @@ describe("the Vetrina's own address", () => {
   it("leaves the Hub's own address exactly as it was", async () => {
     process.env.VETRINA_HOST = VETRINA;
     expect(rewrittenTo(await proxy(request(HUB, "/")))).toBeNull();
-    expect((await proxy(request(HUB, "/catalog"))).headers.get("x-middleware-next")).toBe("1");
+    expect((await proxy(request(HUB, "/sync"))).headers.get("x-middleware-next")).toBe("1");
   });
 
   it("redirects to the address the browser asked for, never the container's own", async () => {
     process.env.VETRINA_HOST = VETRINA;
     process.env.AUTH_PROXY_SECRET = SECRET;
-    const res = await proxy(proxied(VETRINA, "/catalog", { secret: SECRET, user: "shop" }));
+    const res = await proxy(proxied(VETRINA, "/sync", { secret: SECRET, user: "shop" }));
     expect(res.headers.get("location")).toBe(`https://${VETRINA}/`);
   });
 });
@@ -94,7 +94,7 @@ describe("the sign-in, done by Authelia in front of the app", () => {
     process.env.VETRINA_HOST = VETRINA;
     process.env.AUTH_PROXY_SECRET = SECRET;
 
-    const page = await proxy(proxied(HUB, "/catalog", { secret: SECRET, user: "operator" }));
+    const page = await proxy(proxied(HUB, "/sync", { secret: SECRET, user: "operator" }));
     expect(passed(page)).toBe(true);
     expect(forwardedHeaders(page)).toBeNull(); // Remote-User reaches the page as sent
 
@@ -110,10 +110,10 @@ describe("the sign-in, done by Authelia in front of the app", () => {
     process.env.VETRINA_HOST = VETRINA;
     process.env.AUTH_PROXY_SECRET = SECRET;
     for (const init of [{ user: "operator" }, { secret: "wrong", user: "operator" }, { secret: SECRET.slice(0, -1), user: "operator" }]) {
-      expect((await proxy(request(HUB, "/catalog", init))).status).toBe(403);
+      expect((await proxy(request(HUB, "/sync", init))).status).toBe(403);
       expect((await proxy(request(VETRINA, "/", init))).status).toBe(403);
       // Not even the Vetrina's routing answers: no redirect for an operator page.
-      expect((await proxy(request(VETRINA, "/catalog", init))).status).toBe(403);
+      expect((await proxy(request(VETRINA, "/sync", init))).status).toBe(403);
       expect((await proxy(request(HUB, "/manifest.webmanifest", init))).status).toBe(403);
       expect((await proxy(request(HUB, "/api/cron/pull-store", { ...init, method: "POST" }))).status).toBe(403);
     }
@@ -171,8 +171,8 @@ describe("the sign-in, done by Authelia in front of the app", () => {
   });
 
   it("is open without a secret (local development), and trusts no identity there", async () => {
-    expect(passed(await proxy(request(HUB, "/catalog")))).toBe(true);
-    const forged = await proxy(request(HUB, "/catalog", { user: "operator", headers: { "remote-name": "Operator" } }));
+    expect(passed(await proxy(request(HUB, "/sync")))).toBe(true);
+    const forged = await proxy(request(HUB, "/sync", { user: "operator", headers: { "remote-name": "Operator" } }));
     expect(passed(forged)).toBe(true);
     expect(forwardedHeaders(forged)).not.toContain("remote-user");
     expect(forwardedHeaders(forged)).not.toContain("remote-name");

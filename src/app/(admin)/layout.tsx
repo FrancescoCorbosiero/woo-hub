@@ -1,5 +1,6 @@
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { headers } from "next/headers";
+import { CatalogDrawerHost } from "@/components/catalog/CatalogDrawerHost";
 import { JourneyDock } from "@/components/JourneyDock";
 import { TopBar } from "@/components/TopBar";
 import { SIGN_OUT_PATH, signedInUser } from "@/lib/auth";
@@ -32,6 +33,10 @@ export default async function AdminLayout({ children }: { children: ReactNode })
     <div className="pb-28 [--dock-clearance:5.5rem]">
       <TopBar shop={shopOf()} user={user ? { name: user.name, signOutHref: SIGN_OUT_PATH } : null} />
       {children}
+      {/* ?product=SKU opens a product's drawer over any page. */}
+      <Suspense fallback={null}>
+        <CatalogDrawerHost />
+      </Suspense>
       <JourneyDock />
     </div>
   );

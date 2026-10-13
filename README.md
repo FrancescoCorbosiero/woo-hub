@@ -74,8 +74,8 @@ After pulling changes, run `npm run serve` again — it rebuilds first.
   returns a matching product (HTTP 200) — guaranteed fetchable, re-priced by
   TTL via the refresh feed.
 - `goldensneakers`: registered automatically by every feed sync for SKUs
-  KicksDB doesn't carry, so supplier-only products are first-class in
-  discovery (card with a GS badge, drawer, filters). Refreshed by the feed's
+  KicksDB doesn't carry, so supplier-only products are first-class in the
+  catalog (Publish, the product drawer). Refreshed by the feed's
   own sync; a later KicksDB verification wins the row (source flips), while
   feed syncs never overwrite a `kicksdb` row.
 - `woo`: the **store mirror** — registered after every snapshot refresh (REST
@@ -88,9 +88,9 @@ After pulling changes, run `npm run serve` again — it rebuilds first.
 
 Entries never leave. Every route feeds it: syncs, imports, previews, pulls.
 
-Discovery columns (`image`, `min_ask`, `variant_count`, `added_at`) are
-denormalized from the stored product at upsert time, so the grid
-filters/sorts/paginates in SQL.
+Listing columns (`image`, `min_ask`, `variant_count`, `added_at`) are
+denormalized from the stored product at upsert time, so lists such as
+Publish filter/sort/paginate in SQL.
 
 ## Tabs
 
@@ -98,14 +98,9 @@ filters/sorts/paginates in SQL.
   split by price source, stale-price count with a one-click path to refresh,
   store snapshot state, last sync outcome, and a recent-activity feed
   (ingestion runs + apply runs merged). Big plain-language action cards deep-
-  link into `/sync`, `/catalog` and `/import`.
-- **Catalog** (`/catalog`) — the whole inventory: **provider tabs** (All /
-  StockX / GoldenSneakers / Store-only, counts included — ownership is feed
-  coverage minus manual KicksDB pins, matching exactly what the sync does),
-  brand sidebar with counts, debounced search, freshness/price filters, six
-  sorts, paged grid. All state in the URL. Cards show a lock chip when any
-  size carries a manual price. Clicking a card opens the **product drawer**
-  (`?product=<sku>`; full-screen sheet on mobile). Feed/StockX products get:
+  link into `/sync`, `/publish` and `/import`.
+- **Product drawer** (`?product=<sku>` on any Hub page; full-screen sheet on
+  mobile) — a catalog product's operator tools. Feed/StockX products get:
   per-size asks + computed proposed prices, **re-sync from KicksDB**,
   prominent per-size **manual price locks** (with lock-all / unlock-all), the
   per-product **sale rule**, and — when the GS feed covers the SKU — a
@@ -114,7 +109,10 @@ filters/sorts/paginates in SQL.
   sync honors them automatically). Store-only products instead show the LIVE
   store view — per-size shelf price and real stock — **directly editable**:
   changes are written to WooCommerce immediately and mirrored into the
-  snapshot.
+  snapshot. The Feeds tab's product list opens it; an old `/catalog` link
+  lands on the dashboard with its drawer open. Browsing the shop by category
+  and brand belongs to the Vetrina (see
+  [docs/vetrina-catalog.md](docs/vetrina-catalog.md)).
 - **Sync** (`/sync`) — the main workflow: **align sizes, then patch prices**,
   all over REST:
   1. **Pull**: walk the Woo REST API (`products` incl. attributes + variations)

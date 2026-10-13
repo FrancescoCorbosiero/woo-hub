@@ -17,7 +17,6 @@ export const it = {
   header: {
     navVetrina: "Vetrina",
     navDashboard: "Panoramica",
-    navCatalog: "Catalogo",
     navOrders: "Ordini",
     navMargins: "Margini",
     navSync: "Sync",
@@ -34,8 +33,6 @@ export const it = {
     step: (n: number, of: number) => `Passo ${n} di ${of}`,
     homeHint: "Lo stato di tutto, in un colpo d'occhio. Da qui parte il percorso.",
     importHint: "Aggiungi SKU al catalogo, a mano o da file.",
-    catalogHint: (n: number | null) =>
-      n == null ? "Tutto l'inventario in un posto solo." : `${n} prodotti a catalogo.`,
     publishHint: (n: number | null) =>
       n == null
         ? "Crea sul negozio i prodotti che hai a catalogo."
@@ -94,10 +91,10 @@ export const it = {
     syncCardDesc:
       "Confronta i prezzi del negozio con le fonti e applica le differenze. Nulla viene scritto senza la tua conferma.",
     syncCardCta: "Vai alla sincronizzazione",
-    catalogCardTitle: "Sfoglia il catalogo",
-    catalogCardDesc:
-      "Cerca un prodotto, controlla i prezzi taglia per taglia e blocca quelli che decidi tu.",
-    catalogCardCta: "Apri il catalogo",
+    publishCardTitle: "Pubblica i prodotti nuovi",
+    publishCardDesc:
+      "I prodotti del listino che il negozio non vende ancora: scegli quali creare, con taglie, prezzi e foto.",
+    publishCardCta: "Vai a Pubblica",
     importCardTitle: "Aggiungi prodotti",
     importCardDesc:
       "Incolla una lista di codici SKU o carica un file: i prodotti riconosciuti entrano nel catalogo.",
@@ -334,73 +331,9 @@ export const it = {
     parentsRealigned: (n: number) => `${n} attributi prodotto riallineati`,
   },
   discovery: {
-    title: "Catalogo",
-    desc: "Tutto l'inventario del negozio in un posto solo: prodotti con prezzi StockX, prodotti del listino fornitore e prodotti solo negozio.",
     total: (n: number) => `${n} SKU`,
-    searchPlaceholder: "Cerca per SKU o modello…",
-    brands: "Brand",
-    allBrands: "Tutti i brand",
-    categories: "Categorie",
-    moreCategories: (n: number) =>
-      `+${n} altre categorie non elencate. Se sono quasi quante i prodotti, la fonte non ha un vero albero: sistemalo in Tassonomie.`,
-    allCategories: "Tutte le categorie",
-    uncategorized: "Senza categoria",
-    genderLabel: "Genere",
-    genderName: (g: string) =>
-      (
-        {
-          men: "Uomo",
-          women: "Donna",
-          child: "Bambini",
-          kids: "Bambini",
-          youth: "Ragazzi",
-          preschool: "Bambini (PS)",
-          toddler: "Bimbi (TD)",
-          infant: "Neonati",
-          unisex: "Unisex",
-        } as Record<string, string>
-      )[g] ?? g,
-    freshnessLabel: "Freschezza",
-    freshness: { all: "Tutti", fresh: "Prezzi freschi", stale: "Da aggiornare" },
-    sortLabel: "Ordina per",
-    sort: {
-      added: "Aggiunti di recente",
-      brand: "Brand",
-      title: "Nome",
-      fetched: "Aggiornati di recente",
-      priceAsc: "Prezzo crescente",
-      priceDesc: "Prezzo decrescente",
-    },
-    priceMin: "Min €",
-    priceMax: "Max €",
-    clearFilters: "Azzera filtri",
-    from: (p: string) => `da ${p}`,
-    noAsk: "nessun prezzo",
-    sizes: (n: number) => `${n} taglie`,
     freshBadge: "prezzi freschi",
     staleBadge: "da aggiornare",
-    gsBadgeHint:
-      "Prodotto gestito dal fornitore GoldenSneakers: taglie, prezzi finali e stock reale arrivano dal suo listino.",
-    tabs: {
-      all: "Tutti",
-      kicksdb: "StockX",
-      kicksdbHint: "Prodotti con prezzi automatici da StockX (via KicksDB)",
-      goldensneakers: "GoldenSneakers",
-      goldensneakersHint:
-        "Prodotti gestiti dal fornitore GoldenSneakers: taglie, prezzi e stock reali dal suo listino",
-      woo: "Negozio",
-      wooHint:
-        "Prodotti solo negozio: nessun listino collegato — prezzi e stock si modificano direttamente dalla scheda prodotto",
-    },
-    wooBadge: "Negozio",
-    wooBadgeHint:
-      "Prodotto solo negozio: non collegato a nessun listino — prezzi e stock si modificano direttamente dalla scheda",
-    lockedHint: (n: number) =>
-      n === 1
-        ? "1 prezzo bloccato a mano — la sincronizzazione non lo tocca"
-        : `${n} prezzi bloccati a mano — la sincronizzazione non li tocca`,
-    empty: "Nessun prodotto con questi filtri.",
-    emptyCatalog: "Il catalogo è vuoto — aggiungi SKU dalla scheda Importa o esegui una sincronizzazione.",
     page: (p: number, n: number) => `Pagina ${p} di ${n}`,
     prev: "Precedente",
     next: "Successiva",

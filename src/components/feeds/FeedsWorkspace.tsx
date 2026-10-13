@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import {
   getFeedsState,
   listGsFeed,
@@ -16,6 +15,7 @@ import { useI18n } from "@/i18n/provider";
 import { useShopTime } from "@/components/use-shop-time";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ProductLink } from "@/components/catalog/CatalogDrawerHost";
 
 /** Safety cap on refresh rounds per click (100 SKUs/round). */
 const MAX_ROUNDS = 50;
@@ -448,12 +448,12 @@ function GsFeedBrowser() {
         <ul className="divide-y divide-line/60 rounded-lg border border-line bg-surface-2">
           {page.items.map((p) => (
             <li key={p.sku} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
-              <Link
-                href={`/catalog?product=${encodeURIComponent(p.sku)}`}
+              <ProductLink
+                sku={p.sku}
                 className="font-mono text-xs font-semibold text-accent-text underline-offset-2 hover:underline"
               >
                 {p.sku}
-              </Link>
+              </ProductLink>
               <span className="min-w-0 flex-1 truncate text-xs text-muted">
                 {[p.brand, p.name].filter(Boolean).join(" · ")}
               </span>

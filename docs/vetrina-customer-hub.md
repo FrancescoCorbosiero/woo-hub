@@ -437,7 +437,7 @@ export default defineHubConfig({
     landing: "/vetrina",
     theme: "ios",                         // "ios" | "material"
     // The dock: the guided path, in order, and the set-up-once pages.
-    journey: ["/import", "/catalog", "/publish", "/sync", "/vetrina", "/orders"],
+    journey: ["/import", "/publish", "/sync", "/vetrina", "/orders"],
     setup: ["/pricing", "/taxonomies", "/collections", "/feeds"],
   },
   vetrina: {

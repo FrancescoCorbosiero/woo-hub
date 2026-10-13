@@ -10,7 +10,6 @@ export const en: Dictionary = {
   header: {
     navVetrina: "Showcase",
     navDashboard: "Overview",
-    navCatalog: "Catalog",
     navOrders: "Orders",
     navMargins: "Margins",
     navSync: "Sync",
@@ -27,8 +26,6 @@ export const en: Dictionary = {
     step: (n, of) => `Step ${n} of ${of}`,
     homeHint: "Everything at a glance. The path starts here.",
     importHint: "Add SKUs to the catalog, by hand or from a file.",
-    catalogHint: (n) =>
-      n == null ? "The whole inventory in one place." : `${n} products in the catalog.`,
     publishHint: (n) =>
       n == null
         ? "Create the products you have in the catalog on the store."
@@ -87,9 +84,9 @@ export const en: Dictionary = {
     syncCardDesc:
       "Compare the store's prices against their sources and apply the differences. Nothing is written without your confirmation.",
     syncCardCta: "Go to sync",
-    catalogCardTitle: "Browse the catalog",
-    catalogCardDesc: "Find a product, check its price size by size, and lock the ones you decide.",
-    catalogCardCta: "Open the catalog",
+    publishCardTitle: "Publish new products",
+    publishCardDesc: "The supplier's products the store doesn't sell yet: pick which to create, with sizes, prices and photos.",
+    publishCardCta: "Go to Publish",
     importCardTitle: "Add products",
     importCardDesc:
       "Paste a list of SKU codes or upload a file: recognized products join the catalog.",
@@ -325,73 +322,9 @@ export const en: Dictionary = {
     parentsRealigned: (n) => `${n} product attributes realigned`,
   },
   discovery: {
-    title: "Catalog",
-    desc: "The store's whole inventory in one place: StockX-priced products, supplier price-list products, and store-only products.",
     total: (n) => `${n} SKUs`,
-    searchPlaceholder: "Search by SKU or model…",
-    brands: "Brands",
-    allBrands: "All brands",
-    categories: "Categories",
-    moreCategories: (n: number) =>
-      `+${n} more categories not listed. If that is close to the product count, the source has no real tree: fix it in Taxonomies.`,
-    allCategories: "All categories",
-    uncategorized: "Uncategorized",
-    genderLabel: "Gender",
-    genderName: (g) =>
-      (
-        {
-          men: "Men",
-          women: "Women",
-          child: "Kids",
-          kids: "Kids",
-          youth: "Youth",
-          preschool: "Preschool",
-          toddler: "Toddler",
-          infant: "Infant",
-          unisex: "Unisex",
-        } as Record<string, string>
-      )[g] ?? g,
-    freshnessLabel: "Freshness",
-    freshness: { all: "All", fresh: "Fresh prices", stale: "Needs refresh" },
-    sortLabel: "Sort by",
-    sort: {
-      brand: "Brand",
-      title: "Name",
-      added: "Recently added",
-      fetched: "Recently refreshed",
-      priceAsc: "Price low → high",
-      priceDesc: "Price high → low",
-    },
-    priceMin: "Min €",
-    priceMax: "Max €",
-    clearFilters: "Clear filters",
-    from: (p) => `from ${p}`,
-    noAsk: "no ask",
-    sizes: (n) => `${n} sizes`,
     freshBadge: "fresh prices",
     staleBadge: "needs refresh",
-    gsBadgeHint:
-      "Product managed by the GoldenSneakers supplier: sizes, final prices and real stock come from its price list.",
-    tabs: {
-      all: "All",
-      kicksdb: "StockX",
-      kicksdbHint: "Products with automatic StockX prices (via KicksDB)",
-      goldensneakers: "GoldenSneakers",
-      goldensneakersHint:
-        "Products managed by the GoldenSneakers supplier: real sizes, prices and stock from its price list",
-      woo: "Store",
-      wooHint:
-        "Store-only products: no price list linked — price and stock are edited directly from the product sheet",
-    },
-    wooBadge: "Store",
-    wooBadgeHint:
-      "Store-only product: not linked to any price list — price and stock are edited directly from the sheet",
-    lockedHint: (n) =>
-      n === 1
-        ? "1 hand-locked price — sync never touches it"
-        : `${n} hand-locked prices — sync never touches them`,
-    empty: "No products match these filters.",
-    emptyCatalog: "The catalog is empty — add SKUs from the Import tab or run a sync.",
     page: (p, n) => `Page ${p} of ${n}`,
     prev: "Previous",
     next: "Next",

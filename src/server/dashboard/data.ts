@@ -1,6 +1,6 @@
 import "server-only";
 import { getActiveConfig } from "@/server/config/repo";
-import { countByOwner, countStale, type CatalogOwnerCounts } from "@/server/catalog/repo";
+import { countByOwner, countStale, countUnpublishedCandidates, type CatalogOwnerCounts } from "@/server/catalog/repo";
 import { getOverrides } from "@/server/overrides/repo";
 import { skusPinnedTo } from "@/server/overrides/model";
 import { listIngestionRuns, type IngestionHistoryEntry } from "@/server/ingestion/repo";
@@ -22,6 +22,8 @@ export interface DashboardData {
   wooConfigured: boolean;
   gsConfigured: boolean;
   catalog: CatalogOwnerCounts;
+  /** Feed products the store does not sell yet — the Publish card; null when it can't be counted. */
+  toPublish: number | null;
   staleCount: number;
   ttlSeconds: number;
   snapshot: SnapshotInfo | null;
@@ -51,9 +53,10 @@ export async function loadDashboardData(): Promise<DashboardData> {
   const overrides = await getOverrides().catch(() => null);
   const pinnedToKicksdb = overrides ? skusPinnedTo(overrides, "kicksdb") : [];
 
-  const [catalog, staleCount, snapshot, latestPull, applyHistory, ingestionRuns, feed, duplicateSkus] =
+  const [catalog, toPublish, staleCount, snapshot, latestPull, applyHistory, ingestionRuns, feed, duplicateSkus] =
     await Promise.all([
       countByOwner(market, pinnedToKicksdb),
+      countUnpublishedCandidates(market).catch(() => null),
       countStale(market, ttlSeconds),
       getSnapshotInfo().catch(() => null),
       getLatestPullRun().catch(() => null),
@@ -76,6 +79,7 @@ export async function loadDashboardData(): Promise<DashboardData> {
     wooConfigured: wooConfigured(),
     gsConfigured: gsConfigured(),
     catalog,
+    toPublish,
     staleCount,
     ttlSeconds,
     snapshot,

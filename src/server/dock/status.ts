@@ -1,6 +1,6 @@
 import "server-only";
 import { getActiveConfig } from "@/server/config/repo";
-import { countCatalog, countUnpublishedCandidates } from "@/server/catalog/repo";
+import { countUnpublishedCandidates } from "@/server/catalog/repo";
 import { countOpenOrders } from "@/server/orders/repo";
 import { listApplyHistory } from "@/server/woo/apply";
 import { getLatestPullRun, pullInFlight } from "@/server/woo/pull";
@@ -20,8 +20,7 @@ export async function loadDockStatus(): Promise<DockStatus> {
     return EMPTY_DOCK_STATUS;
   }
 
-  const [catalog, toPublish, openOrders, history, latestPull, storeEdits] = await Promise.all([
-    countCatalog(market).catch(() => null),
+  const [toPublish, openOrders, history, latestPull, storeEdits] = await Promise.all([
     countUnpublishedCandidates(market).catch(() => null),
     countOpenOrders().catch(() => null),
     listApplyHistory(10).catch(() => []),
@@ -34,7 +33,6 @@ export async function loadDockStatus(): Promise<DockStatus> {
   );
 
   return {
-    catalog,
     toPublish,
     openOrders,
     lastSyncAt: lastLive?.finishedAt ?? lastLive?.startedAt ?? null,

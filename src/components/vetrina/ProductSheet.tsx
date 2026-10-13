@@ -353,7 +353,7 @@ export function ProductSheet({
                   </a>
                 )}
                 {card.sku && !demo && !standalone && (
-                  <a href={`/catalog?product=${encodeURIComponent(card.sku)}`} className="text-primary">
+                  <a href={`/?product=${encodeURIComponent(card.sku)}`} className="text-primary">
                     {p.openHub}
                   </a>
                 )}

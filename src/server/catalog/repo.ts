@@ -1,5 +1,5 @@
 import "server-only";
-import { and, desc, eq, gte, ilike, inArray, lt, lte, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
 import type { ProductScopeAxes } from "@core/config";
 import type { SourceProduct } from "@core/core-spine";
 import { db } from "@/server/db/client";
@@ -252,39 +252,8 @@ export async function countUnpublishedCandidates(market: string): Promise<number
 }
 
 /* ------------------------------------------------------------------ */
-/* Discovery: server-side filtered / sorted / paginated catalog pages  */
+/* Who drives each product, and the catalog's own axes in counts       */
 /* ------------------------------------------------------------------ */
-
-export type CatalogSort = "brand" | "title" | "added" | "fetched" | "priceAsc" | "priceDesc";
-export type CatalogFreshness = "all" | "fresh" | "stale";
-/**
- * Ownership lens: who currently DRIVES the product.
- *  - goldensneakers: the feed covers the SKU (minus manual KicksDB pins);
- *  - woo: store-only inventory (registered from the snapshot, no feed linked);
- *  - kicksdb: everything else — StockX-priced.
- */
-export type CatalogOwnerFilter = "all" | "kicksdb" | "goldensneakers" | "woo";
-
-/** URL token for the empty-string category/gender bucket (rows without metadata). */
-export const UNCATEGORIZED = "none";
-
-export interface CatalogPageFilters {
-  brand?: string;
-  /** Category filter; the UNCATEGORIZED token selects rows with no metadata. */
-  category?: string;
-  secondaryCategory?: string;
-  gender?: string;
-  q?: string; // substring on SKU / title
-  freshness?: CatalogFreshness;
-  owner?: CatalogOwnerFilter;
-  /** SKUs manually pinned back to KicksDB — excluded from GS ownership. */
-  pinnedToKicksdb?: string[];
-  priceMin?: number;
-  priceMax?: number;
-  sort?: CatalogSort;
-  page?: number; // 1-based
-  perPage?: number;
-}
 
 /**
  * True when GoldenSneakers effectively owns this catalog SKU. Mirrors
@@ -301,148 +270,14 @@ const GS_COVERED_SQL = sql<boolean>`(exists (
 ))`;
 
 /**
- * Effective GS ownership for the grid: feed coverage MINUS the SKUs the
- * operator pinned back to KicksDB — the same precedence the sync applies
- * (see src/server/feeds/owner.ts), so the badge never lies about who prices
- * a product.
+ * Effective GS ownership: feed coverage MINUS the SKUs the operator pinned
+ * back to KicksDB — the same precedence the sync applies (see
+ * src/server/feeds/owner.ts), so the counts never lie about who prices a
+ * product.
  */
 function gsOwnedSql(pinnedToKicksdb: string[]): SQL<boolean> {
   if (pinnedToKicksdb.length === 0) return GS_COVERED_SQL;
   return sql<boolean>`(${GS_COVERED_SQL} and ${notInArray(catalogProducts.sku, pinnedToKicksdb)})`;
-}
-
-export interface CatalogPageItem {
-  sku: string;
-  title: string;
-  brand: string;
-  source: string; // row provenance: "kicksdb" | feed name
-  gsOwned: boolean; // the feed currently DRIVES this product (grid badge)
-  image: string;
-  minAsk: number | null;
-  variantCount: number;
-  addedAt: string; // ISO
-  fetchedAt: string; // ISO
-  fresh: boolean; // fetchedAt within the TTL
-}
-
-export interface CatalogPage {
-  items: CatalogPageItem[];
-  total: number; // rows matching the filters (not just this page)
-  page: number;
-  perPage: number;
-  pageCount: number;
-}
-
-function pageConditions(market: string, f: CatalogPageFilters, threshold: Date): SQL[] {
-  const conds: SQL[] = [eq(catalogProducts.market, market)];
-  const gsOwned = gsOwnedSql(f.pinnedToKicksdb ?? []);
-  if (f.brand) conds.push(eq(catalogProducts.brand, f.brand));
-  if (f.category) {
-    conds.push(eq(catalogProducts.category, f.category === UNCATEGORIZED ? "" : f.category));
-    // Sub-category only narrows within an explicit category.
-    if (f.secondaryCategory) {
-      conds.push(eq(catalogProducts.secondaryCategory, f.secondaryCategory));
-    }
-  }
-  if (f.gender) {
-    conds.push(eq(catalogProducts.gender, f.gender === UNCATEGORIZED ? "" : f.gender));
-  }
-  if (f.q?.trim()) {
-    const like = `%${f.q.trim()}%`;
-    conds.push(or(ilike(catalogProducts.sku, like), ilike(catalogProducts.title, like))!);
-  }
-  if (f.freshness === "fresh") conds.push(gte(catalogProducts.fetchedAt, threshold));
-  if (f.freshness === "stale") conds.push(lt(catalogProducts.fetchedAt, threshold));
-  if (f.owner === "goldensneakers") conds.push(sql`${gsOwned}`);
-  if (f.owner === "kicksdb")
-    conds.push(sql`(not ${gsOwned} and ${ne(catalogProducts.source, "woo")})`);
-  if (f.owner === "woo")
-    conds.push(sql`(not ${gsOwned} and ${eq(catalogProducts.source, "woo")})`);
-  if (f.priceMin != null) conds.push(gte(catalogProducts.minAsk, f.priceMin));
-  if (f.priceMax != null) conds.push(lte(catalogProducts.minAsk, f.priceMax));
-  return conds;
-}
-
-function pageOrder(sort: CatalogSort): SQL[] {
-  switch (sort) {
-    case "title":
-      return [sql`${catalogProducts.title} asc`, sql`${catalogProducts.sku} asc`];
-    case "added":
-      return [sql`${catalogProducts.addedAt} desc`, sql`${catalogProducts.sku} asc`];
-    case "fetched":
-      return [sql`${catalogProducts.fetchedAt} desc`, sql`${catalogProducts.sku} asc`];
-    case "priceAsc":
-      return [sql`${catalogProducts.minAsk} asc nulls last`, sql`${catalogProducts.sku} asc`];
-    case "priceDesc":
-      return [sql`${catalogProducts.minAsk} desc nulls last`, sql`${catalogProducts.sku} asc`];
-    case "brand":
-    default:
-      return [sql`${catalogProducts.brand} asc`, sql`${catalogProducts.sku} asc`];
-  }
-}
-
-/**
- * One page of the discovery grid, filtered/sorted/paginated in SQL — the
- * catalog is ever-increasing, so the browser never loads the whole set.
- * Best-effort like the rest of the repo: a DB error degrades to an empty page.
- */
-export async function listCatalogPage(
-  market: string,
-  ttlSeconds: number,
-  filters: CatalogPageFilters = {},
-): Promise<CatalogPage> {
-  const perPage = Math.min(Math.max(filters.perPage ?? 24, 1), 96);
-  const page = Math.max(filters.page ?? 1, 1);
-  const threshold = new Date(Date.now() - ttlSeconds * 1000);
-  const where = and(...pageConditions(market, filters, threshold));
-
-  try {
-    const [countRows, rows] = await Promise.all([
-      db.select({ n: sql<number>`count(*)::int` }).from(catalogProducts).where(where),
-      db
-        .select({
-          sku: catalogProducts.sku,
-          title: catalogProducts.title,
-          brand: catalogProducts.brand,
-          source: catalogProducts.source,
-          gsOwned: gsOwnedSql(filters.pinnedToKicksdb ?? []),
-          image: catalogProducts.image,
-          minAsk: catalogProducts.minAsk,
-          variantCount: catalogProducts.variantCount,
-          addedAt: catalogProducts.addedAt,
-          fetchedAt: catalogProducts.fetchedAt,
-        })
-        .from(catalogProducts)
-        .where(where)
-        .orderBy(...pageOrder(filters.sort ?? "added"))
-        .limit(perPage)
-        .offset((page - 1) * perPage),
-    ]);
-
-    const total = countRows[0]?.n ?? 0;
-    return {
-      items: rows.map((r) => ({
-        sku: r.sku,
-        title: r.title,
-        brand: r.brand,
-        source: r.source,
-        gsOwned: r.gsOwned === true,
-        image: r.image,
-        minAsk: r.minAsk,
-        variantCount: r.variantCount,
-        addedAt: r.addedAt.toISOString(),
-        fetchedAt: r.fetchedAt.toISOString(),
-        fresh: r.fetchedAt >= threshold,
-      })),
-      total,
-      page,
-      perPage,
-      pageCount: Math.max(1, Math.ceil(total / perPage)),
-    };
-  } catch (e) {
-    console.warn("[catalog] page skipped (cache unavailable):", describeDbError(e));
-    return { items: [], total: 0, page: 1, perPage, pageCount: 1 };
-  }
 }
 
 export interface CatalogOwnerCounts {
@@ -455,7 +290,7 @@ export interface CatalogOwnerCounts {
 
 /**
  * How many catalog products each source currently DRIVES (feed coverage minus
- * manual KicksDB pins) — the numbers behind the catalog's provider tabs.
+ * manual KicksDB pins) — the dashboard's split of the catalog by price source.
  */
 export async function countByOwner(
   market: string,
@@ -488,7 +323,7 @@ export interface CategoryCount {
 }
 
 /**
- * Category → sub-category counts for a market (the discovery sidebar tree).
+ * Category → sub-category counts for a market (the margin rules' family picker).
  * Rows without metadata come back under category "" — the Uncategorized bucket.
  */
 export async function listCategoryCounts(market: string): Promise<CategoryCount[]> {
@@ -505,23 +340,6 @@ export async function listCategoryCounts(market: string): Promise<CategoryCount[
       .orderBy(catalogProducts.category, catalogProducts.secondaryCategory);
   } catch (e) {
     console.warn("[catalog] category counts skipped (cache unavailable):", describeDbError(e));
-    return [];
-  }
-}
-
-/** Gender values present in a market with counts (the discovery chip row). */
-export async function listGenderCounts(
-  market: string,
-): Promise<{ gender: string; count: number }[]> {
-  try {
-    return await db
-      .select({ gender: catalogProducts.gender, count: sql<number>`count(*)::int` })
-      .from(catalogProducts)
-      .where(eq(catalogProducts.market, market))
-      .groupBy(catalogProducts.gender)
-      .orderBy(catalogProducts.gender);
-  } catch (e) {
-    console.warn("[catalog] gender counts skipped (cache unavailable):", describeDbError(e));
     return [];
   }
 }
@@ -553,7 +371,7 @@ export async function listSkusMissingMetadata(market: string, limit: number): Pr
   }
 }
 
-/** Brands present in a market with per-brand counts (for the discovery sidebar). */
+/** Brands present in a market with per-brand counts (the margin rules' brand picker). */
 export async function listBrandCounts(
   market: string,
 ): Promise<{ brand: string; count: number }[]> {
