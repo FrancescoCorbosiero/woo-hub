@@ -15,13 +15,14 @@ import { planFeedTakeover } from "@/server/store-json/takeover-plan";
 import { variationSizeLabel } from "@/server/store-json/match";
 import { gsOwnedProducts } from "@/server/feeds/owner";
 import { getOverrides } from "@/server/overrides/repo";
+import { followSaleRuleFor, manualPriceFor, type StoreOverrides } from "@/server/overrides/model";
 import { forgetVariations, noteStoreEdits, recordPriceWrites, type LedgerWrite } from "@/server/sync/ledger";
 import type { StoreProductModel, StoreVariation } from "@/server/store-json/model";
 import { chunk } from "@/server/adapters/http";
 import { skuKey } from "@/lib/skus";
 import { normalizeGtin } from "@/lib/gtin";
 import { getWooClient } from "./client";
-import { decideLiveWrites } from "./live-check";
+import { decideLiveWrites, type LiveRules } from "./live-check";
 import { toStoreVariation } from "./store-product";
 import { assertSnapshotIsThisStore } from "@/server/woo/site-guard";
 
@@ -43,8 +44,8 @@ import { assertSnapshotIsThisStore } from "@/server/woo/site-guard";
  * every product that fully succeeded, so the next preview reflects reality
  * without a re-pull, and every price the store took goes into the price ledger
  * (src/server/sync/ledger.ts) — the Hub's last word, which tells a later edit
- * in WordPress apart. The unattended runs read each product live first and keep
- * a price changed since the plan was made (liveCheck, see live-check.ts).
+ * in WordPress apart. Live runs read each product again first and keep a price
+ * changed since the plan was made (liveCheck, see live-check.ts).
  */
 
 export interface ApplySelection {
@@ -87,12 +88,19 @@ export interface ApplyOptions {
   backfillGtins?: boolean;
   /**
    * Read each product's sizes live right before writing them, and keep any
-   * price the store moved since the plan was made (see live-check.ts). The
-   * unattended runs' last look: their plans are made from a snapshot up to a
-   * day old. Costs one read per product written; the Sync tab, which pulls the
-   * store before planning, does without.
+   * price the store moved since the plan was made, or a size it put on sale
+   * since (see live-check.ts). Every live write asks for it: the unattended
+   * runs plan from a snapshot up to a day old, and even a plan the operator
+   * just reviewed can be overtaken — by WordPress, or by the Vetrina writing
+   * that product meanwhile. Costs one read per product written.
    */
   liveCheck?: boolean;
+  /**
+   * Sizes whose price a person decided just now — a lock set or cleared in the
+   * Vetrina, "use the Hub's price": written even where the live check finds the
+   * store moved, because that decision is the newer word. Live runs only.
+   */
+  decided?: (change: ApplyChange) => boolean;
   /**
    * Add the sizes the store product is missing — the run's selected "create"
    * rows: a size the source sells and the product on the store does not have
@@ -200,6 +208,8 @@ export interface ApplyOutcome {
    * kept, not written, and listed with the other prices changed on WordPress.
    */
   keptStoreEdits: number;
+  /** Prices the live check left alone: the size went on sale after the plan was made. */
+  keptOnSale: number;
   /** Sizes the products were missing: planned, and (live) actually added. */
   sizes: { planned: number; added: number; sample: NewSize[] };
 }
@@ -525,6 +535,7 @@ export async function applySync(options: ApplyOptions): Promise<ApplyOutcome> {
       cleanupDetailsTotal: cleanupDetails.length,
       gtinsWritten: changes.filter((c) => c.newGtin).length,
       keptStoreEdits: 0,
+      keptOnSale: 0,
       sizes: { planned: sizesPlanned.length, added: 0, sample: sizesPlanned.slice(0, OUTCOME_SAMPLE) },
     };
   }
@@ -555,6 +566,9 @@ export async function applySync(options: ApplyOptions): Promise<ApplyOutcome> {
   // Products read live before writing: their sizes as the store has them now.
   const liveSizes = new Map<number, StoreVariation[]>();
   const kept: { change: ApplyChange; storePrice: number }[] = [];
+  // Prices left alone because their size went on sale after the plan was made.
+  let onSale = 0;
+  const liveRules = options.liveCheck ? liveRulesFrom(await getOverrides(), options.decided) : {};
   // Variations the store no longer has once this apply is done.
   const gone: number[] = [];
   // Products that took new sizes: their parent and sizes as the store has them after.
@@ -570,9 +584,10 @@ export async function applySync(options: ApplyOptions): Promise<ApplyOutcome> {
       if (options.liveCheck && prices.length > 0) {
         // No answer, no write: a store that cannot be read is not written blind.
         const fresh = await client.getAllVariations(productId);
-        const decision = decideLiveWrites(prices, fresh);
+        const decision = decideLiveWrites(prices, fresh, liveRules);
         prices = decision.write;
         kept.push(...decision.kept);
+        onSale += decision.onSale.length;
         gone.push(...decision.gone.map((c) => c.storeVariationId));
         liveSizes.set(productId, fresh.map(toStoreVariation));
       }
@@ -749,6 +764,7 @@ export async function applySync(options: ApplyOptions): Promise<ApplyOutcome> {
     cleanupDetailsTotal: cleanupDetails.length,
     gtinsWritten: changes.filter((c) => c.newGtin).length,
     keptStoreEdits: kept.length,
+    keptOnSale: onSale,
     sizes: {
       planned: sizesPlanned.length,
       added: sizesAdded.length,
@@ -776,7 +792,22 @@ function emptyOutcome(cleanup: CleanupSummary | null): ApplyOutcome {
     cleanupDetailsTotal: 0,
     gtinsWritten: 0,
     keptStoreEdits: 0,
+    keptOnSale: 0,
     sizes: { planned: 0, added: 0, sample: [] },
+  };
+}
+
+/**
+ * The Hub's rules for the live check, as they stand at the write — not as they
+ * stood when the plan was made: a size gives way to a sale price on the store
+ * when its product follows the sale rule and the size carries no lock (a lock
+ * wins over a sale price, as in buildPlan).
+ */
+function liveRulesFrom(overrides: StoreOverrides, decided?: (change: ApplyChange) => boolean): LiveRules {
+  return {
+    yieldsToSale: (c) =>
+      followSaleRuleFor(overrides, c.sku) && (!c.euSize || manualPriceFor(overrides, c.sku, c.euSize) == null),
+    decided,
   };
 }
 

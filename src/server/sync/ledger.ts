@@ -1,5 +1,6 @@
 import "server-only";
 import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { samePrice } from "@core/core-spine";
 import { db } from "@/server/db/client";
 import { countOf } from "@/server/db/rows";
 import { priceLedger, storeSnapshot, type PriceLedgerRow } from "@/server/db/schema";
@@ -123,10 +124,19 @@ export async function ledgerForProducts(productIds: number[]): Promise<Map<numbe
  * Note store prices the Hub is keeping. "Seen" is when the store was first
  * found holding THAT price: noting the same price again keeps the date, a new
  * edit restarts it.
+ *
+ * A store price that IS the Hub's last word is no edit, whatever the note
+ * says: another Hub write landed after the plan was made — the Vetrina
+ * publishing that product while the feed cycle was writing it — and the live
+ * check, which only knew the plan, kept it. Such a note closes the row
+ * instead of listing the Hub's own price as changed on WordPress.
  */
 export async function noteStoreEdits(notes: StoreEditNote[]): Promise<void> {
   const byId = new Map<number, StoreEditNote>();
-  for (const n of notes) if (n.variationId > 0) byId.set(n.variationId, n);
+  for (const n of notes) {
+    if (n.variationId > 0 && !samePrice(n.storePrice, n.hubPrice)) byId.set(n.variationId, n);
+  }
+  const hubsOwn = sql`abs(${priceLedger.price} - excluded.store_price) < 0.005`;
   for (const part of chunks([...byId.values()])) {
     await db
       .insert(priceLedger)
@@ -146,10 +156,11 @@ export async function noteStoreEdits(notes: StoreEditNote[]): Promise<void> {
       .onConflictDoUpdate({
         target: priceLedger.variationId,
         set: {
-          seenAt: sql`case when ${priceLedger.storePrice} = excluded.store_price
+          seenAt: sql`case when ${hubsOwn} then null
+                           when ${priceLedger.storePrice} = excluded.store_price
                            then coalesce(${priceLedger.seenAt}, excluded.seen_at)
                            else excluded.seen_at end`,
-          storePrice: sql`excluded.store_price`,
+          storePrice: sql`case when ${hubsOwn} then null else excluded.store_price end`,
           euSize: sql`coalesce(nullif(excluded.eu_size, ''), ${priceLedger.euSize})`,
           title: sql`coalesce(nullif(excluded.title, ''), ${priceLedger.title})`,
           sizeLabel: sql`coalesce(nullif(excluded.size_label, ''), ${priceLedger.sizeLabel})`,

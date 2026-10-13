@@ -1,6 +1,7 @@
 import "server-only";
 import { advanceStoreSync, startStoreSync, type PreviewResult } from "@/server/actions/preview";
-import { applySync, type ApplyOutcome } from "@/server/woo/apply";
+import { applySync, type ApplyChange, type ApplyOutcome } from "@/server/woo/apply";
+import { skuKey } from "@/lib/skus";
 import { deleteRunPlans } from "@/server/plans/repo";
 import { deleteSyncRun } from "./runs";
 
@@ -18,11 +19,28 @@ import { deleteSyncRun } from "./runs";
  * would push the operator's own preview out of the runs it keeps.
  */
 
+/**
+ * Sizes whose price a person decided just now: the product sheet's locks set
+ * or cleared (by product and EU size), the list's "use the Hub's price" (by
+ * variation). The live check writes them even where the store moved since the
+ * snapshot was read — that decision is the newer word.
+ */
+export interface DecidedPrices {
+  variationIds?: number[];
+  sizes?: { sku: string; euSize: string }[];
+}
+
 export interface PriceSyncOptions {
   /** Products to plan, any spelling. Omitted: the whole store. */
   skus?: string[];
-  /** Read each product live before writing it (see live-check.ts): the unattended runs. */
+  /**
+   * Read each product live before writing it (see live-check.ts). Every run
+   * asks for it: the unattended ones, and the one-product writes of the
+   * Vetrina and the list of prices changed on WordPress.
+   */
   liveCheck?: boolean;
+  /** With liveCheck: sizes written even where the store moved (see DecidedPrices). */
+  decided?: DecidedPrices;
   /** Plan, then write nothing when more variations than this would change. */
   maxChanges?: number;
   /** Steps of 250 SKUs before giving up. Default: what the run needs, and some. */
@@ -84,6 +102,7 @@ export async function runPriceSync(opts: PriceSyncOptions = {}): Promise<PriceSy
       sanitize: false,
       backfillGtins: false,
       liveCheck: opts.liveCheck,
+      decided: decidedBy(opts.decided),
       addSizes: holdSizes ? undefined : opts.addSizes,
     });
     return { report, outcome, capped: null, sizesHeld: holdSizes ? creates : null };
@@ -92,4 +111,12 @@ export async function runPriceSync(opts: PriceSyncOptions = {}): Promise<PriceSy
       .then(() => deleteSyncRun(runId))
       .catch((e) => console.warn(`[sync] run ${runId} kept: ${e instanceof Error ? e.message : String(e)}`));
   }
+}
+
+/** The apply's test for a decided size; undefined when none was. */
+export function decidedBy(decided?: DecidedPrices): ((change: ApplyChange) => boolean) | undefined {
+  const ids = new Set(decided?.variationIds ?? []);
+  const sizes = new Set((decided?.sizes ?? []).map((s) => `${skuKey(s.sku)}::${s.euSize}`));
+  if (ids.size === 0 && sizes.size === 0) return undefined;
+  return (c) => ids.has(c.storeVariationId) || (c.euSize != null && sizes.has(`${skuKey(c.sku)}::${c.euSize}`));
 }

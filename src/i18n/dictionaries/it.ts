@@ -614,6 +614,10 @@ export const it = {
       sizesTitle: (n: number) =>
         `${n === 1 ? "1 taglia mancante" : `${n} taglie mancanti`} sullo store, da aggiungere (le altre taglie non vengono toccate):`,
       sizesAdded: (n: number) => `${n === 1 ? "1 taglia aggiunta" : `${n} taglie aggiunte`} sullo store ✓`,
+      keptChanged: (n: number) =>
+        `${n === 1 ? "1 prezzo lasciato com'era" : `${n} prezzi lasciati com'erano`}: sullo store sono cambiati dopo l'anteprima. Quelli cambiati su WordPress sono in «Prezzi cambiati su WordPress».`,
+      keptOnSale: (n: number) =>
+        `${n === 1 ? "1 taglia è andata in saldo" : `${n} taglie sono andate in saldo`} dopo l'anteprima: il prezzo non è stato toccato.`,
     },
     storeEdits: {
       title: "Prezzi cambiati su WordPress",
@@ -1599,6 +1603,14 @@ export const it = {
       storeEditKeep: "Tienilo",
       storeEditReprice: "Usa il prezzo dell'Hub",
       storeEditRepriced: "Prezzo dell'Hub di nuovo sul sito",
+      keptChanged: (n: number) =>
+        n === 1
+          ? "1 taglia lasciata com'è: il suo prezzo era stato cambiato su WordPress. La trovi qui sotto."
+          : `${n} taglie lasciate come sono: i loro prezzi erano stati cambiati su WordPress. Le trovi qui sotto.`,
+      keptOnSale: (n: number) =>
+        n === 1
+          ? "1 taglia è in saldo sul sito: il suo prezzo non è stato toccato."
+          : `${n} taglie sono in saldo sul sito: i loro prezzi non sono stati toccati.`,
       noSnapshot: "Per pubblicare i prezzi serve prima un aggiornamento dal negozio (Sync).",
       openSite: "Apri sul sito",
       editWp: "Modifica su WordPress",

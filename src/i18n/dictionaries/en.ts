@@ -600,6 +600,10 @@ export const en: Dictionary = {
       sizesTitle: (n) =>
         `${n === 1 ? "1 size" : `${n} sizes`} missing on the store, to add (the other sizes are left as they are):`,
       sizesAdded: (n) => `${n === 1 ? "1 size" : `${n} sizes`} added to the store ✓`,
+      keptChanged: (n: number) =>
+        `${n === 1 ? "1 price left as it was" : `${n} prices left as they were`}: they changed on the store after the preview. Those changed in WordPress are under "Prices changed on WordPress".`,
+      keptOnSale: (n: number) =>
+        `${n === 1 ? "1 size went on sale" : `${n} sizes went on sale`} after the preview: the price was left alone.`,
     },
     storeEdits: {
       title: "Prices changed on WordPress",
@@ -1559,6 +1563,14 @@ export const en: Dictionary = {
       storeEditKeep: "Keep it",
       storeEditReprice: "Use the Hub's price",
       storeEditRepriced: "The Hub's price is back on the site",
+      keptChanged: (n: number) =>
+        n === 1
+          ? "1 size left as it is: its price had been changed in WordPress. It's listed below."
+          : `${n} sizes left as they are: their prices had been changed in WordPress. They're listed below.`,
+      keptOnSale: (n: number) =>
+        n === 1
+          ? "1 size is on sale on the site: its price was left alone."
+          : `${n} sizes are on sale on the site: their prices were left alone.`,
       noSnapshot: "Publishing prices needs a store refresh first (Sync).",
       openSite: "Open on site",
       editWp: "Edit in WordPress",

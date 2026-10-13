@@ -106,12 +106,16 @@ export function ProductSheet({
       }
       const lockedCount = d.variants.filter((v) => v.euSize && (edits[v.euSize] ?? "").trim() !== "").length;
       onLocksChanged(d.sku, lockedCount);
-      const published = await publishProductPrices({ sku: d.sku });
+      // The sizes decided here are written even where the store moved since
+      // the Hub last read it; the others keep what the store shows.
+      const published = await publishProductPrices({ sku: d.sku, sizes: prices.map((x) => x.euSize) });
       if (!published.ok) toast.error(`${p.savedLocked}. ${published.noSnapshot ? p.noSnapshot : published.error}`);
       else if (published.failed > 0) toast.error(p.someFailed(published.failed));
       else if (published.updated > 0) toast.success(p.saved(published.updated));
       else if (published.unpriced) toast.warning(p.notPriced);
-      else toast(p.upToDate);
+      else if (published.kept === 0 && published.onSale === 0) toast(p.upToDate);
+      if (published.ok && published.kept > 0) toast.warning(p.keptChanged(published.kept));
+      if (published.ok && published.onSale > 0) toast(p.keptOnSale(published.onSale));
       if (published.ok && published.updated > 0 && card) onPricesChanged(card.id);
       await load(d.sku);
     } finally {

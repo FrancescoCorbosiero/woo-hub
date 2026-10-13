@@ -24,7 +24,10 @@ const live = (id: number, price: string | null, gtin: string | null = null, qty:
   stock_quantity: qty,
 });
 
-describe("decideLiveWrites — the last look before an unattended write", () => {
+/** A live size on sale: the regular price as planned, a sale price on top. */
+const onSale = (id: number, price: string, sale: string, qty: number | null = null) => ({ ...live(id, price, null, qty), sale_price: sale });
+
+describe("decideLiveWrites — the last look before a live write", () => {
   it("writes as planned while the store is where the plan left it", () => {
     const d = decideLiveWrites([change()], [live(71, "120.00")]);
     expect(d.write).toEqual([change()]);
@@ -82,5 +85,56 @@ describe("decideLiveWrites — the last look before an unattended write", () => 
     const d = decideLiveWrites([change({ newPrice: null, newStock: 0 })], [live(71, "999")]);
     expect(d.write).toEqual([change({ newPrice: null, newStock: 0 })]);
     expect(d.kept).toEqual([]);
+  });
+
+  describe("a size put on sale since the plan was made", () => {
+    const yields = { yieldsToSale: () => true };
+
+    it("keeps its price while the product follows the sale rule — the plan would have held it", () => {
+      const d = decideLiveWrites([change()], [onSale(71, "120.00", "99.00")], yields);
+      expect(d.write).toEqual([]);
+      expect(d.onSale).toEqual([change()]);
+      expect(d.kept).toEqual([]); // a sale is not a price changed on WordPress
+    });
+
+    it("still writes its stock", () => {
+      const d = decideLiveWrites([change({ newStock: 1 })], [onSale(71, "120.00", "99.00", 4)], yields);
+      expect(d.write).toEqual([change({ newStock: 1, newPrice: null })]);
+      expect(d.onSale).toHaveLength(1);
+    });
+
+    it("is written when the size gives no way to sales: a lock, or a product repricing its discounted sizes", () => {
+      const d = decideLiveWrites([change()], [onSale(71, "120.00", "99.00")], { yieldsToSale: () => false });
+      expect(d.write).toEqual([change()]);
+      expect(d.onSale).toEqual([]);
+    });
+
+    it("an empty or zero sale price is no sale", () => {
+      const d = decideLiveWrites([change(), change({ storeVariationId: 72, stockxVariantId: "v43" })], [onSale(71, "120.00", ""), onSale(72, "120.00", "0")], yields);
+      expect(d.write.map((c) => c.storeVariationId)).toEqual([71, 72]);
+    });
+
+    it("without the Hub's rules nothing gives way (the default)", () => {
+      const d = decideLiveWrites([change()], [onSale(71, "120.00", "99.00")]);
+      expect(d.write).toEqual([change()]);
+    });
+  });
+
+  describe("a size a person decided just now", () => {
+    const decided = (c: { storeVariationId: number }) => c.storeVariationId === 71;
+
+    it("is written though the store moved since the plan — the decision is the newer word", () => {
+      const d = decideLiveWrites([change(), change({ storeVariationId: 72, stockxVariantId: "v43" })], [live(71, "149.99"), live(72, "135.00")], { decided });
+      expect(d.write).toEqual([change()]);
+      // The size nobody decided is kept, as always.
+      expect(d.kept).toEqual([{ change: change({ storeVariationId: 72, stockxVariantId: "v43" }), storePrice: 135 }]);
+    });
+
+    it("still gives way to a sale when its size does (a lock does not: see yieldsToSale)", () => {
+      const d = decideLiveWrites([change()], [onSale(71, "149.99", "99.00")], { decided, yieldsToSale: () => true });
+      expect(d.write).toEqual([]);
+      expect(d.onSale).toHaveLength(1);
+      expect(d.kept).toEqual([]);
+    });
   });
 });

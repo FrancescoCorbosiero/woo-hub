@@ -77,6 +77,11 @@ export async function keepStoreEdits(ids: number[] | "all"): Promise<{ kept: num
  * Hand the prices back to the rules, and write the products' prices now. The
  * edits are closed first: if the write fails (the store is down, the source
  * has no price today), the next sync writes them.
+ *
+ * The products are read again before the write: their OTHER sizes may have
+ * been changed in WordPress since the snapshot was read, and those are kept,
+ * not written over. The sizes handed back are written whatever the store
+ * shows — that is what the person asked for.
  */
 export async function repriceStoreEdits(
   ids: number[] | "all",
@@ -85,7 +90,11 @@ export async function repriceStoreEdits(
   if (rows.length === 0) return { handed: 0, updated: 0, failed: 0, error: null };
   await supersedeStoreEditsById(rows.map((r) => r.variationId));
   try {
-    const { outcome } = await runPriceSync({ skus: [...new Set(rows.map((r) => r.sku))] });
+    const { outcome } = await runPriceSync({
+      skus: [...new Set(rows.map((r) => r.sku))],
+      liveCheck: true,
+      decided: { variationIds: rows.map((r) => r.variationId) },
+    });
     return { handed: rows.length, updated: outcome?.updated ?? 0, failed: outcome?.failedTotal ?? 0, error: null };
   } catch (e) {
     return { handed: rows.length, updated: 0, failed: 0, error: e instanceof Error ? e.message : String(e) };
