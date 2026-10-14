@@ -398,6 +398,8 @@ export const en: Dictionary = {
     ruleMarginBands: (n: number) => `dynamic markup, ${n} bands`,
     rulePassthrough: "supplier's final price, no markup applied",
     ruleMixed: "different sizes follow different rules",
+    storeTermsUnknown:
+      "The store's categories and brands can't be read right now: these prices may miss a store category's or brand's margin. Until they can, the sync writes none of this product's prices.",
     ruleEdit: "Edit the rule",
     ruleCreate: "Give this family its own rule",
     storeTitle: "Store prices & stock",
@@ -747,6 +749,10 @@ export const en: Dictionary = {
     saving: "Saving…",
     saved: "Rules saved ✓",
     saveFailed: "Save failed",
+    staleRules:
+      "Not saved: the rules changed since you opened this page (a margin set from the Showcase, for instance). Reload the page to see them, then make your changes again.",
+    reload: "Reload the page",
+    rulesFull: (max: number) => `At most ${max} rules: remove one to add another.`,
     deleteRule: "Delete",
     enabled: "Enabled",
     generalRule: "General rule (everything else)",
@@ -802,7 +808,8 @@ export const en: Dictionary = {
     storePickMore: (n: number) => `…and ${n} more: keep typing`,
     storePickRuled: "already has a rule",
     storePickProducts: (n: number) => (n === 1 ? "1 product" : `${n} products`),
-    storePickDemo: "The Showcase's demo shop",
+    storePickDemo:
+      "In the demo shop store-category and store-brand margins can't be added: the ids are the demo's, not the real shop's, and would land on other products.",
     storePickCancel: "Cancel",
     scopeBrand: "Brand",
     scopeCategory: "Family",
@@ -849,7 +856,7 @@ export const en: Dictionary = {
     coverageNone:
       "Applies to no product — either nothing matches it, or a more specific rule outranks it",
     coverageNoneStore:
-      "Applies to no product — the category or brand is empty, its products are priced by the supplier, or a rule on a single SKU or a sub-category outranks it",
+      "Applies to no product — the category or brand is empty, its products are priced by the supplier, or a rule on a single SKU or on a deeper category or brand outranks it",
     coverageSizeScoped: "(only on the sizes it names)",
     exampleLabel: "Example:",
   },
@@ -1524,6 +1531,9 @@ export const en: Dictionary = {
       },
       rule: (label) => `Margin: ${label}`,
       generalRule: "standard margin",
+      storeTermRule: (name, taxonomy) => `“${name}” (store ${taxonomy === "category" ? "category" : "brand"})`,
+      storeTermsUnknown:
+        "The shop's categories and brands can't be read right now: these prices may miss their margin. Until they can, this product's prices on the site stay as they are.",
       belowMarket: (ask) => `Below the market price (${ask})`,
       storeEdit: (price) => `Changed on WordPress: ${price}`,
       storeEditKeep: "Keep it",

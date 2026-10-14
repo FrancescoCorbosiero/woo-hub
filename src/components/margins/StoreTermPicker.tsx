@@ -103,6 +103,10 @@ export function StoreTermPicker({
   }, [state.status, taxonomy]);
 
   const terms = state.status === "ready" ? (taxonomy === "category" ? state.categories : state.brands) : [];
+  // The demo shop's ids are not the real shop's: a rule saved on one would
+  // land on whatever real term has the same id once the demo is off (the
+  // Vetrina refuses the same, margin.ts). Shown to browse, never picked.
+  const locked = state.status === "ready" && state.demo;
   const rows = React.useMemo(() => pickableTerms(terms, query), [terms, query]);
   const shown = rows.slice(0, VISIBLE_TERMS);
 
@@ -150,9 +154,7 @@ export function StoreTermPicker({
         ))}
       </div>
 
-      {state.status === "ready" && state.demo && (
-        <p className="mb-2 text-[11px] font-medium text-warn">{t.margins.storePickDemo}</p>
-      )}
+      {locked && <p className="mb-2 text-[11px] font-medium leading-snug text-warn">{t.margins.storePickDemo}</p>}
 
       <input
         ref={searchRef}
@@ -164,7 +166,7 @@ export function StoreTermPicker({
         onChange={(e) => setQuery(e.target.value)}
         onKeyDown={(e) => {
           // Enter takes the first row: type "nike", press Enter.
-          if (e.key === "Enter" && shown[0]) {
+          if (e.key === "Enter" && shown[0] && !locked) {
             e.preventDefault();
             onPick(shown[0]);
           }
@@ -203,9 +205,11 @@ export function StoreTermPicker({
                   type="button"
                   role="option"
                   aria-selected={isSelected}
+                  aria-disabled={locked || undefined}
+                  disabled={locked}
                   onClick={() => onPick(term)}
                   className={cn(
-                    "flex min-h-10 w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/12 sm:min-h-8 sm:text-xs",
+                    "flex min-h-10 w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors enabled:hover:bg-accent/12 disabled:cursor-not-allowed sm:min-h-8 sm:text-xs",
                     isSelected && "bg-accent/12",
                   )}
                 >

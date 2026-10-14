@@ -3,8 +3,10 @@ import { getDictionary } from "@/i18n/dictionary";
 import type { OperationView, TermMarginState } from "@/lib/vetrina/catalog-ops";
 import {
   activeMargin,
+  backLabel,
   backText,
   clampPercent,
+  followedPercent,
   marginInput,
   marginText,
   nowText,
@@ -13,6 +15,7 @@ import {
   rowText,
   rowTitle,
   runningText,
+  startMode,
   startPercent,
 } from "./model";
 
@@ -25,6 +28,7 @@ const state = (over: Partial<TermMarginState> = {}): TermMarginState => ({
   standard: { kind: "bands" },
   priced: 34,
   applies: 30,
+  hubRules: 0,
   supplier: 0,
   storeOnly: 0,
   ...over,
@@ -71,15 +75,29 @@ describe("the Ricarico row", () => {
     expect(plain(marginText({ kind: "fixed", amount: 10 }, m))).toBe("+10 €");
   });
 
+  it("never says «standard» when other Hub rules price its products (a catalog brand's +3 €, a family's)", () => {
+    expect(rowTitle(state({ hubRules: 30 }), "brand", m)).toBe("Ricarico: dalle regole dell'Hub");
+    // A term above it still decides first: a store term outranks every catalog rule.
+    expect(rowTitle(state({ hubRules: 4, inherited: { term: "Nike", value: { kind: "percent", percent: 25 } } }), "brand", m)).toBe(
+      "Ricarico: 25% da «Nike»",
+    );
+  });
+
   it("says how many products it applies to, and how many the supplier prices", () => {
     expect(rowText(state(), m)).toBe("Vale per 30 prodotti");
     expect(rowText(state({ applies: 1, supplier: 12 }), m)).toBe("Vale per 1 prodotto · 12 col prezzo del fornitore");
     expect(rowText(state({ applies: 0 }), m)).toBe("Nessun prodotto lo segue");
   });
 
-  it("shows only where a margin can act: products the Hub prices from the market", () => {
+  it("shows where a margin can act, and wherever the term has one of its own — so it can be removed", () => {
     expect(rowShown(state())).toBe(true);
     expect(rowShown(state({ priced: 0, supplier: 20, storeOnly: 3 }))).toBe(false);
+    const stranded = state({ own: { kind: "percent", percent: 10 }, priced: 0, applies: 0, supplier: 20 });
+    expect(rowShown(stranded)).toBe(true);
+    expect(rowText(stranded, m)).toBe("Nessun prodotto col prezzo dell'Hub, per ora");
+    // ...and its sheet opens on taking it away, all it can do.
+    expect(startMode(stranded)).toBe("standard");
+    expect(startMode(state({ own: { kind: "percent", percent: 10 } }))).toBe("set");
   });
 
   it("follows the term's margin action while it runs — no other term's, no other kind", () => {
@@ -118,6 +136,18 @@ describe("the margin sheet", () => {
     expect(clampPercent(Number.NaN)).toBe(25);
   });
 
+  it("asks nothing on the margin the term follows now, its own or not: a rule saying the same changes no price", () => {
+    const term = { taxonomy: "category" as const, id: 11 };
+    const inherited = state({ inherited: { term: "Nike", value: { kind: "percent", percent: 25 } } });
+    expect(followedPercent(inherited)).toBe(25);
+    expect(marginInput(term, "set", 25, followedPercent(inherited))).toBeNull();
+    expect(followedPercent(state({ standard: { kind: "percent", percent: 35 } }))).toBe(35);
+    // Bands, or other Hub rules: no single percent it follows.
+    expect(followedPercent(state())).toBeNull();
+    expect(followedPercent(state({ standard: { kind: "percent", percent: 35 }, hubRules: 3 }))).toBeNull();
+    expect(followedPercent(state({ own: { kind: "percent", percent: 30 }, inherited: inherited.inherited }))).toBe(30);
+  });
+
   it("asks for the margin chosen; nothing on the margin the term has; null to go back to the standard", () => {
     const term = { taxonomy: "category" as const, id: 11 };
     expect(marginInput(term, "set", 28, null)).toEqual({
@@ -146,12 +176,26 @@ describe("the margin sheet", () => {
       term: "Nike",
       value: { kind: "percent" as const, percent: 25 },
     };
-    expect(nowText(state({ own: { kind: "percent", percent: 30 } }), m)).toBe("Adesso: 30%, il suo.");
-    expect(nowText(state({ inherited: nike }), m)).toBe("Adesso: 25%, quello di «Nike».");
-    expect(nowText(state(), m)).toBe("Adesso: lo standard (a fasce).");
+    expect(nowText(state({ own: { kind: "percent", percent: 30 } }), "category", m)).toBe("Adesso: 30% (di questa categoria).");
+    expect(nowText(state({ own: { kind: "percent", percent: 30 } }), "brand", m)).toBe("Adesso: 30% (di questo brand).");
+    expect(nowText(state({ inherited: nike }), "category", m)).toBe("Adesso: 25%, quello di «Nike».");
+    expect(nowText(state(), "category", m)).toBe("Adesso: lo standard (a fasce).");
+    expect(nowText(state({ hubRules: 5 }), "brand", m)).toBe("Adesso: le regole dell'Hub (di un brand, di una famiglia…).");
     expect(backText(state({ own: { kind: "percent", percent: 30 } }), m)).toBe("I suoi prodotti tornano al ricarico standard (a fasce).");
     expect(backText(state({ own: { kind: "percent", percent: 30 }, inherited: nike }), m)).toBe(
       "I suoi prodotti tornano al ricarico di «Nike» (25%).",
     );
+    expect(backText(state({ own: { kind: "percent", percent: 30 }, hubRules: 2 }), m)).toBe(
+      "I suoi prodotti tornano alle regole dell'Hub che li prezzano.",
+    );
+  });
+
+  it("names the button for where the products go back to — never «standard» when it is not", () => {
+    const own = { kind: "percent" as const, percent: 30 };
+    expect(backLabel(state({ own }), m)).toBe("Torna al ricarico standard");
+    expect(backLabel(state({ own, inherited: { term: "Nike", value: { kind: "percent", percent: 25 } } }), m)).toBe(
+      "Torna al ricarico di «Nike»",
+    );
+    expect(backLabel(state({ own, hubRules: 2 }), m)).toBe("Torna alle regole dell'Hub");
   });
 });

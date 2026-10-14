@@ -19,7 +19,8 @@ import { activeMargin, rowShown, rowText, rowTitle, runningText } from "./model"
  * 25%"), a term above it's, or the standard — and how many products it
  * applies to. A tap opens the margin sheet; while a margin of the term runs,
  * the row follows it and a tap opens the log. Not shown where no margin can
- * act: a term none of whose products the Hub prices from the market.
+ * act — a term none of whose products the Hub prices from the market —
+ * unless the term has a margin of its own, which can then still be removed.
  */
 
 const KEY = "vetrina-term-margin";
@@ -41,12 +42,24 @@ function Icon({ own }: { own: boolean }) {
   );
 }
 
-export function MarginRow({ term }: { term: Pick<CatalogTerm, "taxonomy" | "id" | "name" | "count"> }) {
+export function MarginRow({
+  term,
+  ready = true,
+}: {
+  term: Pick<CatalogTerm, "taxonomy" | "id" | "name" | "count">;
+  /**
+   * Whether to read yet. The panel's own read (hide, sale) goes first: the
+   * browser sends server actions one at a time, and the margin's — which
+   * weighs every product of the term — would hold the switch and the sale
+   * row up behind it.
+   */
+  ready?: boolean;
+}) {
   const { t } = useI18n();
   const m = t.vetrinaCatalog.margins;
   const ops = useOperations();
   // Read when the screen opens (kept for the next visit), and again whenever an action ends.
-  const swr = useSWR([KEY, term.taxonomy, term.id] as const, fetchMargin, {
+  const swr = useSWR(ready ? ([KEY, term.taxonomy, term.id] as const) : null, fetchMargin, {
     shouldRetryOnError: false,
     dedupingInterval: 2_000,
   });
@@ -77,7 +90,7 @@ export function MarginRow({ term }: { term: Pick<CatalogTerm, "taxonomy" | "id" 
       <ListItem
         media={<Icon own={false} />}
         title={<Ghost className="motion-safe:animate-pulse">{m.row.standard(m.value.bands)}</Ghost>}
-        text={<Ghost className="motion-safe:animate-pulse">{m.row.applies(term.count)}</Ghost>}
+        text={<Ghost className="motion-safe:animate-pulse">{m.row.loading}</Ghost>}
       />
     );
   }

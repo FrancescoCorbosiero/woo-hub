@@ -110,6 +110,13 @@ export interface TermMarginState {
    * category's or brand's).
    */
   applies: number;
+  /**
+   * Of `applies`, the ones another of the Hub's rules prices without the
+   * term's own margin — a catalog brand's or family's, the other store
+   * taxonomy's — rather than the standard or a term above it: then "now"
+   * and "back" are the Hub's rules, not the standard.
+   */
+  hubRules: number;
   /** The term's products the supplier's feed prices (GoldenSneakers): never touched by a margin here. */
   supplier: number;
   /** The term's products the Hub does not price at all (store-only). */
@@ -118,8 +125,9 @@ export interface TermMarginState {
 
 /**
  * A margin's preview (added in phase 4), beside the shape every action
- * shares: before → after is the engine's price under the rules in force
- * and under the draft, for the same market prices — the margin's own effect.
+ * shares: before → after is what the store shows now (the engine's price
+ * where the Hub's copy of the shop lacks the size) → the engine's price
+ * under the draft, moved only as the sync's plan would move it.
  */
 export interface MarginPreview {
   /** The margin asked; null = back to the standard. */

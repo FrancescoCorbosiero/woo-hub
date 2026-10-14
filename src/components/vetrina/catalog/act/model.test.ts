@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { getDictionary } from "@/i18n/dictionary";
 import {
   addDays,
+  refusedText,
   clearPicked,
   comingSunday,
   endChoiceFor,
@@ -225,5 +227,15 @@ describe("searching a sheet's list", () => {
     ];
     expect(readersOfTag(categories, 5)).toEqual(["Saldi", "Outlet"]);
     expect(readersOfTag(categories, 6)).toEqual([]);
+  });
+});
+
+describe("refusedText", () => {
+  const it_ = getDictionary("it").vetrinaCatalog.act.toast;
+  it("counts sizes for a margin, products for every other action", () => {
+    const words = { products: it_.refused, sizes: it_.refusedSizes };
+    expect(refusedText("margin", 8, words)).toBe("8 taglie rifiutate dal negozio.");
+    expect(refusedText("margin", 1, words)).toBe("1 taglia rifiutata dal negozio.");
+    expect(refusedText("sale", 3, words)).toBe("3 prodotti rifiutati dal negozio.");
   });
 });

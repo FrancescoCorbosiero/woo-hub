@@ -12,6 +12,7 @@ import {
   type FacetCount,
   type QuickView,
 } from "@/lib/vetrina/catalog";
+import type { OperationKind } from "@/lib/vetrina/catalog-ops";
 
 /**
  * The catalog's pure parts: routes, what a list keeps in its address, the
@@ -259,4 +260,14 @@ export function sliceRequests(count: number): { offset: number; limit: number }[
 export function joinPages(query: CatalogQuery, pages: readonly CatalogPage[]): Loaded {
   const [first, ...rest] = pages;
   return rest.reduce((loaded, page) => appendPage(loaded, page), fromPage(query, first));
+}
+
+/**
+ * Whether an action that ended moved the prices a list's rows take from the
+ * store's cards — a sale, a sale's end, a category's or brand's margin — so
+ * the list reads the cards again rather than show the old prices under the
+ * toast that says they changed.
+ */
+export function movesRowPrices(kind: OperationKind): boolean {
+  return kind === "sale" || kind === "unsale" || kind === "margin";
 }

@@ -1,5 +1,5 @@
 import type { CatalogQuery } from "@/lib/vetrina/catalog";
-import type { OperationStatus, OperationTarget, OperationView } from "@/lib/vetrina/catalog-ops";
+import type { OperationKind, OperationStatus, OperationTarget, OperationView } from "@/lib/vetrina/catalog-ops";
 
 /**
  * The catalog's actions, their pure parts: what a selection holds and the
@@ -278,4 +278,17 @@ export function readersOfTag(categories: readonly { name: string; automatic: Rul
   return categories
     .filter((c) => c.automatic?.enabled && c.automatic.conditions.some((cond) => cond.field === "tag" && cond.value === id))
     .map((c) => c.name);
+}
+
+/**
+ * What the store refused, in the unit the count is in: products for every
+ * action but a margin, whose reprice counts the SIZES the store refused
+ * (one product can refuse eight) — "8 taglie rifiutate", never "8 prodotti".
+ */
+export function refusedText(
+  kind: OperationKind,
+  count: number,
+  words: { products: (count: number) => string; sizes: (count: number) => string },
+): string {
+  return kind === "margin" ? words.sizes(count) : words.products(count);
 }

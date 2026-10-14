@@ -105,6 +105,7 @@ describe("cardShows", () => {
     expect(cardShows("sale")).toBe(true);
     expect(cardShows("unsale")).toBe(true);
     expect(cardShows("hide")).toBe(true);
+    expect(cardShows("margin")).toBe(true);
     expect(cardShows("pin")).toBe(false);
     expect(cardShows("uncategorize")).toBe(false);
   });

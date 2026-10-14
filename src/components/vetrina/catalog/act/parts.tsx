@@ -502,7 +502,7 @@ const LIST_KINDS = new Set<OperationKind>(["tag", "untag", "categorize", "uncate
  * The preview, as the owner reads it: how many change, what to know, the
  * first products before → after, and those left as they are with why.
  */
-export function PreviewView({ state }: { state: PreviewState }) {
+export function PreviewView({ state, headline = true }: { state: PreviewState; headline?: boolean }) {
   const { t, locale } = useI18n();
   const p = t.vetrinaCatalog.act.preview;
   const { preview, loading, error } = state;
@@ -537,10 +537,12 @@ export function PreviewView({ state }: { state: PreviewState }) {
 
   return (
     <section aria-busy={loading} className={`space-y-4 transition-opacity duration-200 ${loading ? "opacity-50" : ""}`}>
-      <p aria-live="polite" className="flex items-center gap-2 px-1 text-[17px] font-semibold leading-snug">
-        {p.changes(preview.changes)}
-        {loading && <Preloader className="!h-4 !w-4" />}
-      </p>
+      {headline && (
+        <p aria-live="polite" className="flex items-center gap-2 px-1 text-[17px] font-semibold leading-snug">
+          {p.changes(preview.changes)}
+          {loading && <Preloader className="!h-4 !w-4" />}
+        </p>
+      )}
 
       {preview.warnings.length > 0 && (
         <ul className="space-y-2">

@@ -687,7 +687,10 @@ export const vetrinaOperationItems = pgTable(
     productId: integer("product_id").notNull(),
     // The size, for a sale on a product with sizes; null for the product itself.
     variationId: integer("variation_id"),
-    field: text("field", { enum: ["visibility", "tags", "categories", "sale"] }).notNull(),
+    // 'margin' is no product's value: a category's or brand's margin files
+    // its pricing rule before and after here, on product 0 (operations/repo.ts
+    // fileMarginRecord). The column is plain text: the list is TypeScript's only.
+    field: text("field", { enum: ["visibility", "tags", "categories", "sale", "margin"] }).notNull(),
     before: jsonb("before").$type<unknown>(),
     after: jsonb("after").$type<unknown>(),
   },

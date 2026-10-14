@@ -23,7 +23,7 @@ import {
 } from "@/server/store-json/match";
 import { skuKey } from "@/lib/skus";
 import { openStoreEditsForSku } from "@/server/sync/ledger";
-import { withStoreTerms } from "@/server/pricing/store-terms";
+import { withStoreTermsChecked } from "@/server/pricing/store-terms";
 
 /** One drawer row: a size variant with its ask, computed price and override state. */
 export interface DrawerVariant {
@@ -104,6 +104,12 @@ export interface DrawerData {
   variants: DrawerVariant[];
   /** The margin rule the proposed prices come from; null when nothing prices it. */
   appliedRule: AppliedRule | null;
+  /**
+   * The shop's categories and brands could not be read just now, and a margin
+   * set on one of them may price this product: the prices shown may miss it,
+   * and the sync holds this product's prices until they can be read.
+   */
+  storeTermsUnknown: boolean;
   /** Store-only products: the live snapshot view, directly editable. */
   store: { productId: number; variants: StoreDrawerVariant[] } | null;
 }
@@ -171,7 +177,10 @@ export async function loadDrawerData(
   const gs = pin === "kicksdb" ? undefined : covered;
   // With the shop's categories and brands, as the sync plans it: a margin set
   // on one of them shows here exactly as it will be written.
-  const [product] = await withStoreTerms([gs?.product ?? entry.product], config.pricingRules);
+  const {
+    products: [product],
+    uncertain,
+  } = await withStoreTermsChecked([gs?.product ?? entry.product], config.pricingRules);
   const deliveryType = config.source.defaultDeliveryType;
 
   // Which rule owns the margin, collected as the variants are priced: sizes
@@ -272,6 +281,7 @@ export async function loadDrawerData(
     pinnedToKicksdb: pin === "kicksdb",
     kicksdbAvailable: kicksdbConfigured(),
     variants,
+    storeTermsUnknown: uncertain.size > 0,
     appliedRule: (() => {
       // With several rules in play, name the most specific one — that is the
       // deliberate instruction the operator wants to verify — and flag the mix.

@@ -38,7 +38,13 @@ export const marginsIt = {
     standard: (value: string | null) => (value ? `Ricarico: standard (${value})` : "Ricarico: standard"),
     /** Without one of its own: the margin of a term above it. */
     inherited: (value: string, term: string) => `Ricarico: ${value} da «${term}»`,
+    /** Without one of its own, and other rules of the Hub (a brand's, a family's) price its products. */
+    hub: "Ricarico: dalle regole dell'Hub",
     applies: (count: number) => (count === 0 ? "Nessun prodotto lo segue" : `Vale per ${products(count)}`),
+    /** A margin of its own, but none of its products has a Hub price now. */
+    nonePriced: "Nessun prodotto col prezzo dell'Hub, per ora",
+    /** While the row is read: a shape, not a count. */
+    loading: "Leggo il ricarico…",
     supplier: (count: number) => `${n(count)} col prezzo del fornitore`,
     running: (done: number, total: number) => `Aggiorno i prezzi… ${n(done)}/${n(total)}`,
     undoing: "Rimetto il ricarico di prima…",
@@ -49,21 +55,24 @@ export const marginsIt = {
 
   sheet: {
     title: "Ricarico",
-    modes: { set: "Cambia il ricarico", standard: "Torna allo standard" },
+    modes: { set: "Cambia il ricarico", standard: "Togli il suo ricarico" },
     percentLabel: "Ricarico sul prezzo di mercato",
     percent: (percent: number) => `${n(percent)}%`,
     less: "Un punto in meno",
     more: "Un punto in più",
     presets: "Ricarichi veloci",
-    nowOwn: (value: string) => `Adesso: ${value}, il suo.`,
+    nowOwn: (value: string, taxonomy: CatalogTaxonomy) =>
+      `Adesso: ${value} (${taxonomy === "category" ? "di questa categoria" : "di questo brand"}).`,
     nowInherited: (value: string, term: string) => `Adesso: ${value}, quello di «${term}».`,
+    nowHub: "Adesso: le regole dell'Hub (di un brand, di una famiglia…).",
     nowStandard: (value: string | null) => (value ? `Adesso: lo standard (${value}).` : "Adesso: lo standard."),
     /** The slider on the margin the term has: nothing to preview. */
     same: "È il ricarico di adesso: spostalo per vedere cosa cambia.",
     backHint: (target: string) => `I suoi prodotti tornano ${target}.`,
     backToStandard: (value: string | null) => (value ? `al ricarico standard (${value})` : "al ricarico standard"),
     backToInherited: (value: string, term: string) => `al ricarico di «${term}» (${value})`,
-    note: "Vale per i prodotti col prezzo dell'Hub. I prezzi del fornitore, le taglie col prezzo bloccato, quelle in saldo e i prezzi cambiati su WordPress restano come sono. L'Hub lo tiene a ogni aggiornamento dei prezzi.",
+    backToHub: "alle regole dell'Hub che li prezzano",
+    note: "Vale per i prodotti col prezzo dell'Hub. I prezzi del fornitore, le taglie col prezzo bloccato e i prezzi cambiati su WordPress restano come sono; le taglie in saldo prendono il nuovo prezzo pieno quando finisce il saldo. L'Hub lo tiene a ogni aggiornamento dei prezzi.",
     summary: "Come cambiano i prezzi",
     up: "Salgono",
     down: "Scendono",
@@ -72,6 +81,11 @@ export const marginsIt = {
     average: (change: number) => `In media ${signed(change)}`,
     apply: (count: number) => `Applica a ${products(count)}`,
     applyPlain: "Applica",
-    back: "Torna al ricarico standard",
+    /** Taking its own margin away, named for where it takes the products. */
+    back: {
+      standard: "Torna al ricarico standard",
+      inherited: (term: string) => `Torna al ricarico di «${term}»`,
+      hub: "Torna alle regole dell'Hub",
+    },
   },
 };

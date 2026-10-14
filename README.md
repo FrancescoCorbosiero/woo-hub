@@ -422,12 +422,24 @@ actually holds. Feed and store-only rows get those axes from the title
 classifier (`src/server/catalog/classify.ts`), so a family rule covers them
 too, not just KicksDB rows.
 
+A rule can also be scoped to one of the **shop's own categories or brands**
+(`storeCategory` / `storeBrand`, a WooCommerce term id, its sub-terms
+included) — the Vetrina's "Ricarico" on a category, or "+ Margine per
+categoria o brand del negozio" here. It applies to KicksDB-priced products
+only: never to a GoldenSneakers price (the supplier's margin is already in it)
+nor to a store-only product. Products get their store terms from the store
+index right before every price is computed; when those cannot be read, the
+sync holds the prices they could change rather than write the general one.
+
 Two properties make the list predictable:
 
-- **The narrowest rule wins, not the one with the most fields.** Scopes are
-  weighted by how few products they describe (`sku` ⊂ `secondaryCategory` /
-  `model` ⊂ `category` ⊂ `brand` ⊂ `source`), so a per-SKU rule always beats
-  the family rule containing it. Text matching is case-insensitive.
+- **The narrowest rule wins, not the one with the most fields.** Rules rank
+  in tiers first: a **SKU** rule, then a **store category or brand** rule (the
+  deeper term first: a sub-category beats its category, and a category and a
+  brand meet by depth in their own trees), then every other rule. Within a
+  tier, scopes are weighted by how few products they describe (`sku` ⊂
+  `secondaryCategory` / `model` ⊂ `category` ⊂ `brand` ⊂ `source`), and on a
+  tie the later rule in the list wins. Text matching is case-insensitive.
 - **One rule owns the margin.** The most specific rule that states a margin
   replaces *all three* mechanisms — percent, bands and fixed € — inherited
   from broader rules. Everything that is not the margin (rounding, VAT,
@@ -441,6 +453,15 @@ Each rule card reports **how many catalog products it actually prices** and
 the shelf price the engine returns at three sample asks — a rule that covers
 nothing, or that a narrower rule outranks, says so instead of looking healthy.
 The product drawer names the rule behind its proposed prices.
+
+The list has more than one editor (this tab, the pricing bar, the Vetrina):
+every save is a locked read-modify-write, and this tab refuses to save over a
+list that changed since it was opened — reload, then edit.
+
+**Rolling back** past the store-term rules: an older engine ignores their
+scope keys and would apply them to every product, supplier prices included.
+Disable or delete every rule with `storeCategory` / `storeBrand` first (see
+[docs/vetrina-customer-hub.md §8.2](docs/vetrina-customer-hub.md)).
 
 **Anti-churn threshold** (`minDeltaPercent`, default 3%): a price drift of at
 most this percent stays a `noop` in the plan — tiny ask movements never turn

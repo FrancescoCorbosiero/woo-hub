@@ -678,7 +678,7 @@ export function buildPlan(
 }
 
 /** True if |proposed - current| / |current| (as a percent) exceeds maxPercent. */
-function exceedsDelta(current: number, proposed: number, maxPercent: number): boolean {
+export function exceedsDelta(current: number, proposed: number, maxPercent: number): boolean {
     if (current === 0) return proposed !== 0; // any change off a zero base is "infinite"
     return (Math.abs(proposed - current) / Math.abs(current)) * 100 > maxPercent;
 }

@@ -11,6 +11,7 @@ import { getActiveConfig } from "@/server/config/repo";
 import { getActiveSnapshot } from "@/server/store-json/repo";
 import { getSource, kicksdbConfigured } from "@/server/adapters/kicksdb";
 import { getCatalogEntry } from "@/server/catalog/repo";
+import { withStoreTerms } from "@/server/pricing/store-terms";
 import {
   parsePrice,
   resolveFromModel,
@@ -188,8 +189,16 @@ export async function auditPrices(input: { sku: string }): Promise<PriceAuditRes
       getActiveSnapshot().catch(() => null),
     ]);
 
-    const liveProduct = liveProducts instanceof Error ? null : liveProducts;
     const productError = liveProducts instanceof Error ? liveProducts.message : null;
+    // Where the shop files the product (its categories and brands, ancestors
+    // included), as the drawer and the sync price it: a margin set on one of
+    // them is what the audit proposes, or it would contradict both.
+    const termed = (p: SourceProduct | null) =>
+      p ? withStoreTerms([p], config.pricingRules).then(([q]) => q) : Promise.resolve(null);
+    const [storedProduct, liveProduct] = await Promise.all([
+      termed(entry?.product ?? null),
+      termed(liveProducts instanceof Error ? null : liveProducts),
+    ]);
 
     // Raw bulk rows for this SKU, grouped by variant id — every entry, every
     // tier, unknown types included.
@@ -265,7 +274,7 @@ export async function auditPrices(input: { sku: string }): Promise<PriceAuditRes
           (r) => `${r.type ?? "?"} ${typeof r.price === "number" ? r.price : "—"} ×${r.asks ?? 0}`,
         ),
         bulkConflict: bulkTierPrices.length > 1,
-        proposedFromStored: propose(entry?.product ?? null, stored),
+        proposedFromStored: propose(storedProduct, stored),
         proposedFromLive: propose(liveProduct, live),
         storePrice: eu ? (storeByEu.get(eu) ?? null) : null,
       };

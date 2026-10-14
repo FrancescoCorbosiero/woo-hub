@@ -1,7 +1,15 @@
 import "server-only";
 import type { AppConfig, RuleScope, ScopedPricingRule } from "@core/config";
 import { declaresMarkup, marginKindOf, resolveEffectiveRule } from "@core/config";
-import { computePrice, medianTierAsk, type SourceProduct, type SourceVariant } from "@core/core-spine";
+import {
+  computePrice,
+  exceedsDelta,
+  medianTierAsk,
+  samePrice,
+  storeEditOf,
+  type SourceProduct,
+  type SourceVariant,
+} from "@core/core-spine";
 import type { CatalogTaxonomy } from "@/lib/vetrina/catalog";
 import type { MarginValue, TermMarginState } from "@/lib/vetrina/catalog-ops";
 import { euro } from "./plan";
@@ -25,7 +33,12 @@ export interface MarginTerm {
 /** The rule's scope field a store term is matched by. */
 const scopeKey = (taxonomy: CatalogTaxonomy) => (taxonomy === "category" ? "storeCategory" : "storeBrand");
 
-/** A term's margin rule's scope: the term, and its name as a label (never matched). */
+/**
+ * A term's margin rule's scope: the term, and its name as a label (never
+ * matched). The name is the term's path ("Saldi › Nike"), as the Hub's
+ * Margins tab saves it: a sub-category is told from a top-level term of the
+ * same name on its card, in the drawer and on the product sheet.
+ */
 export function termScope(term: MarginTerm, name: string): RuleScope {
   const label = name.trim().slice(0, 200);
   return {
@@ -123,8 +136,24 @@ export interface MarginChange {
   index: number;
 }
 
+/** The rule without its margin: what it keeps when its term goes back to the margin above it. */
+function withoutMargin(rule: ScopedPricingRule): ScopedPricingRule {
+  const { markupPercent: _p, markupBands: _b, markupFixed: _f, ...rest } = rule;
+  return rest;
+}
+
+/** Whether a rule holds anything but its scope, its switch and its margin: a net the operator set on the Margins tab. */
+function holdsNets(rule: ScopedPricingRule): boolean {
+  return Object.keys(withoutMargin(rule)).some((k) => k !== "id" && k !== "scope" && k !== "enabled");
+}
+
 /**
  * The rule list with the term's margin set to `percent` — or removed (null).
+ *
+ * Removed, the rule goes — unless the operator gave it more than a margin on
+ * the Margins tab (a rounding, a minimum margin, a delta guard): then only
+ * its margin goes, and the rule stays to keep those for the term's products,
+ * merged field by field as every rule without a margin is.
  *
  * A rule the term already has is changed where it stands: same id, same
  * place in the list, and every field that is not the margin kept (a
@@ -143,6 +172,14 @@ export function withTermMargin(rules: readonly ScopedPricingRule[], term: Margin
   const found = findTermMarginRule(rules, term);
   if (percent == null) {
     if (!found) return { rules: [...rules], before: null, after: null, index: -1 };
+    // A rule that states no margin already: nothing to take away.
+    if (!declaresMarkup(found.rule)) return { rules: [...rules], before: found.rule, after: found.rule, index: found.index };
+    if (holdsNets(found.rule)) {
+      const after = withoutMargin(found.rule);
+      const next = [...rules];
+      next[found.index] = after;
+      return { rules: next, before: found.rule, after, index: found.index };
+    }
     return {
       rules: rules.filter((_, i) => i !== found.index),
       before: found.rule,
@@ -222,10 +259,17 @@ export interface MarginSubject {
   product: SourceProduct;
   /**
    * The sizes the shop sells (every size the source has, when the store's
-   * are unknown): whether a person locked its price, and whether it is on a
-   * sale the product follows — the plan holds its regular price while it lasts.
+   * are unknown): whether a person locked its price, whether it is on a
+   * sale the product follows — the plan holds its regular price while it
+   * lasts — and, where the Hub's copy of the shop has it, the regular price
+   * the store shows and the one the Hub last wrote there.
    */
-  sizes: { variant: SourceVariant; locked: boolean; onSale?: boolean }[];
+  sizes: {
+    variant: SourceVariant;
+    locked: boolean;
+    onSale?: boolean;
+    store?: { price: number | null; hubPrice?: number | null };
+  }[];
 }
 
 /**
@@ -238,7 +282,15 @@ export interface MarginSubject {
  * - noQuote: the market gives no price for any of its sizes.
  */
 export type MarginOutcome =
-  | { kind: "covered"; before: number[]; after: number[]; lockedSizes: number; saleSizes: number }
+  | {
+      kind: "covered";
+      before: number[];
+      after: number[];
+      lockedSizes: number;
+      saleSizes: number;
+      /** Sizes the sync would leave as they are, as its plan does (see assessMarginSubject). */
+      guard?: { belowMin: number; overMax: number; edited: number };
+    }
   | { kind: "otherRule" }
   | { kind: "noQuote" };
 
@@ -249,6 +301,14 @@ export type MarginOutcome =
  * term's rule decides a size when it is the one setting its margin in
  * either list: `ids.draft` (the rule being set) or `ids.current` (the
  * term's rule now, being changed or removed).
+ *
+ * Where the store's price of a size is known, it is the "before" — what
+ * the shop shows — and the size moves only as the sync's plan would move it
+ * (buildPlan): not when the new price is within the rule's minimum change
+ * (the anti-churn threshold: a 2-point margin change on a cheap shoe can be
+ * below it), not past its maximum change, and not where the price was
+ * changed on WordPress since the Hub wrote it. Those are counted apart, so
+ * the preview never promises a move the reprice will not make.
  */
 export function assessMarginSubject(
   subject: MarginSubject,
@@ -262,8 +322,9 @@ export function assessMarginSubject(
   let decided = 0;
   let lockedSizes = 0;
   let saleSizes = 0;
+  const guard = { belowMin: 0, overMax: 0, edited: 0 };
   let priced = false;
-  for (const { variant, locked, onSale } of subject.sizes) {
+  for (const { variant, locked, onSale, store } of subject.sizes) {
     const ruleBefore = resolveEffectiveRule(product, variant, current);
     const ruleAfter = resolveEffectiveRule(product, variant, draft);
     const priceBefore = ruleBefore
@@ -292,10 +353,38 @@ export function assessMarginSubject(
       saleSizes += 1;
       continue;
     }
-    before.push(priceBefore);
+    const shown = store?.price ?? null;
+    if (shown == null || ruleAfter == null) {
+      before.push(priceBefore);
+      after.push(priceAfter);
+      continue;
+    }
+    // The plan's own order: already there; within the minimum change; past
+    // the maximum; changed on WordPress since the Hub wrote it.
+    if (samePrice(shown, priceAfter)) {
+      before.push(shown);
+      after.push(shown);
+      continue;
+    }
+    if (ruleAfter.minDeltaPercent != null && !exceedsDelta(shown, priceAfter, ruleAfter.minDeltaPercent)) {
+      guard.belowMin += 1;
+      continue;
+    }
+    if (ruleAfter.maxDeltaPercent != null && exceedsDelta(shown, priceAfter, ruleAfter.maxDeltaPercent)) {
+      guard.overMax += 1;
+      continue;
+    }
+    if (storeEditOf({ currentPrice: shown, hubPrice: store?.hubPrice ?? undefined })) {
+      guard.edited += 1;
+      continue;
+    }
+    before.push(shown);
     after.push(priceAfter);
   }
-  if (decided > 0) return { kind: "covered", before, after, lockedSizes, saleSizes };
+  if (decided > 0) {
+    const guarded = guard.belowMin + guard.overMax + guard.edited > 0;
+    return { kind: "covered", before, after, lockedSizes, saleSizes, ...(guarded ? { guard } : {}) };
+  }
   return priced ? { kind: "otherRule" } : { kind: "noQuote" };
 }
 
@@ -318,6 +407,10 @@ export interface MarginSummary {
   averageChange: number | null;
   lockedSizes: number;
   saleSizes: number;
+  /** Sizes the sync leaves as they are: within the minimum change, past the maximum, changed on WordPress. */
+  belowMinSizes: number;
+  overMaxSizes: number;
+  editedSizes: number;
   otherRule: number;
   noQuote: number;
 }
@@ -331,6 +424,9 @@ export function summarizeMargin(outcomes: readonly MarginOutcome[]): MarginSumma
     averageChange: null,
     lockedSizes: 0,
     saleSizes: 0,
+    belowMinSizes: 0,
+    overMaxSizes: 0,
+    editedSizes: 0,
     otherRule: 0,
     noQuote: 0,
   };
@@ -343,6 +439,9 @@ export function summarizeMargin(outcomes: readonly MarginOutcome[]): MarginSumma
     out.applies += 1;
     out.lockedSizes += o.lockedSizes;
     out.saleSizes += o.saleSizes;
+    out.belowMinSizes += o.guard?.belowMin ?? 0;
+    out.overMaxSizes += o.guard?.overMax ?? 0;
+    out.editedSizes += o.guard?.edited ?? 0;
     out[marginMove(o)] += 1;
     const before = o.before.reduce((s, p) => s + p, 0);
     const after = o.after.reduce((s, p) => s + p, 0);

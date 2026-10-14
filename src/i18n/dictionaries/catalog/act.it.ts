@@ -211,6 +211,8 @@ export const actIt = {
       undone: "Annullata",
     },
     refused: (count: number) => agreed(count, "prodotto rifiutato dal negozio", "prodotti rifiutati dal negozio"),
+    /** A margin's reprice counts sizes, not products. */
+    refusedSizes: (count: number) => agreed(count, "taglia rifiutata dal negozio", "taglie rifiutate dal negozio"),
   },
 
   /** The pill above the tab bar while an action runs. */
@@ -237,11 +239,13 @@ export const actIt = {
   toast: {
     undo: "Annulla",
     refused: (count: number) => `${agreed(count, "prodotto rifiutato dal negozio", "prodotti rifiutati dal negozio")}.`,
+    refusedSizes: (count: number) => `${agreed(count, "taglia rifiutata dal negozio", "taglie rifiutate dal negozio")}.`,
     undone: (label: string) => `Annullata: ${label}`,
     restored: (count: number) => `${products(count)} come prima`,
     kept: (count: number) =>
       count === 1 ? "1 prodotto lasciato com'era: cambiato nel frattempo" : `${n(count)} prodotti lasciati com'erano: cambiati nel frattempo`,
     undoRefused: (count: number) => agreed(count, "prodotto rifiutato dal negozio", "prodotti rifiutati dal negozio"),
+    undoRefusedSizes: (count: number) => agreed(count, "taglia rifiutata dal negozio", "taglie rifiutate dal negozio"),
     /** An undone hide left these hidden: another category or brand the owner hid still holds them. */
     held: (count: number) =>
       count === 1

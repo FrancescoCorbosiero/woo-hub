@@ -40,8 +40,8 @@ export const opsIt = {
     categorize: (category: string, count: number) => `Categoria «${category}» a ${products(count)}`,
     uncategorize: (category: string, count: number) => `Categoria «${category}» tolta da ${products(count)}`,
     pin: (count: number, section: string) => `${agreed(count, "prodotto fissato", "prodotti fissati")} in ${section}`,
-    /** A category's or brand's margin; no percent: back to the standard one. */
-    margin: (percent: number | null, what: string) => (percent == null ? `Ricarico standard · ${what}` : `Ricarico ${percent}% · ${what}`),
+    /** A category's or brand's margin; no percent: its own margin taken away (back to the one above it, or the standard). */
+    margin: (percent: number | null, what: string) => (percent == null ? `Ricarico tolto · ${what}` : `Ricarico ${percent}% · ${what}`),
   },
 
   /** Why a preview leaves products as they are, agreeing with how many ("Già nascosto · 1", "Già nascosti · 3"). */
@@ -125,6 +125,21 @@ export const opsIt = {
       count === 1
         ? "1 taglia è in saldo: il suo prezzo pieno cambia quando finisce il saldo."
         : `${n(count)} taglie sono in saldo: il loro prezzo pieno cambia quando finisce il saldo.`,
+    /** Sizes whose new price is within the rules' minimum change: the sync leaves them (no churn for cents). */
+    belowMinSizes: (count: number) =>
+      count === 1
+        ? "1 taglia resta com'è: il nuovo prezzo è troppo vicino a quello di adesso per cambiarlo."
+        : `${n(count)} taglie restano come sono: il nuovo prezzo è troppo vicino a quello di adesso per cambiarlo.`,
+    /** Sizes whose change would pass the rules' maximum: the sync blocks it. */
+    overMaxSizes: (count: number) =>
+      count === 1
+        ? "1 taglia resta com'è: cambierebbe più del massimo che le regole dell'Hub permettono."
+        : `${n(count)} taglie restano come sono: cambierebbero più del massimo che le regole dell'Hub permettono.`,
+    /** Sizes whose price was changed on WordPress since the Hub wrote it: kept, as by every sync. */
+    editedSizes: (count: number) =>
+      count === 1
+        ? "1 taglia ha il prezzo cambiato su WordPress: lo tiene."
+        : `${n(count)} taglie hanno il prezzo cambiato su WordPress: lo tengono.`,
   },
 
   error: {
@@ -155,7 +170,11 @@ export const opsIt = {
     /** The demo shop's terms are not the Hub's: a margin there would land on real prices. */
     marginDemo: "Nella demo il ricarico non si cambia: finirebbe sui prezzi veri dell'Hub.",
     marginSame: (term: string, percent: number) => `«${term}» ha già il ricarico al ${percent}%.`,
-    marginNone: (term: string) => `«${term}» segue già il ricarico standard.`,
+    marginNone: (term: string) => `«${term}» non ha un ricarico suo da togliere.`,
+    /** The rule list is full: one cap for the Vetrina and the Hub's Margins tab. */
+    marginFull: (max: number) => `L'Hub ha già ${n(max)} regole di prezzo, il massimo: togline una dalla scheda Margini dell'Hub, poi riprova.`,
+    /** The store's categories and brands cannot be read: no margin set half-blind. */
+    marginTermsUnknown: "Adesso non riesco a leggere categorie e brand del negozio: riprova tra poco.",
     /** The rule is saved; KicksDB did not answer for some products, so their prices wait. */
     repriceUnanswered: (count: number) =>
       `Ricarico salvato, ma per ${products(count)} il mercato (KicksDB) non ha risposto: il prossimo aggiornamento dei prezzi li allinea.`,

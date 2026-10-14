@@ -10,6 +10,7 @@ import {
   joinPages,
   listParams,
   listQuery,
+  movesRowPrices,
   NO_FILTER,
   paramReader,
   parseQuickView,
@@ -249,5 +250,15 @@ describe("pages", () => {
     expect(joined.products.map((p) => p.id)).toEqual([1, 2, 3, 4]);
     expect(joined.total).toBe(5);
     expect(joined.key).toBe(queryKey(query));
+  });
+});
+
+describe("movesRowPrices", () => {
+  it("after a sale, its end or a margin the rows read the store's prices again; not after a tag or a hide", () => {
+    expect(movesRowPrices("sale")).toBe(true);
+    expect(movesRowPrices("unsale")).toBe(true);
+    expect(movesRowPrices("margin")).toBe(true);
+    expect(movesRowPrices("tag")).toBe(false);
+    expect(movesRowPrices("hide")).toBe(false);
   });
 });

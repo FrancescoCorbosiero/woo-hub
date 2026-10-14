@@ -12,7 +12,7 @@ import { ActivitySheet } from "./ActivitySheet";
 import { SELECTION_BAR_EXTRA, useSelectionBarShown } from "./bottom-bar";
 import { call } from "./call";
 import { refreshActData } from "./data";
-import { isActive, outcomeOf, pollDelay, type Outcome } from "./model";
+import { isActive, outcomeOf, pollDelay, refusedText, type Outcome } from "./model";
 import { OperationsContext, type Operations, type SettledListener } from "./operations-context";
 
 /**
@@ -64,7 +64,10 @@ export function OperationsProvider({ children }: { children: React.ReactNode }) 
         case "done":
           toast.success(view.label, {
             id: view.id,
-            description: view.failed > 0 ? toasts.refused(view.failed) : undefined,
+            description:
+              view.failed > 0
+                ? refusedText(view.kind, view.failed, { products: toasts.refused, sizes: toasts.refusedSizes })
+                : undefined,
             action: undo,
             duration: 10_000,
           });
@@ -79,7 +82,9 @@ export function OperationsProvider({ children }: { children: React.ReactNode }) 
                 u.restored > 0 ? toasts.restored(u.restored) : "",
                 u.kept > 0 ? toasts.kept(u.kept) : "",
                 (u.held ?? 0) > 0 ? toasts.held(u.held ?? 0) : "",
-                u.failed > 0 ? toasts.undoRefused(u.failed) : "",
+                u.failed > 0
+                  ? refusedText(view.kind, u.failed, { products: toasts.undoRefused, sizes: toasts.undoRefusedSizes })
+                  : "",
               ]
                 .filter(Boolean)
                 .join(" · ")

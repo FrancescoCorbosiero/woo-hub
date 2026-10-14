@@ -588,49 +588,79 @@ Terms without a homepage rail keep today's order.
 
 ### 8.1 Scope
 
-`RuleScope` gains `storeCategory?` / `storeBrand?` (Woo slugs). Products carry their
-term slugs, **ancestors included**, as `storeCategories` / `storeBrands`. So a "Nike" rule
-covers Nike Off-White, unless a more specific rule takes it.
+`RuleScope` gains `storeCategory?` / `storeBrand?`: a WooCommerce `product_cat` or
+`product_brand` term **id** (never a slug or a name: a term renamed in WordPress keeps
+its rule), plus `storeTermName?`, the term's path when the rule was saved ("Saldi ›
+Nike"), a label only. Products carry their terms, **ancestors included**, each with its
+depth, as `storeCategories` / `storeBrands`. So a "Nike" rule covers Nike Off-White,
+unless a more specific rule takes it.
+
+A store-term rule **never** applies to a product the supplier feed prices (GoldenSneakers:
+its presented price already holds the supplier's margin and passes through) nor to a
+store-only product (no engine price at all): it acts on KicksDB-priced products only.
 
 ### 8.2 Precedence
 
-Rules compare lexicographically:
+Matched rules are ordered, the most specific last (core/config.ts
+`compareScopePrecedence`):
 
 ```
-key(rule) = [ tier, weight, listIndex ]
-  tier   = 3 SKU · 2 store term · 1 everything else
-  weight = today's SCOPE_WEIGHT sum
-  ties   → the later rule wins (as today)
+1. tier   = 3 SKU rule · 2 store-term rule · 1 everything else (source, brand, family, name, sizes)
+2. between two store-term rules: the deeper term wins — a sub-term beats its parent
+   ("Nike › Off-White" over "Nike"); a category rule and a brand rule meet on the same
+   scale, each term's depth in its own tree
+3. weight = today's SCOPE_WEIGHT sum
+4. ties   → the later rule in the list wins (as today)
 ```
 
-- **Full order**: lock > sale rule > SKU rule > section rule > brand/family/source
-  rule.
-- **Between section rules**, list order is the customer's priority list. A sub-brand's
-  rule is inserted above its parent's by default.
+- **Full order**: manual lock > sale price held > SKU rule > store-term rule >
+  brand / family / name / source / size rules.
 - **Unchanged**: the whole-margin takeover, and field-by-field merging of the nets (€20
   minimum margin, outlier guard, rounding, anti-churn).
 - **Effect on today's rules**: only rules whose weights add up to 10 or more (for
   example family + sub-family + name = 11) now lose to SKU rules, which is the
   documented intent.
-- **GoldenSneakers**: section rules skip `source: goldensneakers`. The UI shows "prezzo
-  dal fornitore".
+- **GoldenSneakers**: store-term rules skip every supplier-priced product (above). The
+  UI shows "prezzo del fornitore".
+- **Rolling back**: an engine older than this one ignores the store-term keys, so a
+  store-term rule would match **every** product — supplier prices included — and win
+  over the general rule; its Margins tab would also drop the keys on save. Before
+  deploying an older build, disable or delete every rule whose scope has
+  `storeCategory` or `storeBrand` (the Margins tab, or
+  `update config set data = jsonb_set(data, '{pricingRules}', (select jsonb_agg(case when r->'scope' ? 'storeCategory' or r->'scope' ? 'storeBrand' then jsonb_set(r, '{enabled}', 'false') else r end) from jsonb_array_elements(data->'pricingRules') r)) where is_active;`).
 
 ### 8.3 Where products get their store axes (no new tables)
 
-- `toStoreProduct()` keeps `categories` / `brands` (`[{ id, slug }]`), which Woo already
-  sends in the pulled payload.
-- At the end of a pull, the snapshot also stores both term trees (`model.terms`), for
-  ancestor expansion.
-- **Sync planning** enriches each product's axes before `buildPlan`.
-- **The drawer and product sheet** use the same data.
-- **Margins coverage** reads it too.
+- The **store index** (`store_index`, kept fresh every few minutes) holds each store
+  product's categories and brands by SKU; the store's two term trees give the ancestors.
+- One helper, `src/server/pricing/store-terms.ts` (`withStoreTerms`), enriches products
+  right before every price is computed: the **sync planning** (`planChunk`), the
+  **drawer and the product sheet**, the **Margins coverage**, the **price audit**, the
+  **Publisher** and the **rebuild**. Cached a minute; a product moved by a Vetrina action
+  drops the cache at once.
+- **Never a price computed without the terms it needs.** A failed read keeps the last
+  good index and trees for the process lifetime. With none (a cold process whose store
+  does not answer, or the Vetrina on its demo shop, whose index is not the real shop's),
+  a KicksDB product filed in a taxonomy some enabled store-term rule uses is
+  *uncertain*: the sync holds its prices (plan rows skipped, "price held", the feed's
+  stock still written) and says so in the run's notes; the Publisher and the rebuild
+  leave it for later; the drawer and the product sheet show prices with a flag; the
+  Vetrina refuses a margin until the terms can be read.
+- The rule list has several editors (the Margins tab, the pricing bar, the Vetrina's
+  "Ricarico"): every write is a read-modify-write under one advisory lock
+  (`updateActiveConfig`), and the Margins tab's save is refused when the list changed
+  since it was loaded (a fingerprint of the list), with a message to reload.
 
 ### 8.4 Margin sheet: preview, then apply
 
-1. **Preview.** The Hub computes proposed prices for the rail term's SKUs under the draft
-   rule: how many go up / down / stay the same, the average change, and the list.
-2. **Apply.** It saves the rule and runs `startStoreSync(market, termSkus)` until done,
-   then `applySync({ priceScope: "all", dryRun: false, sanitize: false, backfillGtins: false })`.
+1. **Preview.** The Hub computes each of the term's KicksDB products' prices under the
+   rules in force and under the draft, from the price the store shows, moved only as the
+   sync's plan would move them (the minimum and maximum change, prices changed on
+   WordPress): how many go up / down / stay the same, the average change, the products it
+   moves most, and how many it leaves to the supplier's price.
+2. **Apply.** It saves the rule (under the config's lock) and reprices the term's SKUs with
+   `runPriceSync({ skus, liveCheck: true })`, a hundred at a time: locks, sale prices and
+   prices changed on WordPress are respected exactly as by every other sync.
 
 That's prices only, bounded by the term's size, and audited in `apply_audit`.
 

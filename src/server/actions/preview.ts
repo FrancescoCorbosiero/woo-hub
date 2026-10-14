@@ -28,7 +28,7 @@ import {
   mergeGsOwned,
 } from "@/server/feeds/ownership";
 import { getOverrides } from "@/server/overrides/repo";
-import { withStoreTerms } from "@/server/pricing/store-terms";
+import { holdPlanPrices, STORE_TERMS_HELD_NOTE, withStoreTermsChecked } from "@/server/pricing/store-terms";
 import { assertSnapshotIsThisStore } from "@/server/woo/site-guard";
 import { activeFeedSkus, GS_FEED } from "@/server/feeds/repo";
 import { followSaleRuleFor, manualPriceFor, type StoreOverrides } from "@/server/overrides/model";
@@ -158,6 +158,7 @@ async function planChunk(
   runId: string,
   seen: Set<string>,
   delisted: ReadonlySet<string> = new Set(),
+  held: { products: number } = { products: 0 },
 ): Promise<PreviewPlan[]> {
   // One plan per SKU. Two products for the same SKU (a source returning the
   // style code twice, a feed row overlaid onto its own catalog entry) would
@@ -185,8 +186,11 @@ async function planChunk(
   // Where the shop files each product (its store categories and brands,
   // ancestors included): what a margin set on a category or a brand prices
   // by. Read here, where every plan is made, so the Sync tab, the scheduler
-  // and the Vetrina's reprice all price alike — and like the drawer.
-  const priced = await withStoreTerms(products, config.pricingRules);
+  // and the Vetrina's reprice all price alike — and like the drawer. A
+  // product whose terms could not be read whole while such a margin exists
+  // is planned with its prices HELD: the price computed without its terms
+  // is the general one, and writing it would undo the margin on the shop.
+  const { products: priced, uncertain } = await withStoreTermsChecked(products, config.pricingRules);
 
   for (const product of priced) {
     if (seen.has(skuKey(product.sku))) continue;
@@ -239,6 +243,7 @@ async function planChunk(
         }
       }
     }
+    if (uncertain.has(skuKey(product.sku)) && holdPlanPrices(plan.items) > 0) held.products += 1;
     // Each row carries its lock key, so whatever writes it can tell the ledger
     // under which size a later edit would be kept.
     const storeProduct = storeIndex?.get(skuKey(product.sku));
@@ -291,6 +296,25 @@ async function planChunk(
     followSaleRule: p.followSaleRule,
     manualPrices: p.manualPrices,
   }));
+}
+
+/** Two notes as one, the second left out when the first already says it. */
+function joinWarnings(a: string | undefined, b: string | undefined): string | undefined {
+  if (!a) return b;
+  if (!b || a.includes(b)) return a;
+  return `${a} ${b}`;
+}
+
+/**
+ * A run's warning after one more step: the first source warning stands, as
+ * it always has (a run's steps report the same outage again and again), and
+ * prices held for want of the store's terms are said once, whichever step
+ * held them.
+ */
+function runWarning(prior: string | undefined, step: Pick<ChunkOutcome, "warning" | "held">): string | undefined {
+  const held = (prior?.includes(STORE_TERMS_HELD_NOTE) ?? false) || step.held > 0;
+  const source = prior?.replace(STORE_TERMS_HELD_NOTE, "").trim() || step.warning;
+  return joinWarnings(source, held ? STORE_TERMS_HELD_NOTE : undefined);
 }
 
 function errMessage(e: unknown): string {
@@ -371,6 +395,7 @@ export async function fetchAndPreview(input: PreviewInput): Promise<PreviewResul
     // This mode is capped at 500 SKUs by the schema, so it is one pass — but it
     // goes through the same run machinery, so a plan id means the same thing
     // wherever it came from.
+    const held = { products: 0 };
     const plans = await planChunk(
       result.products,
       config,
@@ -380,6 +405,8 @@ export async function fetchAndPreview(input: PreviewInput): Promise<PreviewResul
       overrides,
       runId,
       new Set<string>(),
+      undefined,
+      held,
     );
     for (const p of plans) addSummary(totals, p.summary);
     page.add(plans);
@@ -402,7 +429,7 @@ export async function fetchAndPreview(input: PreviewInput): Promise<PreviewResul
     return {
       ok: true,
       runId,
-      warning: skuWarning,
+      warning: joinWarnings(skuWarning, held.products > 0 ? STORE_TERMS_HELD_NOTE : undefined),
       plans: page.take(),
       totals,
       products: plans.length,
@@ -429,6 +456,8 @@ interface ChunkOutcome {
   unanswered: number;
   delisted: number;
   warning?: string;
+  /** Products whose prices were held for want of the store's terms (see planChunk). */
+  held: number;
   /** Null when catalog growth was skipped for this chunk. */
   catalog: { total: number; added: number; rejected: number } | null;
 }
@@ -556,6 +585,7 @@ async function previewStoreChunk(part: string[], ctx: ChunkContext): Promise<Chu
     console.warn("[catalog] growth skipped:", errMessage(e));
   }
 
+  const held = { products: 0 };
   const plans = await planChunk(
     [...products, ...delistedProducts],
     config,
@@ -566,8 +596,17 @@ async function previewStoreChunk(part: string[], ctx: ChunkContext): Promise<Chu
     runId,
     seen,
     delisted,
+    held,
   );
-  return { plans, notFound, unanswered, delisted: delisted.size, warning: secondary.warning, catalog };
+  return {
+    plans,
+    notFound,
+    unanswered,
+    delisted: delisted.size,
+    warning: secondary.warning,
+    held: held.products,
+    catalog,
+  };
 }
 
 /** The SKUs a store preview walks: the override (deduped), else the snapshot's. */
@@ -651,7 +690,7 @@ export async function previewFromStore(
         feedInUse: feed,
       });
       unansweredTotal += out.unanswered;
-      warning ??= out.warning;
+      warning = runWarning(warning, out);
       notFoundTotal += out.notFound.length;
       for (const s of out.notFound) if (notFound.length < NOT_FOUND_LIMIT) notFound.push(s);
       delistedTotal += out.delisted;
@@ -824,7 +863,7 @@ export async function advanceStoreSync(
       notFoundTotal: run.notFoundTotal + out.notFound.length,
       delisted: run.delisted + out.delisted,
       unanswered: run.unanswered + out.unanswered,
-      warning: run.warning ?? out.warning ?? null,
+      warning: runWarning(run.warning ?? undefined, out) ?? null,
       catalog: out.catalog
         ? {
             total: out.catalog.total,

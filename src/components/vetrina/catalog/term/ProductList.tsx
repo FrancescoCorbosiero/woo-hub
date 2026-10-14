@@ -14,6 +14,7 @@ import { SelectButton } from "../act/SelectButton";
 import { SelectionBar } from "../act/SelectionBar";
 import type { ProductSelection } from "../act/selection";
 import { Search, Stack } from "./glyphs";
+import { movesRowPrices } from "./list-model";
 import { ProductRow } from "./ProductRow";
 import { SkeletonRows } from "./TermSkeleton";
 import { useCatalogPages, type CatalogPages } from "./use-catalog-pages";
@@ -109,11 +110,11 @@ export function ProductList({
   }, [version, reloadRows]);
 
   // An action ended (a sale, a hide…): the rows and the screen's counts may have moved —
-  // and after a sale, the prices the rows take from the store's cards.
+  // and after a sale or a margin, the prices the rows take from the store's cards.
   useOperationSettled((view) => {
     reloadRows();
     onProductsChanged?.();
-    if (view.kind === "sale" || view.kind === "unsale") refreshCards(ids);
+    if (movesRowPrices(view.kind)) refreshCards(ids);
   });
 
   // Selection: the rows as it keeps them, and the callbacks the memoised rows take.

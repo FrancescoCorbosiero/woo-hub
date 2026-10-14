@@ -10,6 +10,7 @@ import {
   type CollectionChangeRow,
   type SmartCollectionRow,
 } from "@/server/db/schema";
+import { forgetStoreTerms } from "@/server/pricing/store-terms";
 import type { IndexRow } from "./index-rows";
 
 /**
@@ -152,6 +153,10 @@ export async function upsertIndexRows(rows: IndexRow[], seenAt = new Date()): Pr
         setWhere: sql`${storeIndex.dateModified} is null or excluded.date_modified is null or excluded.date_modified >= ${storeIndex.dateModified}`,
       });
   }
+  // A product moved to a category or a brand (a Vetrina action patches the
+  // index at once) is priced by that term's margin from the next read, not
+  // within the minute the store-terms cache would otherwise serve.
+  if (rows.length > 0) forgetStoreTerms();
 }
 
 /** Mark rows as seen without changing them (a full read that met an older copy). */
@@ -163,6 +168,7 @@ export async function touchIndexRows(ids: number[], seenAt: Date): Promise<void>
 export async function deleteIndexRows(ids: number[]): Promise<void> {
   if (ids.length === 0) return;
   await db.delete(storeIndex).where(inArray(storeIndex.productId, ids));
+  forgetStoreTerms();
 }
 
 /** Drop the products a complete read did not see: gone from the store, or binned. */

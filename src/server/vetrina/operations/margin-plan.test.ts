@@ -182,6 +182,24 @@ describe("setting and removing it", () => {
     expect(change.rules).toEqual([GENERAL, change.after, GS]);
   });
 
+  it("removed, a rule the operator gave nets on the Margins tab keeps them: only its margin goes", () => {
+    const tuned = nikeRule(25, { rounding: { mode: "integer" }, minMarginFixed: 15 });
+    const rules = [GENERAL, tuned, GS];
+    const change = withTermMargin(rules, NIKE, "Nike", null);
+    expect(change.after).toEqual({ id: "store-category-11", scope: tuned.scope, enabled: true, rounding: { mode: "integer" }, minMarginFixed: 15 });
+    expect(change.rules).toEqual([GENERAL, change.after, GS]);
+    // No margin of its own any more: the row reads the one above it, or the standard.
+    expect(termMarginOf(change.rules, NIKE, []).own).toBeNull();
+    // Taking away a margin it no longer has changes nothing.
+    const again = withTermMargin(change.rules, NIKE, "Nike", null);
+    expect(sameRule(again.before, again.after)).toBe(true);
+    // "Annulla" puts the margin back on it.
+    const undo = undoTermMargin(change.rules, NIKE, change);
+    expect(undo).toEqual({ verdict: "restore", rules: [GENERAL, tuned, GS] });
+    // Set again, it takes the percent and keeps the nets.
+    expect(withTermMargin(change.rules, NIKE, "Nike", 30).after).toMatchObject({ markupPercent: 30, minMarginFixed: 15 });
+  });
+
   it("removes it — and removing none changes nothing", () => {
     const rules = [GENERAL, nikeRule(25), GS];
     expect(withTermMargin(rules, NIKE, "Nike", null)).toEqual({
@@ -346,6 +364,61 @@ describe("what it does to prices (the engine's own)", () => {
     });
   });
 
+  it("moves a size only as the sync's plan would: from what the store shows, past the minimum change, never over a WordPress edit", () => {
+    // The store shows the house price; the Hub wrote it.
+    const shown = (p: SourceProduct, price: number, hubPrice: number | null = price): MarginSubject => ({
+      product: p,
+      sizes: p.variants.map((variant) => ({ variant, locked: false, store: { price, hubPrice } })),
+    });
+    const guarded = (pct: number, over: Partial<ScopedPricingRule> = {}) => {
+      const rules = withTermMargin([rule({ ...GENERAL, minDeltaPercent: 3, ...over }), GS], NIKE, "Nike", pct);
+      return makeConfig(rules.rules);
+    };
+    const base = makeConfig([rule({ ...GENERAL, minDeltaPercent: 3 }), GS]);
+    const id = (cfg: ReturnType<typeof makeConfig>) => ({ current: null, draft: cfg.pricingRules[2].id });
+
+    // 25 %: 125,99 against the 135,99 shown — a real move, from the store's price.
+    const big = guarded(25);
+    expect(assessMarginSubject(shown(product([100]), 135.99), base, big, id(big))).toEqual({
+      kind: "covered",
+      before: [135.99],
+      after: [125.99],
+      lockedSizes: 0,
+      saleSizes: 0,
+    });
+    // 34 %: 134,99 against 135,99 — under the house's 3 % minimum change: the sync leaves it.
+    const small = guarded(34);
+    const within = assessMarginSubject(shown(product([100]), 135.99), base, small, id(small));
+    expect(within).toEqual({
+      kind: "covered",
+      before: [],
+      after: [],
+      lockedSizes: 0,
+      saleSizes: 0,
+      guard: { belowMin: 1, overMax: 0, edited: 0 },
+    });
+    expect(summarizeMargin([within])).toMatchObject({ applies: 1, same: 1, up: 0, down: 0, belowMinSizes: 1 });
+    // Past the maximum change: blocked, as the plan blocks it.
+    const capped = guarded(100, { maxDeltaPercent: 20 });
+    expect(assessMarginSubject(shown(product([100]), 135.99), base, capped, id(capped))).toMatchObject({
+      before: [],
+      guard: { overMax: 1 },
+    });
+    // Changed on WordPress since the Hub wrote it: kept.
+    expect(assessMarginSubject(shown(product([100]), 140, 135.99), base, big, id(big))).toMatchObject({
+      before: [],
+      guard: { edited: 1 },
+    });
+    // Already at the new price: the same, and nothing guarded.
+    expect(assessMarginSubject(shown(product([100]), 125.99), base, big, id(big))).toEqual({
+      kind: "covered",
+      before: [125.99],
+      after: [125.99],
+      lockedSizes: 0,
+      saleSizes: 0,
+    });
+  });
+
   it("counts up, down and the same, and the average change of each product's prices", () => {
     const outcomes: MarginOutcome[] = [
       {
@@ -369,6 +442,9 @@ describe("what it does to prices (the engine's own)", () => {
       averageChange: 0,
       lockedSizes: 3,
       saleSizes: 2,
+      belowMinSizes: 0,
+      overMaxSizes: 0,
+      editedSizes: 0,
       otherRule: 1,
       noQuote: 1,
     });
@@ -430,7 +506,8 @@ describe("in the log", () => {
     expect(labelText(set, w)).toBe("Ricarico 25% · Nike");
     const back = labelParams({ kind: "margin", taxonomy: "brand", termId: 30, percent: null }, { count: 3, term: "Nike" });
     expect(back).toEqual({ kind: "margin", count: 3, term: "Nike" });
-    expect(labelText(back, w)).toBe("Ricarico standard · Nike");
-    expect(labelText(back, words("en"))).toBe("Standard margin · Nike");
+    // Taken away: the label says so, never "standard" — a term above may be where it goes back to.
+    expect(labelText(back, w)).toBe("Ricarico tolto · Nike");
+    expect(labelText(back, words("en"))).toBe("Own margin removed · Nike");
   });
 });

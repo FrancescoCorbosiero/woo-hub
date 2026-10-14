@@ -127,6 +127,8 @@ const load = async () => ({
   ...(await import("@/server/pricing/store-terms")),
   ...(await import("./service")),
   ...(await import("./runner")),
+  ...(await import("@/server/config/rule-list")),
+  ...(await import("@/server/actions/config")),
 });
 
 /** A KicksDB product: three sizes at a 100 € ask. */
@@ -334,6 +336,7 @@ describe.skipIf(!enabled)("a category's margin from the Vetrina (real SQL, stand
       standard: { kind: "bands" },
       priced: 1,
       applies: 1,
+      hubRules: 0,
       supplier: 1,
       storeOnly: 1,
     });
@@ -388,7 +391,7 @@ describe.skipIf(!enabled)("a category's margin from the Vetrina (real SQL, stand
     const rules = (await getActiveConfig()).pricingRules;
     expect(rules.at(-1)).toEqual({
       id: `store-category-${NIKE}`,
-      scope: { storeCategory: NIKE, storeTermName: "Nike" },
+      scope: { storeCategory: NIKE, storeTermName: "Sneakers › Nike" },
       enabled: true,
       markupPercent: 25,
     });
@@ -427,7 +430,7 @@ describe.skipIf(!enabled)("a category's margin from the Vetrina (real SQL, stand
     expect(await termRules()).toEqual([
       {
         id: `store-category-${NIKE}`,
-        scope: { storeCategory: NIKE, storeTermName: "Nike" },
+        scope: { storeCategory: NIKE, storeTermName: "Sneakers › Nike" },
         enabled: true,
         markupPercent: 30,
       },
@@ -452,7 +455,7 @@ describe.skipIf(!enabled)("a category's margin from the Vetrina (real SQL, stand
 
     const back = await run(nikeMargin(null));
     expect(back.status).toBe("done");
-    expect(back.label).toBe("Ricarico standard · Nike");
+    expect(back.label).toBe("Ricarico tolto · Nike");
     expect(await termRules()).toEqual([]);
     expect(price(K_ID, 11)).toBe("135.99");
 
@@ -485,7 +488,7 @@ describe.skipIf(!enabled)("a category's margin from the Vetrina (real SQL, stand
 
   it("refuses what would change nothing: the margin it has, the standard it follows", async () => {
     const { startOperation, previewOperation } = await load();
-    await expect(startOperation(nikeMargin(null))).rejects.toThrow("«Nike» segue già il ricarico standard.");
+    await expect(startOperation(nikeMargin(null))).rejects.toThrow("«Nike» non ha un ricarico suo da togliere.");
     await run(nikeMargin(25));
     await expect(startOperation(nikeMargin(25))).rejects.toThrow("«Nike» ha già il ricarico al 25%.");
     const preview = await previewOperation(nikeMargin(25));
@@ -512,5 +515,31 @@ describe.skipIf(!enabled)("a category's margin from the Vetrina (real SQL, stand
     expect(preview.untouched.find((u) => u.reason === "ha un ricarico più specifico")?.count).toBe(1);
     await run(nikeMargin(25));
     expect(price(K_ID, 11)).toBe("140.99");
+  });
+
+  it("says «the Hub's rules», not «standard», when a catalog rule prices the term's products today", async () => {
+    const { loadTermMargin, updateActiveConfig } = await load();
+    // The operator's "Nike" catalog-brand rule, +3 € (tier 1: a store term outranks it).
+    await updateActiveConfig((current) => ({
+      ...current,
+      pricingRules: [...current.pricingRules, { id: "brand-nike", scope: { brand: "Nike" }, enabled: true, markupFixed: 3 }],
+    }));
+    expect(await loadTermMargin("category", NIKE)).toMatchObject({ own: null, inherited: null, applies: 1, hubRules: 1 });
+  });
+
+  it("a Margins tab opened before the margin cannot save over it, and the margin merges into a list saved meanwhile", async () => {
+    const { getActiveConfig, pricingRulesVersion, savePricingRules } = await load();
+    const opened = (await getActiveConfig()).pricingRules;
+    const version = pricingRulesVersion(opened);
+    const view = await run(nikeMargin(25));
+    expect(view.status).toBe("done");
+    // The operator's older copy, saved after: refused, the owner's margin stands.
+    expect(await savePricingRules(opened, version)).toMatchObject({ ok: false, stale: true });
+    expect(await termRules()).toHaveLength(1);
+    // Saved against the list as it is now, it goes through — and keeps the margin.
+    const now = (await getActiveConfig()).pricingRules;
+    const saved = await savePricingRules(now, pricingRulesVersion(now));
+    expect(saved.ok).toBe(true);
+    expect(saved.rules?.some((r) => r.scope.storeCategory === NIKE)).toBe(true);
   });
 });

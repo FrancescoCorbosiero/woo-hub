@@ -223,7 +223,13 @@ export function ProductSheet({
   const ruleLabel = (d: DrawerData) => {
     const r = d.appliedRule;
     if (!r) return null;
-    const scope = r.isGeneral ? p.generalRule : r.scopeLabel;
+    // A category's or brand's margin says whose it is: the shop's own term,
+    // not a catalog brand of the same name.
+    const scope = r.isGeneral
+      ? p.generalRule
+      : r.storeTerm
+        ? p.storeTermRule(r.storeTerm.name ?? r.scopeLabel, r.storeTerm.taxonomy)
+        : r.scopeLabel;
     const amount =
       r.kind === "percent" && r.markupPercent != null
         ? ` · ${r.markupPercent}%`
@@ -299,6 +305,11 @@ export function ProductSheet({
                       <div>{p.source[data.owner] ?? ""}</div>
                       {ruleLabel(data) && <div>{ruleLabel(data)}</div>}
                     </div>
+                    {data.storeTermsUnknown && (
+                      <p role="status" className="mb-2 px-1 text-[13px] leading-snug text-amber-700 dark:text-amber-400">
+                        {p.storeTermsUnknown}
+                      </p>
+                    )}
                     <div className="mb-1 flex items-center justify-between px-1">
                       <span className="text-[13px] font-semibold uppercase tracking-wide opacity-50">{p.sizes}</span>
                       {/* 44px to the finger, drawn as small as the heading beside them. */}

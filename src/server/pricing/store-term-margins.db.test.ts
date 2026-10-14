@@ -43,6 +43,8 @@ const F_ID = 9102;
 const store = vi.hoisted(() => ({
   products: new Map<number, FakeVariation[]>(),
   categories: [] as { id: number; name: string; slug: string; parent: number }[],
+  /** The store's category listing fails (a 5xx after retries, a timeout). */
+  treeDown: false,
 }));
 
 const kicks = vi.hoisted(() => ({ products: new Map<string, SourceProduct>() }));
@@ -63,7 +65,10 @@ vi.mock("@/server/woo/client", async (importOriginal) => {
       return { create: [], update, delete: [] };
     },
     updateProduct: async () => undefined,
-    listCategories: async () => structuredClone(store.categories),
+    listCategories: async () => {
+      if (store.treeDown) throw Object.assign(new Error("Bad gateway"), { status: 502 });
+      return structuredClone(store.categories);
+    },
     listBrands: async () => [],
   };
   return { ...real, wooConfigured: () => true, getWooClient: () => client };
@@ -76,6 +81,7 @@ vi.mock("@/server/adapters/kicksdb", async (importOriginal) => {
       skus.map((s) => kicks.products.get(s.toUpperCase())).filter((p): p is SourceProduct => p != null).map((p) => structuredClone(p)),
     getProduct: async () => [],
     findBySku: async (sku: string) => structuredClone(kicks.products.get(sku.toUpperCase()) ?? null),
+    fetchPricesRaw: async () => ({ data: [] }),
   };
   return { ...real, kicksdbConfigured: () => true, getSource: () => source };
 });
@@ -90,7 +96,9 @@ const load = async () => ({
   ...(await import("@/server/catalog/repo")),
   ...(await import("@/server/sync/price-sync")),
   ...(await import("@/server/actions/config")),
+  ...(await import("@/server/config/rule-list")),
   ...(await import("@/components/catalog/drawer-data")),
+  ...(await import("@/server/actions/debug")),
   ...(await import("./store-terms")),
 });
 
@@ -231,6 +239,7 @@ describe.skipIf(!enabled)("a margin on a store category (real SQL, stand-in stor
     // the feed owns it all the same.
     await upsertCatalog("IT", [kicksProduct, { ...kicksProduct, stockxId: "sx-stm-2", sku: FEED }]);
     forgetStoreTerms();
+    store.treeDown = false;
   });
 
   it("the sync writes the rule's price to the KicksDB product, the supplier's to the feed product", async () => {
@@ -299,12 +308,21 @@ describe.skipIf(!enabled)("a margin on a store category (real SQL, stand-in stor
     expect(byId.get(NIKE_MARGIN.id)?.products).toBe(1);
     expect(byId.get(NIKE_MARGIN.id)?.examples[0]).toEqual({ ask: 100, price: 125.99 });
     expect(byId.get("goldensneakers-passthrough")?.products).toBeGreaterThanOrEqual(1);
+
+    // The price audit proposes what the sync writes, from the cached and the live product alike.
+    const { auditPrices } = await load();
+    const audit = await auditPrices({ sku: KICKS });
+    expect(audit.ok).toBe(true);
+    expect(audit.rows?.map((r) => [r.proposedFromStored, r.proposedFromLive])).toEqual([
+      [125.99, 125.99],
+      [125.99, 125.99],
+    ]);
   });
 
   it("saving the rule list keeps the store term (a Margins tab save never widens it to the whole shop)", async () => {
-    const { savePricingRules, getActiveConfig } = await load();
+    const { savePricingRules, getActiveConfig, pricingRulesVersion } = await load();
     const cfg = await getActiveConfig();
-    const saved = await savePricingRules(cfg.pricingRules);
+    const saved = await savePricingRules(cfg.pricingRules, pricingRulesVersion(cfg.pricingRules));
     expect(saved.ok).toBe(true);
     const kept = (await getActiveConfig()).pricingRules.find((r) => r.id === NIKE_MARGIN.id);
     expect(kept?.scope).toEqual({ storeCategory: NIKE, storeTermName: "Nike" });
@@ -316,5 +334,53 @@ describe.skipIf(!enabled)("a margin on a store category (real SQL, stand-in stor
     forgetStoreTerms();
     await runPriceSync({ skus: [KICKS], liveCheck: true });
     expect(price(K_ID, 11)).toBe("135.99"); // already the house price: nothing moved
+  });
+
+  it("a cold process that cannot read the category tree holds the price rather than write the general one", async () => {
+    // The margin was applied before: the store shows the rule's 125,99.
+    store.products.get(K_ID)!.forEach((v) => (v.regular_price = "125.99"));
+    const { saveSnapshot } = await load();
+    await saveSnapshot(
+      {
+        products: [
+          { id: K_ID, sku: KICKS, name: "Nike Off-White Dunk", variations: structuredClone(store.products.get(K_ID)) },
+          { id: F_ID, sku: FEED, name: "Nike Off-White Blazer", variations: structuredClone(store.products.get(F_ID)) },
+        ],
+      } as never,
+      "rest",
+    );
+    // A process that never read the tree: no last good copy anywhere (the
+    // store-terms cache and the taxonomy listings' are both per process).
+    const globals = globalThis as { __storeHubStoreTermsV2?: unknown; __storeHubTaxonomyCache?: Map<string, unknown> };
+    delete globals.__storeHubStoreTermsV2;
+    globals.__storeHubTaxonomyCache?.clear();
+    vi.resetModules();
+    store.treeDown = true;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { runPriceSync, loadDrawerData, getActiveConfig, STORE_TERMS_HELD_NOTE } = await load();
+      // Filed under "Nike › Off-White" only: without the tree, the Nike rule
+      // cannot know it is its own. The general price (135,99) would undo the margin.
+      const run = await runPriceSync({ skus: [KICKS, FEED], liveCheck: true });
+      expect(price(K_ID, 11)).toBe("125.99");
+      expect(price(K_ID, 12)).toBe("125.99");
+      // The supplier's product is no store-term rule's: written as ever.
+      expect(price(F_ID, 21)).toBe("138.00");
+      expect(run.report.warning).toContain(STORE_TERMS_HELD_NOTE);
+
+      // The drawer still shows a price, flagged.
+      const drawer = await loadDrawerData("IT", KICKS, await getActiveConfig());
+      expect(drawer?.storeTermsUnknown).toBe(true);
+
+      // The store answers again: the next sync (after the short retry) sees the tree.
+      store.treeDown = false;
+      const { forgetStoreTerms } = await load();
+      forgetStoreTerms();
+      const again = await runPriceSync({ skus: [KICKS], liveCheck: true });
+      expect(again.report.warning ?? "").not.toContain(STORE_TERMS_HELD_NOTE);
+      expect(price(K_ID, 11)).toBe("125.99");
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

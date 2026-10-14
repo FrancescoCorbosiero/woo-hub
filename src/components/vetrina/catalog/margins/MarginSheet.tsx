@@ -24,12 +24,14 @@ import {
 import { formatCount } from "../format";
 import { Minus, Plus } from "./glyphs";
 import {
+  backLabel,
   backText,
   clampPercent,
+  followedPercent,
   marginInput,
   nowText,
-  ownPercent,
   PRESETS,
+  startMode,
   startPercent,
   type MarginMode,
   type MarginTermRef,
@@ -40,7 +42,8 @@ import {
  * slider with a point less / more beside it, quick choices, and the live
  * preview (how many products, up / down / the same, the average change,
  * the products it moves most) — then "Applica a N prodotti". When the term
- * has a margin of its own, "Torna allo standard" removes it. The action runs
+ * has a margin of its own, "Togli il suo ricarico" removes it, the button
+ * named for where its products go back to. The action runs
  * in the background through the operations tracker: the pill, then a toast
  * with "Annulla".
  */
@@ -79,12 +82,11 @@ function MarginContent({
   const { t } = useI18n();
   const m = t.vetrinaCatalog.margins;
   const s = m.sheet;
-  const [mode, setMode] = React.useState<MarginMode>("set");
+  const [mode, setMode] = React.useState<MarginMode>(() => startMode(state));
   const [percent, setPercent] = React.useState(() => startPercent(state));
-  const own = ownPercent(state);
   const rangeId = React.useId();
 
-  const input = marginInput(term, mode, percent, own);
+  const input = marginInput(term, mode, percent, followedPercent(state));
   // The slider settles before the server prices the term's products.
   const preview = usePreview(input, mode === "set" ? 450 : 0);
   const { run, busy, error } = useStartAction(onClose, onStarted);
@@ -92,7 +94,7 @@ function MarginContent({
   const step = (delta: number) => setPercent((p) => clampPercent(p + delta));
 
   const disabled = !input || !preview.current || (mode === "set" ? !answered?.applies : answered == null);
-  const label = mode === "standard" ? s.back : answered?.applies ? s.apply(answered.applies) : s.applyPlain;
+  const label = mode === "standard" ? backLabel(state, m) : answered?.applies ? s.apply(answered.applies) : s.applyPlain;
 
   return (
     <>
@@ -147,7 +149,7 @@ function MarginContent({
                 ))}
               </div>
             </div>
-            <p className="mt-1.5 px-1 text-[13px] leading-snug opacity-60">{nowText(state, m)}</p>
+            <p className="mt-1.5 px-1 text-[13px] leading-snug opacity-60">{nowText(state, term.taxonomy, m)}</p>
           </section>
         ) : (
           <p className={`${CARD} px-4 py-3 text-[15px] leading-snug`}>{backText(state, m)}</p>
@@ -158,7 +160,8 @@ function MarginContent({
         {input ? (
           <>
             <Summary state={preview} />
-            <PreviewView state={preview} />
+            {/* Summary says how many move: the preview's own headline would say it twice. */}
+            <PreviewView state={preview} headline={preview.preview?.margin == null} />
           </>
         ) : (
           <p className={`${CARD} px-4 py-3 text-[15px] leading-snug`}>{s.same}</p>

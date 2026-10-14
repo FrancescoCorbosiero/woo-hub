@@ -1,12 +1,12 @@
 import "server-only";
 import { sql } from "drizzle-orm";
 import type { RuleScope, ScopedPricingRule } from "@core/config";
-import { isStoreTermScope } from "@core/config";
-import type { StoreTermRef } from "@core/core-spine";
+import { isStoreTermScope, storeTermsPrice } from "@core/config";
+import type { PlanItem, StoreTermRef } from "@core/core-spine";
 import { db } from "@/server/db/client";
 import { rowsOf } from "@/server/db/rows";
 import { storeIndex } from "@/server/db/schema";
-import { storeClient, storeReady } from "@/server/collections/store";
+import { demoMode, storeClient, storeReady } from "@/server/collections/store";
 import { skuKey } from "@/lib/skus";
 
 /**
@@ -19,12 +19,19 @@ import { skuKey } from "@/lib/skus";
  * ancestors — a product filed under "Nike › Off-White" is in "Nike" too. Every
  * place that computes a price runs its products through withStoreTerms first
  * (the sync's planning, the drawer and the Vetrina's product sheet, the
- * Margins tab's coverage, the Publisher and the rebuild), so every screen
- * agrees on which rule prices what.
+ * Margins tab's coverage, the price audit, the Publisher and the rebuild), so
+ * every screen agrees on which rule prices what.
  *
- * Read briefly cached, and never fatal: a failed read keeps the last good one;
- * with none, the products go unchanged — no store terms, so no store-term
- * rule matches, and every other rule prices them as before.
+ * Read briefly cached, and never fatal. A failed read keeps the last good one
+ * — the index's and each tree's, for the life of the process. With none to
+ * keep, the product's store terms are UNKNOWN, which is not the same as none:
+ * a "Nike" rule cannot tell that a product filed under "Nike › Off-White" is
+ * its own, and the price computed without it is the general one. Such a
+ * product is reported as uncertain (withStoreTermsChecked) — the sync holds
+ * its price rather than write that one, the drawer flags it — but only when
+ * some enabled rule could need what is missing, and only for a product the
+ * engine prices from the market: a supplier's price never takes a store-term
+ * rule anyway.
  */
 
 /** A store-indexed product's own terms, by canonical SKU. */
@@ -33,6 +40,8 @@ export interface IndexedStoreTerms {
   categories: number[];
   brands: number[];
 }
+
+export type StoreTaxonomy = "category" | "brand";
 
 /** Each term's parent (0 or absent = top level), per taxonomy. */
 export interface StoreTermParents {
@@ -43,14 +52,74 @@ export interface StoreTermParents {
 /** Where the terms are read from — the index and the store, or a stand-in in tests. */
 export interface StoreTermsSource {
   readIndex(): Promise<IndexedStoreTerms[]>;
-  readParents(): Promise<StoreTermParents>;
+  /**
+   * One taxonomy's tree: each term's parent. Throws when it cannot be read; a
+   * shop without that taxonomy answers with an empty one.
+   */
+  readTree(taxonomy: StoreTaxonomy): Promise<ReadonlyMap<number, number>>;
 }
 
-/** The fields withStoreTerms fills. */
+/** The fields withStoreTerms reads and fills. */
 export interface StoreTermCarrier {
   sku: string;
+  /** Who prices it: only a market price (KicksDB, the default) takes a store-term rule. */
+  source?: string;
   storeCategories?: StoreTermRef[];
   storeBrands?: StoreTermRef[];
+}
+
+/** Products with their store terms, and the SKUs (canonical) whose terms are not all known. */
+export interface StoreTermsRead<T> {
+  products: T[];
+  /**
+   * Products a store-term rule could price whose terms could not be read
+   * whole: a price computed for them may miss its category's or brand's
+   * margin. Never written by the sync; flagged where shown.
+   */
+  uncertain: Set<string>;
+}
+
+/**
+ * Why a held product's price was not written — the plan row's reason, and
+ * the Publisher's and the rebuild's per-product error.
+ */
+export const STORE_TERMS_HELD =
+  "price held: the store's categories and brands could not be read, and a margin set on one of them may price this product";
+
+/**
+ * The run's note when it held some: said once however many steps held
+ * products, so the report reads one sentence, not one per step.
+ */
+export const STORE_TERMS_HELD_NOTE =
+  "Prices held for products a store category or brand margin may price: the store's categories and brands could not be read. Run the sync again shortly.";
+
+/**
+ * A held product's plan: none of its prices written. Every write that would
+ * set a price becomes a skip with STORE_TERMS_HELD — but a locked size (its
+ * price is the owner's, no rule's) is left alone, and an update that also
+ * carries the feed's stock keeps the stock with the price dropped: the stock
+ * the shop sells on is never held up by a margin. Returns the writes held.
+ */
+export function holdPlanPrices(items: PlanItem[]): number {
+  let held = 0;
+  for (const item of items) {
+    if (item.locked) continue;
+    if (item.action === "update") {
+      if (item.proposedPrice == null) continue; // stock only already
+      held += 1;
+      if (item.stockQuantity !== undefined) {
+        item.proposedPrice = null;
+        continue;
+      }
+      item.action = "skip";
+      item.reason = STORE_TERMS_HELD;
+    } else if (item.action === "create") {
+      held += 1;
+      item.action = "skip";
+      item.reason = STORE_TERMS_HELD;
+    }
+  }
+  return held;
 }
 
 /** No tree is deeper than this; a longer chain is a cycle in bad data. */
@@ -58,6 +127,9 @@ const MAX_DEPTH = 32;
 
 /** How long a read serves: a whole sync reads the index a few times, not once per step. */
 const TTL_MS = 60_000;
+
+/** How long a read that fell back (or found nothing to fall back on) serves before the store is asked again. */
+const RETRY_MS = 5_000;
 
 /**
  * Terms with every ancestor, each with its depth (0 = top level). A term the
@@ -84,66 +156,120 @@ export function needsStoreTerms(rules: readonly ScopedPricingRule[]): boolean {
   return rules.some((r) => r.enabled && isStoreTermScope(r.scope));
 }
 
-interface View {
-  bySku: Map<string, { categories: number[]; brands: number[] }>;
-  parents: StoreTermParents;
+/** The taxonomies some enabled rule names a term of: what a product's terms must be known in. */
+function taxonomiesNeeded(rules: readonly ScopedPricingRule[]): Record<StoreTaxonomy, boolean> {
+  const enabled = rules.filter((r) => r.enabled);
+  return {
+    category: enabled.some((r) => r.scope.storeCategory != null),
+    brand: enabled.some((r) => r.scope.storeBrand != null),
+  };
 }
 
-const NO_PARENTS: StoreTermParents = { category: new Map(), brand: new Map() };
+type BySku = Map<string, { categories: number[]; brands: number[] }>;
 
-/** One store's terms, read through `source` and cached for `ttlMs`. */
-export function storeTermsCache(source: StoreTermsSource, opts: { ttlMs?: number; now?: () => number } = {}) {
+interface View {
+  /** Null: the index could not be read, and never has been. */
+  bySku: BySku | null;
+  /** Per taxonomy; null: its tree could not be read, and never has been. */
+  parents: Record<StoreTaxonomy, ReadonlyMap<number, number> | null>;
+}
+
+const NO_PARENTS: ReadonlyMap<number, number> = new Map();
+const UNKNOWN: View = { bySku: null, parents: { category: null, brand: null } };
+
+/**
+ * One store's terms, read through `source` and cached for `ttlMs` (a read
+ * that had to fall back, for `retryMs` only). `blind` (the shop's: the
+ * Vetrina on its demo shop) makes every product's terms unknown to the
+ * pricing — the index then mirrors another shop than the one the prices
+ * are written to — while skusUnder still lists the index's own.
+ */
+export function storeTermsCache(
+  source: StoreTermsSource,
+  opts: { ttlMs?: number; retryMs?: number; now?: () => number; blind?: () => boolean } = {},
+) {
   const ttlMs = opts.ttlMs ?? TTL_MS;
+  const retryMs = opts.retryMs ?? RETRY_MS;
   const now = opts.now ?? Date.now;
-  let current: { at: number; view: View } | null = null;
-  let loading: Promise<View | null> | null = null;
+  const blind = opts.blind ?? (() => false);
+  let current: { at: number; view: View; whole: boolean } | null = null;
+  let loading: Promise<View> | null = null;
   // Bumped by forget(): a read started before it must not become `current`.
   let generation = 0;
+  // The last good read of each part, kept for the process lifetime — forget()
+  // only makes the next read ask again, never throws these away.
+  let lastIndex: BySku | null = null;
+  const lastTrees: Partial<Record<StoreTaxonomy, ReadonlyMap<number, number>>> = {};
 
-  async function load(): Promise<View> {
-    const rows = await source.readIndex();
-    const bySku: View["bySku"] = new Map();
-    for (const row of rows) {
-      const key = skuKey(row.sku);
-      if (!key) continue;
-      // Two store products under one SKU: the product is in both's terms.
-      const held = bySku.get(key);
-      if (held) {
-        held.categories.push(...row.categories);
-        held.brands.push(...row.brands);
-      } else {
-        bySku.set(key, { categories: [...row.categories], brands: [...row.brands] });
-      }
-    }
-    let parents = NO_PARENTS;
-    // The trees cost a WooCommerce read: only when some product has a term.
-    if ([...bySku.values()].some((t) => t.categories.length > 0 || t.brands.length > 0)) {
-      try {
-        parents = await source.readParents();
-      } catch (e) {
-        // Without the trees, the last ones read; without those, each
-        // product's own terms only — a parent's rule misses its sub-terms'
-        // products until the store answers again.
-        parents = current?.view.parents ?? NO_PARENTS;
-        console.warn("[store-terms] term trees unreadable:", e instanceof Error ? e.message : String(e));
-      }
-    }
-    return { bySku, parents };
+  function warn(what: string, e: unknown): void {
+    console.warn(`[store-terms] ${what} unreadable:`, e instanceof Error ? e.message : String(e));
   }
 
-  async function view(): Promise<View | null> {
-    if (current && now() - current.at < ttlMs) return current.view;
+  async function load(gen: number): Promise<{ view: View; whole: boolean }> {
+    let bySku: BySku | null;
+    let whole = true;
+    try {
+      bySku = new Map();
+      for (const row of await source.readIndex()) {
+        const key = skuKey(row.sku);
+        if (!key) continue;
+        // Two store products under one SKU: the product is in both's terms.
+        const held = bySku.get(key);
+        if (held) {
+          held.categories.push(...row.categories);
+          held.brands.push(...row.brands);
+        } else {
+          bySku.set(key, { categories: [...row.categories], brands: [...row.brands] });
+        }
+      }
+      if (gen === generation) lastIndex = bySku;
+    } catch (e) {
+      // The last good read, however old, prices better than none.
+      warn("index", e);
+      bySku = lastIndex;
+      whole = false;
+    }
+    if (!bySku) return { view: UNKNOWN, whole: false };
+
+    // Each tree costs a WooCommerce read: only when some product has a term
+    // in it. Read apart, so a shop whose brands cannot be read still has its
+    // categories' tree, and the other way round.
+    const parents: View["parents"] = { category: NO_PARENTS, brand: NO_PARENTS };
+    const values = [...bySku.values()];
+    const wanted = (["category", "brand"] as const).filter((tax) =>
+      values.some((t) => (tax === "category" ? t.categories : t.brands).length > 0),
+    );
+    const read = await Promise.allSettled(wanted.map((tax) => source.readTree(tax)));
+    wanted.forEach((tax, i) => {
+      const r = read[i];
+      if (r.status === "fulfilled") {
+        parents[tax] = r.value;
+        if (gen === generation) lastTrees[tax] = r.value;
+      } else {
+        // The last tree read; without one, unknown — a parent's rule cannot
+        // find its sub-terms' products, so those are held, not mispriced.
+        warn(`${tax} tree`, r.reason);
+        parents[tax] = lastTrees[tax] ?? null;
+        whole = false;
+      }
+    });
+    return { view: { bySku, parents }, whole };
+  }
+
+  async function view(): Promise<View> {
+    if (current && now() - current.at < (current.whole ? ttlMs : retryMs)) return current.view;
     if (loading) return loading;
     const gen = generation;
-    const read: Promise<View | null> = load()
-      .then((v) => {
-        if (gen === generation) current = { at: now(), view: v };
+    const read: Promise<View> = load(gen)
+      .then(({ view: v, whole }) => {
+        if (gen === generation) current = { at: now(), view: v, whole };
         return v;
       })
       .catch((e) => {
-        // The last good read, however old, prices better than none.
-        console.warn("[store-terms] index unreadable:", e instanceof Error ? e.message : String(e));
-        return current?.view ?? null;
+        // load() catches its reads; anything else is a bug, and still never
+        // fails the pricing.
+        warn("store terms", e);
+        return current?.view ?? UNKNOWN;
       })
       .finally(() => {
         if (loading === read) loading = null;
@@ -153,31 +279,62 @@ export function storeTermsCache(source: StoreTermsSource, opts: { ttlMs?: number
   }
 
   function termsOf(v: View, sku: string): Pick<StoreTermCarrier, "storeCategories" | "storeBrands"> | null {
-    const own = v.bySku.get(skuKey(sku));
+    const own = v.bySku?.get(skuKey(sku));
     if (!own) return null;
     return {
-      storeCategories: expandStoreTerms(own.categories, v.parents.category),
-      storeBrands: expandStoreTerms(own.brands, v.parents.brand),
+      storeCategories: expandStoreTerms(own.categories, v.parents.category ?? NO_PARENTS),
+      storeBrands: expandStoreTerms(own.brands, v.parents.brand ?? NO_PARENTS),
     };
+  }
+
+  /** Whether a store-term rule of `needed` taxonomies could price `p` by terms this view does not know. */
+  function isUncertain(v: View, p: StoreTermCarrier, needed: Record<StoreTaxonomy, boolean>): boolean {
+    if (!storeTermsPrice(p)) return false;
+    // No index: no product's terms are known.
+    if (!v.bySku) return true;
+    const own = v.bySku.get(skuKey(p.sku));
+    // Not filed anywhere the index knows: no store term to miss.
+    if (!own) return false;
+    return (
+      (needed.category && own.categories.length > 0 && v.parents.category == null) ||
+      (needed.brand && own.brands.length > 0 && v.parents.brand == null)
+    );
+  }
+
+  async function checked<T extends StoreTermCarrier>(
+    products: readonly T[],
+    rules: readonly ScopedPricingRule[],
+  ): Promise<StoreTermsRead<T>> {
+    if (products.length === 0 || !needsStoreTerms(rules)) return { products: [...products], uncertain: new Set() };
+    const v = blind() ? UNKNOWN : await view();
+    const needed = taxonomiesNeeded(rules);
+    const uncertain = new Set<string>();
+    const out = products.map((p) => {
+      // A row without a SKU (bad data) has no terms to find — and must not
+      // fail the pricing of the rest.
+      if (typeof p.sku !== "string") return p;
+      if (isUncertain(v, p, needed)) uncertain.add(skuKey(p.sku));
+      const terms = termsOf(v, p.sku);
+      return terms ? { ...p, ...terms } : p;
+    });
+    return { products: out, uncertain };
   }
 
   return {
     /**
      * The products, each with its store terms when the index holds its SKU
-     * (copies; the originals are left alone). Unchanged when no enabled rule
-     * is scoped to a store term, or when nothing can be read.
+     * (copies; the originals are left alone), and the ones whose terms could
+     * not be read whole (see StoreTermsRead.uncertain). Unchanged, none
+     * uncertain, when no enabled rule is scoped to a store term.
      */
+    withStoreTermsChecked: checked,
+
+    /** withStoreTermsChecked's products only: for a screen that shows a price and flags nothing. */
     async withStoreTerms<T extends StoreTermCarrier>(
       products: readonly T[],
       rules: readonly ScopedPricingRule[],
     ): Promise<T[]> {
-      if (products.length === 0 || !needsStoreTerms(rules)) return [...products];
-      const v = await view();
-      if (!v) return [...products];
-      return products.map((p) => {
-        const terms = termsOf(v, p.sku);
-        return terms ? { ...p, ...terms } : p;
-      });
+      return (await checked(products, rules)).products;
     },
 
     /**
@@ -188,7 +345,7 @@ export function storeTermsCache(source: StoreTermsSource, opts: { ttlMs?: number
     async skusUnder(scope: Pick<RuleScope, "storeCategory" | "storeBrand">): Promise<string[]> {
       if (!isStoreTermScope(scope)) return [];
       const v = await view();
-      if (!v) return [];
+      if (!v.bySku) return [];
       const out: string[] = [];
       for (const sku of v.bySku.keys()) {
         const terms = termsOf(v, sku)!;
@@ -199,7 +356,20 @@ export function storeTermsCache(source: StoreTermsSource, opts: { ttlMs?: number
       return out;
     },
 
-    /** Drop the cached read: the next one asks the index (and the trees) again. */
+    /**
+     * Whether the terms `rules` need can all be read now: the index, and the
+     * tree of each taxonomy a rule names (when some product is filed in it).
+     * False on the demo shop.
+     */
+    async known(rules: readonly ScopedPricingRule[]): Promise<boolean> {
+      if (blind()) return false;
+      const v = await view();
+      if (!v.bySku) return false;
+      const needed = taxonomiesNeeded(rules);
+      return !(needed.category && v.parents.category == null) && !(needed.brand && v.parents.brand == null);
+    },
+
+    /** Drop the cached read: the next one asks the index (and the trees) again. The last good parts stay. */
     forget(): void {
       generation += 1;
       current = null;
@@ -227,18 +397,15 @@ const shopSource: StoreTermsSource = {
       brands: ids(r.brands),
     }));
   },
-  async readParents() {
+  async readTree(taxonomy) {
     // No store to ask: every term read as top level.
     if (!storeReady()) return NO_PARENTS;
     // The store the index mirrors (the demo shop while the Vetrina runs on
-    // it), its listings remembered a few minutes by the taxonomy cache.
+    // it), its listings remembered a few minutes by the taxonomy cache. A
+    // shop without brands answers with none (the client reads the missing
+    // taxonomy as empty); a failed read throws, and the cache falls back.
     const client = await storeClient();
-    const [categories, brands] = await Promise.all([
-      client.listCategories(),
-      // A shop without brands — or whose brands cannot be read — still has its categories.
-      client.listBrands().catch(() => []),
-    ]);
-    return { category: parentMap(categories), brand: parentMap(brands) };
+    return parentMap(taxonomy === "category" ? await client.listCategories() : await client.listBrands());
   },
 };
 
@@ -251,9 +418,10 @@ function parentMap(terms: readonly { id: number; parent?: number }[]): Map<numbe
 }
 
 // One per server process, like the other in-process caches (kept across
-// hot reloads in development).
-const g = globalThis as { __storeHubStoreTerms?: ReturnType<typeof storeTermsCache> };
-const shop = (g.__storeHubStoreTerms ??= storeTermsCache(shopSource));
+// hot reloads in development). Blind while the Vetrina runs on its demo shop:
+// the index then mirrors the demo, not the shop the sync writes to.
+const g = globalThis as { __storeHubStoreTermsV2?: ReturnType<typeof storeTermsCache> };
+const shop = (g.__storeHubStoreTermsV2 ??= storeTermsCache(shopSource, { blind: demoMode }));
 
 /** See storeTermsCache().withStoreTerms — the shop's store index and term trees. */
 export function withStoreTerms<T extends StoreTermCarrier>(
@@ -263,22 +431,35 @@ export function withStoreTerms<T extends StoreTermCarrier>(
   return shop.withStoreTerms(products, rules);
 }
 
-/** withStoreTerms over a map's values, keys kept. */
+/** See storeTermsCache().withStoreTermsChecked — for whatever writes a price, or must flag one. */
+export function withStoreTermsChecked<T extends StoreTermCarrier>(
+  products: readonly T[],
+  rules: readonly ScopedPricingRule[],
+): Promise<StoreTermsRead<T>> {
+  return shop.withStoreTermsChecked(products, rules);
+}
+
+/** withStoreTermsChecked over a map's values, keys kept. */
 export async function withStoreTermsIn<K, T extends StoreTermCarrier>(
   products: ReadonlyMap<K, T>,
   rules: readonly ScopedPricingRule[],
-): Promise<Map<K, T>> {
+): Promise<{ products: Map<K, T>; uncertain: Set<string> }> {
   const entries = [...products];
-  const priced = await withStoreTerms(
+  const read = await withStoreTermsChecked(
     entries.map(([, p]) => p),
     rules,
   );
-  return new Map(entries.map(([k], i) => [k, priced[i]]));
+  return { products: new Map(entries.map(([k], i) => [k, read.products[i]])), uncertain: read.uncertain };
 }
 
 /** See storeTermsCache().skusUnder. */
 export function skusUnderStoreTerm(scope: Pick<RuleScope, "storeCategory" | "storeBrand">): Promise<string[]> {
   return shop.skusUnder(scope);
+}
+
+/** See storeTermsCache().known. */
+export function storeTermsKnown(rules: readonly ScopedPricingRule[]): Promise<boolean> {
+  return shop.known(rules);
 }
 
 /**

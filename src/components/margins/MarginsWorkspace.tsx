@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import type { MarginKind, MarkupBand, RoundingConfig, ScopedPricingRule } from "@core/config";
-import { marginKindOf } from "@core/config";
+import { MAX_PRICING_RULES, marginKindOf } from "@core/config";
 import { pricingRuleCoverage, savePricingRules, type RuleCoverage } from "@/server/actions/config";
 import { useI18n } from "@/i18n/provider";
 import { Button } from "@/components/ui/button";
@@ -92,20 +92,27 @@ const ruleDomId = (ruleId: string) => `margin-rule-${ruleId}`;
 
 export function MarginsWorkspace({
   initialRules,
+  initialVersion,
   families = [],
   brands = [],
 }: {
   initialRules: ScopedPricingRule[];
+  /** The fingerprint of initialRules: a save is refused once the stored list has moved on. */
+  initialVersion: string;
   families?: FamilyOption[];
   brands?: BrandOption[];
 }) {
   const { t } = useI18n();
   const [rules, setRules] = React.useState<ScopedPricingRule[]>(initialRules);
+  const [version, setVersion] = React.useState(initialVersion);
   const [saving, setSaving] = React.useState(false);
-  const [note, setNote] = React.useState<{ ok: boolean; text: string } | null>(null);
+  const [note, setNote] = React.useState<{ ok: boolean; text: string; stale?: boolean } | null>(null);
   const [coverage, setCoverage] = React.useState<Map<string, RuleCoverage>>(new Map());
   const [pickingStoreTerm, setPickingStoreTerm] = React.useState(false);
   const [focusId, setFocusId] = React.useState<string | null>(null);
+
+  // One cap for every editor (core/config.ts): the save refuses more.
+  const full = rules.length >= MAX_PRICING_RULES;
 
   // The store terms some rule already names — marked in every picker.
   const ruled = React.useMemo<Record<CatalogTaxonomy, Set<number>>>(
@@ -183,6 +190,21 @@ export function MarginsWorkspace({
     setFocusId(id);
   }
 
+  /**
+   * A store rule's "Cambia": the rule moves to the picked term — unless that
+   * term already has a rule of its own, which is then shown instead. Two rules
+   * on one term would leave the list order to decide between them, and the
+   * Vetrina shows and edits only one.
+   */
+  function changeStoreTerm(index: number, term: CatalogTerm) {
+    const existing = findStoreTermRule(rules, term.taxonomy, term.id);
+    if (existing && existing.id !== rules[index]?.id) {
+      setFocusId(existing.id);
+      return;
+    }
+    patchRule(index, { scope: { ...rules[index].scope, ...storeTermScope(term) } });
+  }
+
   function removeRule(index: number) {
     setNote(null);
     setRules((rs) => rs.filter((_, i) => i !== index));
@@ -191,11 +213,18 @@ export function MarginsWorkspace({
   async function save() {
     setSaving(true);
     setNote(null);
-    const res = await savePricingRules(rules);
+    const res = await savePricingRules(rules, version);
     setSaving(false);
-    if (res.ok && res.rules) {
+    if (res.ok && res.rules && res.version) {
       setRules(res.rules);
+      setVersion(res.version);
       setNote({ ok: true, text: t.margins.saved });
+    } else if (res.stale) {
+      // Someone else changed the list since this page loaded it: saving this
+      // copy would undo their change, so nothing was saved.
+      setNote({ ok: false, text: t.margins.staleRules, stale: true });
+    } else if (res.demo) {
+      setNote({ ok: false, text: t.margins.storePickDemo });
     } else {
       setNote({ ok: false, text: `${t.margins.saveFailed}: ${res.error ?? ""}` });
     }
@@ -221,12 +250,13 @@ export function MarginsWorkspace({
               ruled={ruled}
               focused={focusId === rule.id}
               onPatch={(p) => patchRule(i, p)}
+              onChangeTerm={(term) => changeStoreTerm(i, term)}
               onRemove={() => removeRule(i)}
             />
           ))}
         </ul>
 
-        {pickingStoreTerm && (
+        {pickingStoreTerm && !full && (
           <StoreTermPicker
             className="max-w-xl"
             ruled={ruled}
@@ -235,14 +265,16 @@ export function MarginsWorkspace({
           />
         )}
 
+        {full && <p className="text-xs text-muted">{t.margins.rulesFull(MAX_PRICING_RULES)}</p>}
         <div className="flex flex-wrap items-center gap-3">
-          <Button type="button" variant="outline" onClick={addRule}>
+          <Button type="button" variant="outline" onClick={addRule} disabled={full}>
             + {t.margins.addRule}
           </Button>
           <Button
             type="button"
             variant="outline"
             aria-expanded={pickingStoreTerm}
+            disabled={full}
             onClick={() => setPickingStoreTerm((v) => !v)}
           >
             + {t.margins.addStoreRule}
@@ -251,9 +283,17 @@ export function MarginsWorkspace({
             {saving ? t.margins.saving : t.margins.save}
           </Button>
           {note && (
-            <span className={`text-sm font-medium ${note.ok ? "text-up" : "text-skip"}`}>
+            <span
+              role={note.ok ? "status" : "alert"}
+              className={`text-sm font-medium ${note.ok ? "text-down" : "text-skip"}`}
+            >
               {note.text}
             </span>
+          )}
+          {note?.stale && (
+            <Button type="button" variant="outline" onClick={() => window.location.reload()}>
+              {t.margins.reload}
+            </Button>
           )}
         </div>
       </div>
@@ -270,6 +310,7 @@ function RuleCard({
   ruled,
   focused,
   onPatch,
+  onChangeTerm,
   onRemove,
 }: {
   rule: ScopedPricingRule;
@@ -280,6 +321,7 @@ function RuleCard({
   ruled: Record<CatalogTaxonomy, Set<number>>;
   focused: boolean;
   onPatch: (patch: Partial<ScopedPricingRule>) => void;
+  onChangeTerm: (term: CatalogTerm) => void;
   onRemove: () => void;
 }) {
   const { t } = useI18n();
@@ -405,8 +447,9 @@ function RuleCard({
                   <div className="text-[11px] font-medium text-muted">
                     {storeTerm.taxonomy === "category" ? t.margins.storeCategoryField : t.margins.storeBrandField}
                   </div>
+                  {/* The field label already says "Categoria del negozio": the value is the term itself. */}
                   <div className="truncate text-sm font-semibold">
-                    {storeTerms.map((term) => storeTermLabel(term, t.margins)).join(" · ")}
+                    {storeTerms.map((term) => term.name ?? storeTermLabel(term, t.margins)).join(" · ")}
                   </div>
                 </div>
                 <Button
@@ -419,7 +462,7 @@ function RuleCard({
                   {t.margins.storeTermChange}
                 </Button>
               </div>
-              <p className="mt-1 text-[10px] leading-snug text-faint">{t.margins.storeTermHint(storeTerm.taxonomy)}</p>
+              <p className="mt-1 text-[11px] leading-snug text-muted">{t.margins.storeTermHint(storeTerm.taxonomy)}</p>
               {changingTerm && (
                 <StoreTermPicker
                   className="mt-2"
@@ -428,7 +471,7 @@ function RuleCard({
                   ruled={ruled}
                   onPick={(term) => {
                     setChangingTerm(false);
-                    patchScope(storeTermScope(term));
+                    onChangeTerm(term);
                   }}
                   onCancel={() => setChangingTerm(false)}
                 />

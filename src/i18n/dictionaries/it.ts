@@ -408,6 +408,8 @@ export const it = {
     ruleMarginBands: (n: number) => `ricarico dinamico a ${n} fasce`,
     rulePassthrough: "prezzo finale del fornitore, nessun ricarico applicato",
     ruleMixed: "taglie diverse seguono regole diverse",
+    storeTermsUnknown:
+      "Ora non riesco a leggere categorie e brand del negozio: questi prezzi potrebbero non tenere conto del margine di una categoria o di un brand del negozio. Finché non li rileggo, il sync non scrive i prezzi di questo prodotto.",
     ruleEdit: "Modifica la regola",
     ruleCreate: "Dai a questa famiglia una regola sua",
     storeTitle: "Prezzi e stock sul negozio",
@@ -765,6 +767,10 @@ export const it = {
     saving: "Salvataggio…",
     saved: "Regole salvate ✓",
     saveFailed: "Salvataggio fallito",
+    staleRules:
+      "Non salvato: le regole sono cambiate da quando hai aperto la pagina (per esempio un ricarico impostato dalla Vetrina). Ricarica la pagina per vederle, poi rifai le tue modifiche.",
+    reload: "Ricarica la pagina",
+    rulesFull: (max: number) => `Al massimo ${max} regole: togline una per aggiungerne un'altra.`,
     deleteRule: "Elimina",
     enabled: "Attiva",
     generalRule: "Regola generale (tutto il resto)",
@@ -822,7 +828,8 @@ export const it = {
     storePickMore: (n: number) => `…e altri ${n}: continua a scrivere`,
     storePickRuled: "ha già una regola",
     storePickProducts: (n: number) => (n === 1 ? "1 prodotto" : `${n} prodotti`),
-    storePickDemo: "Negozio dimostrativo della Vetrina",
+    storePickDemo:
+      "Nel negozio dimostrativo i margini per categoria o brand non si aggiungono: gli id sono della demo, non del negozio vero, e finirebbero su altri prodotti.",
     storePickCancel: "Annulla",
     scopeBrand: "Brand",
     scopeCategory: "Famiglia",
@@ -869,7 +876,7 @@ export const it = {
     coverageNone:
       "Non si applica a nessun prodotto — o non corrisponde a nulla, o una regola più specifica la scavalca",
     coverageNoneStore:
-      "Non si applica a nessun prodotto — la categoria o il brand è vuoto, i suoi prodotti hanno il prezzo del fornitore, oppure una regola su un singolo SKU o su una sotto-categoria lo scavalca",
+      "Non si applica a nessun prodotto — la categoria o il brand è vuoto, i suoi prodotti hanno il prezzo del fornitore, oppure una regola su un singolo SKU o su una categoria o un brand più interno la scavalca",
     coverageSizeScoped: "(solo sulle taglie indicate)",
     exampleLabel: "Esempio:",
   },
@@ -1566,8 +1573,13 @@ export const it = {
         goldensneakers: "Prezzo del fornitore",
         woo: "Prezzo gestito a mano",
       } as Record<string, string>,
-      rule: (label: string) => `Margine: ${label}`,
-      generalRule: "margine standard",
+      rule: (label: string) => `Ricarico: ${label}`,
+      generalRule: "ricarico standard",
+      /** A margin set on one of the shop's own categories or brands (the Catalogo's "Ricarico"). */
+      storeTermRule: (name: string, taxonomy: "category" | "brand") =>
+        `«${name}» (${taxonomy === "category" ? "categoria" : "brand"} del negozio)`,
+      storeTermsUnknown:
+        "Ora non riesco a leggere categorie e brand del negozio: questi prezzi potrebbero non tenere conto del loro ricarico. Finché non li rileggo, i prezzi di questo prodotto sul sito restano come sono.",
       belowMarket: (ask: string) => `Sotto il prezzo di mercato (${ask})`,
       storeEdit: (price: string) => `Cambiato su WordPress: ${price}`,
       storeEditKeep: "Tienilo",

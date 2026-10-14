@@ -87,7 +87,7 @@ export function shopState(
  * screen hears separately.
  */
 export function cardShows(kind: OperationKind): boolean {
-  return kind === "sale" || kind === "unsale" || kind === "hide" || kind === "show";
+  return kind === "sale" || kind === "unsale" || kind === "hide" || kind === "show" || kind === "margin";
 }
 
 /**

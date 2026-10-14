@@ -27,7 +27,7 @@ export const opsEn: typeof opsIt = {
     categorize: (category: string, count: number) => `Category “${category}” on ${products(count)}`,
     uncategorize: (category: string, count: number) => `Category “${category}” off ${products(count)}`,
     pin: (count: number, section: string) => `${count === 1 ? "1 product pinned" : `${n(count)} products pinned`} in ${section}`,
-    margin: (percent: number | null, what: string) => (percent == null ? `Standard margin · ${what}` : `Margin ${percent}% · ${what}`),
+    margin: (percent: number | null, what: string) => (percent == null ? `Own margin removed · ${what}` : `Margin ${percent}% · ${what}`),
   },
 
   untouched: {
@@ -101,6 +101,18 @@ export const opsEn: typeof opsIt = {
       count === 1
         ? "1 size is on sale: its full price changes when the sale ends."
         : `${n(count)} sizes are on sale: their full price changes when the sale ends.`,
+    belowMinSizes: (count: number) =>
+      count === 1
+        ? "1 size stays as it is: the new price is too close to the current one to change it."
+        : `${n(count)} sizes stay as they are: the new price is too close to the current one to change it.`,
+    overMaxSizes: (count: number) =>
+      count === 1
+        ? "1 size stays as it is: it would change by more than the Hub's rules allow."
+        : `${n(count)} sizes stay as they are: they would change by more than the Hub's rules allow.`,
+    editedSizes: (count: number) =>
+      count === 1
+        ? "1 size had its price changed in WordPress: it keeps it."
+        : `${n(count)} sizes had their prices changed in WordPress: they keep them.`,
   },
 
   error: {
@@ -128,7 +140,9 @@ export const opsEn: typeof opsIt = {
     undoFailed: (message: string) => `Undo failed: ${message}`,
     marginDemo: "The margin is not changed in the demo: it would land on the Hub's real prices.",
     marginSame: (term: string, percent: number) => `“${term}” already has a ${percent}% margin.`,
-    marginNone: (term: string) => `“${term}” already follows the standard margin.`,
+    marginNone: (term: string) => `“${term}” has no margin of its own to remove.`,
+    marginFull: (max: number) => `The Hub already has ${n(max)} pricing rules, the most it takes: remove one on the Hub's Margins tab, then try again.`,
+    marginTermsUnknown: "The shop's categories and brands can't be read right now: try again shortly.",
     repriceUnanswered: (count: number) =>
       `Margin saved, but the market (KicksDB) did not answer for ${products(count)}: the next price update aligns them.`,
     marginNoSnapshot: "The Hub has not read the shop yet: update it from the Sync tab, then try again.",

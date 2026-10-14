@@ -87,6 +87,14 @@ export interface MarkupBand {
     percent: number;
 }
 
+/**
+ * The most rules the list may hold — one cap for every editor: the Margins
+ * tab's save refuses more, and the Vetrina will not add a category's or a
+ * brand's rule past it. Two caps used to disagree: the Vetrina appended past
+ * the tab's 100, and the tab could then never save again.
+ */
+export const MAX_PRICING_RULES = 200;
+
 export interface ScopedPricingRule {
     id: string;
     scope: RuleScope;
@@ -321,7 +329,7 @@ export function isStoreTermScope(scope: RuleScope): boolean {
  * margin and passes through untouched, whatever category the shop files it
  * under; a store-only product has no engine price to change.
  */
-function storeTermsPrice(p: ProductScopeAxes): boolean {
+export function storeTermsPrice(p: Pick<ProductScopeAxes, "source">): boolean {
     return (norm(p.source) || "kicksdb") === "kicksdb";
 }
 

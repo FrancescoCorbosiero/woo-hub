@@ -7,7 +7,7 @@ import type { OperationView } from "@/lib/vetrina/catalog-ops";
 import { listOperations } from "@/server/actions/vetrina-operations";
 import { call } from "./call";
 import { Done, Failed, UndoArrow } from "./icons";
-import { formatTime, isActive } from "./model";
+import { formatTime, isActive, refusedText } from "./model";
 import { useOperations, useOperationSettled } from "./operations-context";
 import { ActSheetFrame, CARD, FailedCard, LoadingRows, SheetBody, SheetHead } from "./parts";
 
@@ -123,7 +123,9 @@ function ActivityRow({ view, busy, onUndo }: { view: OperationView; busy: boolea
         : a.status[view.status];
   const parts = [status];
   if (!going && when) parts.push(when);
-  if (view.status === "done" && view.failed > 0) parts.push(a.refused(view.failed));
+  if (view.status === "done" && view.failed > 0) {
+    parts.push(refusedText(view.kind, view.failed, { products: a.refused, sizes: a.refusedSizes }));
+  }
 
   const undo = view.undo;
   const undoLine =
@@ -132,7 +134,9 @@ function ActivityRow({ view, busy, onUndo }: { view: OperationView; busy: boolea
           undo.restored > 0 ? words.restored(undo.restored) : "",
           undo.kept > 0 ? words.kept(undo.kept) : "",
           (undo.held ?? 0) > 0 ? words.held(undo.held ?? 0) : "",
-          undo.failed > 0 ? words.undoRefused(undo.failed) : "",
+          undo.failed > 0
+            ? refusedText(view.kind, undo.failed, { products: words.undoRefused, sizes: words.undoRefusedSizes })
+            : "",
         ]
           .filter(Boolean)
           .join(" · ")

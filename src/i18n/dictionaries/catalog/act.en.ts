@@ -193,6 +193,7 @@ export const actEn: typeof actIt = {
       undone: "Undone",
     },
     refused: (count: number) => `${products(count)} refused by the shop`,
+    refusedSizes: (count: number) => `${count === 1 ? "1 size" : `${n(count)} sizes`} refused by the shop`,
   },
 
   pill: {
@@ -218,11 +219,13 @@ export const actEn: typeof actIt = {
   toast: {
     undo: "Undo",
     refused: (count: number) => `${products(count)} refused by the shop.`,
+    refusedSizes: (count: number) => `${count === 1 ? "1 size" : `${n(count)} sizes`} refused by the shop.`,
     undone: (label: string) => `Undone: ${label}`,
     restored: (count: number) => `${products(count)} back as before`,
     kept: (count: number) =>
       count === 1 ? "1 product left as it was: changed meanwhile" : `${n(count)} products left as they were: changed meanwhile`,
     undoRefused: (count: number) => `${products(count)} refused by the shop`,
+    undoRefusedSizes: (count: number) => `${count === 1 ? "1 size" : `${n(count)} sizes`} refused by the shop`,
     held: (count: number) =>
       count === 1
         ? "1 stays hidden: it is also in a category or brand you hid"

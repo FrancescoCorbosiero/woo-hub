@@ -22,7 +22,7 @@ import { skuKey } from "@/lib/skus";
 import { getWooClient, type WooClient } from "./client";
 import { assertSnapshotIsThisStore } from "@/server/woo/site-guard";
 import { forgetVariations, recordPriceWrites, type LedgerWrite } from "@/server/sync/ledger";
-import { withStoreTermsIn } from "@/server/pricing/store-terms";
+import { STORE_TERMS_HELD, withStoreTermsIn } from "@/server/pricing/store-terms";
 
 /**
  * The Rebuild executor — the sledgehammer for products too inconsistent to
@@ -108,8 +108,12 @@ export async function rebuildProducts(
   const client = getWooClient();
   const overrides = await getOverrides().catch(() => null);
   // With the shop's categories and brands: a margin set on one of them
-  // prices the recreated sizes as the sync would.
-  const catalogEntries = await withStoreTermsIn(await getAnyBySkus(market, skus), config.pricingRules);
+  // prices the recreated sizes as the sync would. A product whose terms
+  // cannot be read now is not rebuilt: its new sizes would miss that margin.
+  const { products: catalogEntries, uncertain: termsUnknown } = await withStoreTermsIn(
+    await getAnyBySkus(market, skus),
+    config.pricingRules,
+  );
   // Product-level ownership: GS-owned SKUs rebuild from the feed's variant
   // set (real stock, presented prices) instead of the KicksDB catalog.
   const gsOwned = await gsOwnedProducts(skus, market, overrides);
@@ -152,6 +156,10 @@ export async function rebuildProducts(
       const catalog = gs?.product ?? catalogEntries.get(sku);
       if (!catalog) {
         report.error = "not in the KicksDB catalog nor the GoldenSneakers feed";
+        return;
+      }
+      if (!gs && termsUnknown.has(skuKey(sku))) {
+        report.error = STORE_TERMS_HELD;
         return;
       }
       const productId = productIdBySku.get(sku);

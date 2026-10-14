@@ -208,10 +208,9 @@ export async function filedCount(operationId: string): Promise<number> {
  * changes: a run cut off right after the save counts as having changed
  * something (filedCount, markInterrupted) and stays undoable.
  *
- * It is not a product's value: product 0, field 'margin', a field the
- * column's per-product list does not name (the column is plain text) — so
- * it is written and read only by these two functions, and every reader of
- * the products' items, which picks its own field, never meets it.
+ * It is not a product's value: product 0, field 'margin' — so every reader
+ * of the products' items, which picks its own field, never meets it, and a
+ * margin's undo reads only this.
  */
 export interface MarginRecord {
   before: ScopedPricingRule | null;
@@ -221,23 +220,24 @@ export interface MarginRecord {
 }
 
 export async function fileMarginRecord(operationId: string, record: MarginRecord): Promise<void> {
-  const before = JSON.stringify({ rule: record.before, index: record.index });
-  const after = JSON.stringify({ rule: record.after });
-  await db.execute(sql`
-    insert into ${vetrinaOperationItems} ("operation_id", "product_id", "variation_id", "field", "before", "after")
-    values (${operationId}, 0, null, 'margin', ${before}::jsonb, ${after}::jsonb)
-  `);
+  await db.insert(vetrinaOperationItems).values({
+    operationId,
+    productId: 0,
+    variationId: null,
+    field: "margin",
+    before: { rule: record.before, index: record.index },
+    after: { rule: record.after },
+  });
 }
 
 /** The margin's record, the last one filed; null for none (or a record that does not read as one). */
 export async function marginRecordOf(operationId: string): Promise<MarginRecord | null> {
-  const res = await db.execute(sql`
-    select "before", "after" from ${vetrinaOperationItems}
-    where "operation_id" = ${operationId} and "field" = 'margin'
-    order by "id" desc
-    limit 1
-  `);
-  const row = rowsOf<{ before: unknown; after: unknown }>(res)[0];
+  const [row] = await db
+    .select({ before: vetrinaOperationItems.before, after: vetrinaOperationItems.after })
+    .from(vetrinaOperationItems)
+    .where(and(eq(vetrinaOperationItems.operationId, operationId), eq(vetrinaOperationItems.field, "margin")))
+    .orderBy(desc(vetrinaOperationItems.id))
+    .limit(1);
   if (!row) return null;
   const parse = (raw: unknown) => (typeof raw === "string" ? JSON.parse(raw) : raw) as Record<string, unknown> | null;
   const before = parse(row.before);

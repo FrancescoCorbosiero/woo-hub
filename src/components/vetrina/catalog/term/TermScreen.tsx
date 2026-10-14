@@ -555,8 +555,9 @@ function TermActionsPanel({ term }: { term: CatalogTerm }) {
             onActivity={ops.openActivity}
           />
         )}
-        {/* The margin the Hub prices the term's products with (phase 4): read on its own, shown where it can act. */}
-        <MarginRow term={term} />
+        {/* The margin the Hub prices the term's products with (phase 4): read on its own, shown where it can act —
+            after the panel's own read, which it would otherwise hold up (server actions run one at a time). */}
+        <MarginRow term={term} ready={loaded != null || failed} />
       </List>
 
       <Actions opened={saleMenu} onBackdropClick={() => setSaleMenu(false)}>
