@@ -45,6 +45,8 @@ export const marginsIt = {
     applies: (count: number) => (count === 0 ? "Nessun prodotto lo segue" : `Vale per ${products(count)}`),
     /** A margin of its own, but none of its products has a Hub price now. */
     nonePriced: "Nessun prodotto col prezzo dell'Hub, per ora",
+    /** Where no margin can act (none of its products has a Hub price): the quiet row in its place. One line on a 320px phone. */
+    noneHere: "Nessun prezzo dell'Hub qui",
     /** While the row is read: a shape, not a count. */
     loading: "Leggo il ricarico…",
     supplier: (count: number) => `${n(count)} col prezzo del fornitore`,

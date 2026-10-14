@@ -347,6 +347,7 @@ export const it = {
     copySku: "Copia SKU",
     notFoundTitle: "Prodotto non trovato",
     loadFailed: "Impossibile caricare il prodotto",
+    loadFailedBody: "Qualcosa è andato storto leggendo questo prodotto. Riprova tra poco; se succede ancora, i suoi dati nel catalogo potrebbero essere incompleti.",
     notFoundBody:
       "Questo prodotto non è nel catalogo per il mercato attivo. Il link potrebbe essere vecchio, oppure il prodotto è stato rimosso.",
     audit: "Verifica prezzi (API)",
@@ -1646,7 +1647,6 @@ export const it = {
       heldHint: "L'ultimo controllo ha trovato un cambiamento grande e aspetta la tua conferma.",
       confirm: "Conferma e applica",
       loading: "Carico…",
-      failed: "Non riuscito",
     },
     tags: {
       title: "Tag",
@@ -1663,6 +1663,8 @@ export const it = {
       pending: "Tag salvati: le sezioni si aggiornano tra poco.",
       inCollections: (names: string) => `Nelle categorie automatiche: ${names}`,
       failed: "Tag non salvati",
+      loadFailed: "Non riesco a leggere i tag del prodotto.",
+      gone: "Questo prodotto non c'è più nel negozio.",
       loading: "Carico i tag…",
       refused: (reason: string) => `Tag salvati, ma il negozio non ha accettato il cambio di categoria: ${reason}`,
     },

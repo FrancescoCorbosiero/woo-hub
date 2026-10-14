@@ -24,14 +24,17 @@ export function SortActions({ sort, onChange }: { sort: CatalogSort; onChange: (
 
   return (
     <>
+      {/* The short words ("Prezzo ↑"), the whole ones for a screen reader; on the narrowest phone the label
+          gives way before the list's count does. */}
       <button
         type="button"
         onClick={() => setOpen(true)}
         aria-haspopup="dialog"
-        className="-me-2 inline-flex h-11 items-center gap-1.5 rounded-full px-2 text-[14px] font-medium text-primary transition-opacity active:opacity-50"
+        aria-label={s.button(s.options[sort])}
+        className="-me-2 inline-flex h-11 min-w-0 items-center gap-1.5 rounded-full px-2 text-[14px] font-medium text-primary transition-opacity active:opacity-50"
       >
-        <SortArrows className="h-4 w-4" />
-        {s.button(s.options[sort])}
+        <SortArrows className="h-4 w-4 shrink-0" />
+        <span className="truncate">{s.button(s.short[sort])}</span>
       </button>
       <Actions opened={open} onBackdropClick={() => setOpen(false)}>
         <ActionsGroup>

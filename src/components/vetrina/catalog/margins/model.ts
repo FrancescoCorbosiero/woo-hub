@@ -53,6 +53,16 @@ export function rowShown(state: TermMarginState): boolean {
 }
 
 /**
+ * Where the row does not show (rowShown), a quiet one says why, on a term
+ * with products: the ghost drawn while the margin is read (and the screen's
+ * skeleton) holds the row's room there, and the panel must not shrink under
+ * the owner's thumb when the answer lands. An empty term drew no ghost.
+ */
+export function idleRowShown(state: TermMarginState, count: number): boolean {
+  return !rowShown(state) && count > 0;
+}
+
+/**
  * The row's title, one short line on the narrowest phone — "Ricarico: 25%",
  * "Ricarico: standard", "Ricarico: regole dell'Hub" — whose margin it is goes
  * under it (rowText): a title that wrapped once read made the panel grow

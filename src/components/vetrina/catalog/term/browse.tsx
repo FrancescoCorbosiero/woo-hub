@@ -91,8 +91,9 @@ export function useListControls(initialFacets: CatalogPage["facets"] | null, sta
   return { text, setText, q, filter, setFilter, sort, setSort, facets, setFacets };
 }
 
-// The page's own focus ring would draw a square around the round field.
-const NO_RING: React.CSSProperties = { outline: "none" };
+// The page's own focus ring would draw a square around the round field. A long placeholder ("Search in
+// Nike Dunk Low Retro" on a 320px phone) ends in "…" rather than clipped mid-word.
+const INPUT_STYLE: React.CSSProperties = { outline: "none", textOverflow: "ellipsis" };
 
 /**
  * Konsta's search field takes no input attributes: set the ones a phone
@@ -134,7 +135,7 @@ export function SearchField({
       ref={ref}
       value={value}
       placeholder={placeholder}
-      inputStyle={NO_RING}
+      inputStyle={INPUT_STYLE}
       onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
       onClear={() => onChange("")}
       onKeyDown={(e: React.KeyboardEvent) => {

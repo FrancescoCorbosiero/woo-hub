@@ -151,6 +151,7 @@ export const opsEn: typeof opsIt = {
     nothingToUndo: "It changed nothing: there is nothing to undo.",
     tooOld: (days: number) => `It can only be undone in the first ${days} days.`,
     sectionChanged: (title: string) => `The section “${title}” changed since: fix the order in the section editor.`,
+    unexpected: "Didn't work, because of a problem on the server: try again shortly.",
     interrupted: "Interrupted: the server restarted before the end.",
     stopped: (message: string) => `Interrupted by an error: ${message}`,
     undoInterrupted: "Undo interrupted: the server restarted. Try again.",

@@ -26,6 +26,9 @@ async function attempt<T>(fn: () => Promise<T>): Promise<CollectionsResult<T>> {
     return { ok: true, data: await fn() };
   } catch (e) {
     if (e instanceof service.CollectionError) return { ok: false, code: e.code, error: e.message };
+    // Unforeseen (a failed query, the store down): the log keeps it whole. The Hub's page shows the
+    // message; the Vetrina shows only the code, in the owner's words (catalog/rules/errors.ts).
+    console.error("[collections] request failed:", e);
     return { ok: false, code: "failed", error: e instanceof Error ? e.message : String(e) };
   }
 }

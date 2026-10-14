@@ -92,6 +92,8 @@ export async function loadCatalogDrawer(
     const { market = config.source.market, sku } = parsed.data;
     return { ok: true, data: await loadDrawerData(market.toUpperCase(), sku, config) };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    // The drawer says it in plain words; the detail is for the server log.
+    console.error(`[drawer] ${parsed.data.sku}: ${e instanceof Error ? e.stack ?? e.message : String(e)}`);
+    return { ok: false, error: "load_failed" };
   }
 }

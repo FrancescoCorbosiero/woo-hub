@@ -179,7 +179,7 @@ function DrawerShell({
             <div className="shimmer h-72 rounded-xl bg-surface-2" />
           </div>
         ) : (
-          <p className="p-4 text-sm leading-relaxed text-muted">{error ?? t.drawer.notFoundBody}</p>
+          <p className="p-4 text-sm leading-relaxed text-muted">{error ? t.drawer.loadFailedBody : t.drawer.notFoundBody}</p>
         )}
       </div>
     </div>

@@ -12,11 +12,15 @@ const ops = vi.hoisted(() => ({
   loadHomepageSections: vi.fn(async () => []),
 }));
 vi.mock("@/server/vetrina/operations/service", () => ops);
-vi.mock("@/server/vetrina/service", () => ({
-  attempt: async <T,>(fn: () => Promise<T>) => ({ ok: true, data: await fn() }),
-}));
+// The real wrapper: a failure on the server reaches the owner in plain words only.
+vi.mock("@/lib/env", () => ({ env: { VETRINA_SOURCE: "fixture" } }));
+vi.mock("@/server/vetrina/service", async () => {
+  const { attemptPlain } = await vi.importActual<typeof import("@/server/vetrina/service")>("@/server/vetrina/service");
+  return { attemptPlain };
+});
 
 import { MAX_OPERATION_PRODUCTS } from "@/lib/vetrina/catalog-ops";
+import { VetrinaError } from "@/server/vetrina/source";
 import {
   listOperations,
   loadOperation,
@@ -91,5 +95,25 @@ describe("the catalog actions' server actions", () => {
     expect(await listOperations()).toEqual({ ok: true, data: 20 });
     expect(await loadTermActions({ taxonomy: "tag" as never, id: 1 })).toMatchObject({ ok: false });
     expect(await loadTermActions({ taxonomy: "brand", id: 7 })).toEqual({ ok: true, data: { taxonomy: "brand", id: 7 } });
+  });
+
+  it("answers a failure on the server in plain words, never its text; our refusals keep theirs", async () => {
+    const id = { id: "8a7e1c9e-2b6f-4c1a-9d3e-5f2a1b0c4d6e" };
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      ops.undoOperation.mockRejectedValueOnce(new Error("Failed query: update vetrina_operations set status = $1"));
+      expect(await undoOperation(id)).toEqual({
+        ok: false,
+        code: "failed",
+        error: "Non riuscito, per un problema del server: riprova tra poco.",
+      });
+      ops.undoOperation.mockRejectedValueOnce(new VetrinaError("unauthorized", "Sorry, you are not allowed (rest_forbidden, HTTP 401)", 401));
+      expect(await undoOperation(id)).toMatchObject({ ok: false, code: "unauthorized", error: expect.not.stringContaining("rest_forbidden") });
+      expect(log).toHaveBeenCalledTimes(2);
+    } finally {
+      log.mockRestore();
+    }
+    ops.undoOperation.mockRejectedValueOnce(new VetrinaError("invalid", "È già stata annullata.", 409));
+    expect(await undoOperation(id)).toEqual({ ok: false, code: "invalid", error: "È già stata annullata." });
   });
 });

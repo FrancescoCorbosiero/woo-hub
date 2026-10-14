@@ -2,6 +2,7 @@ import "server-only";
 import { DEMO_BRAND_PARENT, DEMO_TAGS, DEMO_TERM_IDS, DEMO_TERM_NAMES, type DemoProduct } from "@/server/vetrina/fixture-data";
 import { demoShop } from "@/server/vetrina/fixture-source";
 import type { ProductBatchRow, WooClient, WooIndexProduct } from "@/server/woo/client";
+import { highestCollectionTermId } from "./repo";
 
 /**
  * The automatic categories on the Vetrina's demo shop (VETRINA_SOURCE=fixture):
@@ -34,6 +35,18 @@ function terms(): DemoTerms {
     tags: DEMO_TAGS.map((t) => ({ ...t })),
     next: 900,
   });
+}
+
+/**
+ * The id of a term created in demo mode. Above every category a rule is
+ * saved on: the rules outlive a restart, the terms created on an earlier
+ * demo shop do not, and a new category taking one of their ids would
+ * collide with its rule (one rule per category).
+ */
+async function nextId(): Promise<number> {
+  const t = terms();
+  t.next = Math.max(t.next, (await highestCollectionTermId().catch(() => 0)) + 1);
+  return t.next++;
 }
 
 function brands(): Term[] {
@@ -175,15 +188,15 @@ export function fixtureClient(): WooClient {
       return terms().tags;
     },
     async createTag(name: string) {
-      const t = terms();
-      const tag = { id: t.next++, name, slug: slugify(name) || `tag-${t.next}` };
-      t.tags.push(tag);
+      const id = await nextId();
+      const tag = { id, name, slug: slugify(name) || `tag-${id}` };
+      terms().tags.push(tag);
       return tag;
     },
     async createCategory(name: string, parent?: number) {
-      const t = terms();
-      const category = { id: t.next++, name, slug: slugify(name) || `categoria-${t.next}`, parent: parent ?? 0 };
-      t.categories.push(category);
+      const id = await nextId();
+      const category = { id, name, slug: slugify(name) || `categoria-${id}`, parent: parent ?? 0 };
+      terms().categories.push(category);
       return category;
     },
   };

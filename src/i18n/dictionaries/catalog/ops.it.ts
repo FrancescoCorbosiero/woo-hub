@@ -184,6 +184,8 @@ export const opsIt = {
     tooOld: (days: number) => `Si può annullare solo nei primi ${days} giorni.`,
     sectionChanged: (title: string) =>
       `La sezione «${title}» è cambiata dopo: rimetti a posto l'ordine dall'editor della sezione.`,
+    /** A request that failed on the server (a query, the store's own text): never shown, its log keeps it. */
+    unexpected: "Non riuscito, per un problema del server: riprova tra poco.",
     interrupted: "Interrotta: il server si è riavviato prima della fine.",
     /** A failure the run did not foresee (the store not answering, the database): its own words after ours. */
     stopped: (message: string) => `Interrotta da un errore: ${message}`,

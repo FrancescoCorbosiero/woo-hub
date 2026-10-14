@@ -260,11 +260,14 @@ As built (phase 3, `src/components/vetrina/catalog/act/`):
   brand, however many products it has, and switching it back on undoes
   exactly that hide. While it is hidden, a product that joins the term is
   hidden with it at the next check of the index (or at once, from the
-  panel's "Nascondi anche i N aggiunti dopo"), filed under the same hide so
-  "Mostra" brings it back too; a hide whose products were all shown another
-  way is closed for good. "Metti in saldo" starts a sale filed under the
-  term, then reads "Saldo −20% · fino a domenica" with "Cambia lo sconto" and
-  "Togli il saldo". "Ricarico" opens the margin sheet.
+  panel's "Nascondi i N nuovi arrivati", after which the screen reads its
+  counts and rows again), filed under the same hide so "Mostra" brings it
+  back too; a hide whose products were all shown another way is closed for
+  good. "Metti in saldo" starts a sale filed under the term, then reads
+  "Saldo −20% · fino a domenica" with "Cambia lo sconto" (its button reads
+  "Sposta la fine del saldo" when only the last day moves) and "Togli il
+  saldo". "Ricarico" opens the margin sheet; on a term none of whose
+  products has a Hub price it stays as a quiet row saying so.
 - **The product sheet**: its visibility (switched back on, as it was before
   its hide), its categories (add, remove), its tags (saved as a change over
   the product's tags as they are now), its sale, "Metti in homepage".

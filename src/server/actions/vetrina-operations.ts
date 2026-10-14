@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 import { defaultLocale, type Locale } from "@/i18n/config";
+import { getDictionary } from "@/i18n/dictionary";
 import { getLocale } from "@/i18n/server";
 import type {
   HomepageSectionOption,
@@ -13,10 +14,11 @@ import type {
   TermMarginState,
 } from "@/lib/vetrina/catalog-ops";
 import type { CatalogTaxonomy } from "@/lib/vetrina/catalog";
+import type { VetrinaErrorCode } from "@/lib/vetrina/types";
 import { parseOperationInput, parseTarget } from "@/server/vetrina/operations/input";
 import * as operations from "@/server/vetrina/operations/service";
-import { inLanguage, words } from "@/server/vetrina/operations/words";
-import { attempt, type VetrinaResult } from "@/server/vetrina/service";
+import { currentLanguage, inLanguage, words } from "@/server/vetrina/operations/words";
+import { attemptPlain, type VetrinaResult } from "@/server/vetrina/service";
 
 /**
  * The Vetrina catalog's actions on products — hide and show, sale and its
@@ -37,6 +39,20 @@ async function language(): Promise<Locale> {
     return defaultLocale;
   }
 }
+
+/**
+ * A failure in the owner's words, by its code: the store not set up or
+ * refusing the key say so; anything else (a failed query, the store's own
+ * text) is a problem on the server, whose log keeps the detail.
+ */
+function plain(code: VetrinaErrorCode): string {
+  const dictionary = getDictionary(currentLanguage());
+  if (code === "failed") return dictionary.vetrinaCatalog.ops.error.unexpected;
+  return dictionary.vetrina.errors[code] ?? dictionary.vetrinaCatalog.ops.error.unexpected;
+}
+
+/** Run it; a failure answers in plain words (attemptPlain). */
+const attempt = <T>(fn: () => Promise<T>) => attemptPlain(fn, plain);
 
 /** Run the answer in the owner's language: every word built on the way — and by a run it starts — is his. */
 async function answer<T>(fn: () => Promise<VetrinaResult<T>>): Promise<VetrinaResult<T>> {
@@ -103,7 +119,7 @@ export async function loadTermActions(input: {
 }
 
 /**
- * "Nascondi anche questi": the products that joined a hidden category or
+ * "Nascondi i nuovi arrivati": the products that joined a hidden category or
  * brand since its hide, hidden now with it instead of after the next check
  * (filed under the term's own hide: its "Mostra" brings them back).
  */

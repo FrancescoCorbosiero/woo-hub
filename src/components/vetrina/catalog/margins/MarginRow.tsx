@@ -11,16 +11,17 @@ import { useOperations, useOperationSettled } from "../act/operations-context";
 import { Ghost } from "../term/TermSkeleton";
 import { MarginTag } from "./glyphs";
 import { MarginSheet } from "./MarginSheet";
-import { activeMargin, rowShown, rowText, rowTitle, runningText } from "./model";
+import { activeMargin, idleRowShown, rowShown, rowText, rowTitle, runningText } from "./model";
 
 /**
  * "Ricarico" in a category's or a brand's panel, next to "Saldo": the margin
  * the Hub prices its products with — its own ("Ricarico di questa categoria:
  * 25%"), a term above it's, or the standard — and how many products it
  * applies to. A tap opens the margin sheet; while a margin of the term runs,
- * the row follows it and a tap opens the log. Not shown where no margin can
- * act — a term none of whose products the Hub prices from the market —
- * unless the term has a margin of its own, which can then still be removed.
+ * the row follows it and a tap opens the log. Where no margin can act — a
+ * term none of whose products the Hub prices from the market, with no margin
+ * of its own to remove — a quiet row says so instead: its ghost held the
+ * room while it was read, and the panel does not shrink when it lands.
  */
 
 const KEY = "vetrina-term-margin";
@@ -98,7 +99,16 @@ export function MarginRow({
       />
     );
   }
-  if (!rowShown(state) && !running) return null;
+  if (!rowShown(state) && !running) {
+    if (!idleRowShown(state, term.count)) return null;
+    return (
+      <ListItem
+        media={<Icon own={false} />}
+        title={<span className="opacity-50">{m.row.title}</span>}
+        text={<span className="line-clamp-1">{m.row.noneHere}</span>}
+      />
+    );
+  }
 
   return (
     <>

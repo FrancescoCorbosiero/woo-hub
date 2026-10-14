@@ -156,15 +156,16 @@ export function ProductList({
 
   return (
     <>
+      {/* The count keeps its width ("14 PRODOTTI"): the sort's label is what gives way on a narrow phone. */}
       <div className="flex min-h-11 items-center gap-2 pe-4 ps-5 pt-2">
         <span
-          className={`min-w-0 truncate text-[13px] font-semibold uppercase tracking-wide opacity-50 transition-opacity ${stale ? "!opacity-25" : ""}`}
+          className={`shrink-0 whitespace-nowrap text-[13px] font-semibold uppercase tracking-wide opacity-50 transition-opacity ${stale ? "!opacity-25" : ""}`}
         >
           {counted ? t.vetrinaCatalog.term.products(loaded.total) : "\u00a0"}
         </span>
         {phase === "loading" && <Preloader className="!h-4 !w-4 shrink-0" />}
         {!empty && (
-          <span className="ms-auto flex shrink-0 items-center gap-1">
+          <span className="ms-auto flex min-w-0 items-center justify-end gap-1">
             {/* While selecting, the selection bar's "Annulla" leaves it: one way out, always in reach. */}
             {selection && selectButton && !selecting && <SelectButton selection={selection} />}
             {toolbar}

@@ -5,7 +5,7 @@ import { Range } from "konsta/react";
 import { useRangeThumbFix } from "./range-thumb";
 import { useI18n } from "@/i18n/provider";
 import type { OperationInput, OperationTarget, SaleRounding, TermKey } from "@/lib/vetrina/catalog-ops";
-import { endChoiceFor, endsOnFor, formatDay, isoDay, type EndChoice } from "./model";
+import { endChoiceFor, endsOnFor, formatDay, isoDay, saleChange, type EndChoice } from "./model";
 import {
   ActSheetFrame,
   buttonCount,
@@ -44,6 +44,8 @@ export interface SaleSheetProps extends ActSheetProps {
   endsOn?: string | null;
   /** The rounding it opens on (a term's running sale). Default "charm". */
   rounding?: SaleRounding;
+  /** It changes the term's running sale (percent, endsOn and rounding are that sale's): a change of its last day alone is worded so. */
+  change?: boolean;
 }
 
 const PRESETS = [10, 20, 30, 40, 50] as const;
@@ -78,6 +80,7 @@ function SaleContent({
   percent: startPercent = 20,
   endsOn: startEndsOn = null,
   rounding: startRounding = "charm",
+  change = false,
 }: SaleSheetProps & { target: OperationTarget }) {
   const { t, locale } = useI18n();
   const s = t.vetrinaCatalog.act.sale;
@@ -106,6 +109,11 @@ function SaleContent({
   const preview = usePreview(input, mode === "sale" ? 450 : 0);
   const { run, busy, error } = useStartAction(onClose, onStarted);
   const count = buttonCount(preview);
+  // Only the last day moves: the button says so, as the action's label and its undo will.
+  const endChange =
+    input?.kind === "sale"
+      ? saleChange(change ? { percent: startPercent, rounding: startRounding, endsOn: startEndsOn } : null, input)
+      : null;
 
   const endText =
     end === "none"
@@ -217,7 +225,15 @@ function SaleContent({
 
       <SheetFooter error={error}>
         <PrimaryButton busy={busy} disabled={!input || !preview.current || count === 0} onClick={() => input && void run(input)}>
-          {mode === "sale" ? (count ? s.start(count) : s.startPlain) : count ? s.stop(count) : s.stopPlain}
+          {mode === "unsale"
+            ? count
+              ? s.stop(count)
+              : s.stopPlain
+            : endChange && endChange !== "discount"
+              ? s.endChange[endChange]
+              : count
+                ? s.start(count)
+                : s.startPlain}
         </PrimaryButton>
       </SheetFooter>
     </>

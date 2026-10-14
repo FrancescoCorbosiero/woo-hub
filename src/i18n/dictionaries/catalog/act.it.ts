@@ -113,6 +113,12 @@ export const actIt = {
     unsaleHint: "Torna il prezzo pieno e la data di fine si cancella. «Annulla» rimette il saldo com'era.",
     start: (count: number) => `Metti in saldo ${products(count)}`,
     startPlain: "Metti in saldo",
+    /** "Cambia lo sconto" moving only the running sale's last day: the button says that, not a new sale. */
+    endChange: {
+      endAdded: "Metti la data di fine",
+      endMoved: "Sposta la fine del saldo",
+      endRemoved: "Togli la data di fine",
+    },
     stop: (count: number) => `Togli il saldo a ${products(count)}`,
     stopPlain: "Togli il saldo",
   },

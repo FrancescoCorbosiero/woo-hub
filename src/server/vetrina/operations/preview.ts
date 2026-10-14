@@ -186,12 +186,14 @@ async function assessSale(ctx: Ctx, input: Extract<OperationInput, { kind: "sale
   const termRows = termKey ? await termOperationRows(termKey, await logSince()) : [];
   // A new sale on the whole term replaces the term's own: the products on it are not on a sale of their own.
   const termSale = input.kind === "sale" && termKey && ctx.live ? await termSaleProducts(termRows) : new Set<number>();
-  // "Cambia lo sconto" at the percent the term's sale already has: only its last day moves, and its label says so.
+  // "Cambia lo sconto" at the percent and rounding the term's sale already has: only its last day moves, and its
+  // label says so (as the sheet's button does). A new rounding moves prices: that is a new discount.
   const standing = input.kind === "sale" && termKey ? standingSale(termRows, shopToday()) : null;
   const endsOnly =
     input.kind === "sale" &&
     standing?.input.kind === "sale" &&
     standing.input.percent === input.percent &&
+    standing.input.rounding === input.rounding &&
     (standing.input.endsOn ?? null) !== (input.endsOn ?? null);
   const untouched = new Map<Reason, number>();
   bump(untouched, w.untouched.noSale, ctx.rows.length - candidates.length);

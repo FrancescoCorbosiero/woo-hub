@@ -30,10 +30,19 @@ export const rulesEn: typeof rulesIt = {
         ? `“${name}” is ready: 1 product in it.`
         : `“${name}” is ready: ${n(moved)} products in it.`,
   slow: (name: string) => `“${name}” is saved: the products arrive shortly.`,
-  failed: (error: string) => `Didn't work: ${error}`,
   open: "Open",
   loading: "Loading the shop's categories and tags…",
   loadFailed: "Couldn't read the shop's categories.",
   network: "Can't reach the server: try again shortly.",
   retry: "Try again",
+
+  errors: {
+    failed: "Didn't work, because of a problem on the server: try again shortly.",
+    notConfigured: "The link to the shop isn't set up: ask whoever runs the server.",
+    store: "The shop didn't accept the change: check its key's permissions.",
+    invalid: "The rule can't be saved like this: check it and try again.",
+    notFound: "This automatic category no longer exists.",
+    check: "try again shortly.",
+    moved: "Rule saved, but the products didn't move: the Hub tries again at the next check.",
+  },
 };

@@ -19,6 +19,7 @@ import {
   pollDelay,
   queryTarget,
   readersOfTag,
+  saleChange,
   sameName,
   selectAll,
   selectedCount,
@@ -237,5 +238,30 @@ describe("refusedText", () => {
     expect(refusedText("margin", 8, words)).toBe("8 taglie rifiutate dal negozio.");
     expect(refusedText("margin", 1, words)).toBe("1 taglia rifiutata dal negozio.");
     expect(refusedText("sale", 3, words)).toBe("3 prodotti rifiutati dal negozio.");
+  });
+});
+
+describe("Cambia lo sconto", () => {
+  const running = { percent: 20, rounding: "charm" as const, endsOn: "2026-10-31" };
+
+  it("names a change of the last day alone: put, moved or taken away", () => {
+    expect(saleChange(running, { ...running, endsOn: "2026-11-15" })).toBe("endMoved");
+    expect(saleChange(running, { ...running, endsOn: null })).toBe("endRemoved");
+    expect(saleChange({ ...running, endsOn: null }, running)).toBe("endAdded");
+  });
+
+  it("is a new discount when the percent or the rounding moves too, and nothing outside a running sale", () => {
+    expect(saleChange(running, { ...running, percent: 30, endsOn: "2026-11-15" })).toBe("discount");
+    expect(saleChange(running, { ...running, rounding: "exact", endsOn: null })).toBe("discount");
+    expect(saleChange(running, running)).toBe("discount");
+    expect(saleChange(null, running)).toBeNull();
+  });
+
+  it("has the button's words in both languages", () => {
+    for (const locale of ["it", "en"] as const) {
+      const words = getDictionary(locale).vetrinaCatalog.act.sale.endChange;
+      for (const change of ["endAdded", "endMoved", "endRemoved"] as const) expect(words[change]).toBeTruthy();
+    }
+    expect(getDictionary("it").vetrinaCatalog.act.sale.endChange.endMoved).toBe("Sposta la fine del saldo");
   });
 });

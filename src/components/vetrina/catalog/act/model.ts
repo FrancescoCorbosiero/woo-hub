@@ -1,5 +1,5 @@
 import type { CatalogQuery } from "@/lib/vetrina/catalog";
-import type { OperationKind, OperationStatus, OperationTarget, OperationView } from "@/lib/vetrina/catalog-ops";
+import type { OperationKind, OperationStatus, OperationTarget, OperationView, SaleRounding } from "@/lib/vetrina/catalog-ops";
 
 /**
  * The catalog's actions, their pure parts: what a selection holds and the
@@ -183,6 +183,27 @@ export function endChoiceFor(endsOn: string | null, today: string): { choice: En
     if (endsOnFor(choice, today, null) === endsOn) return { choice, picked: "" };
   }
   return { choice: "pick", picked: endsOn };
+}
+
+/** A sale as the sheet asks it, or as a term's running sale stands. */
+export interface SaleTerms {
+  percent: number;
+  rounding: SaleRounding;
+  endsOn: string | null;
+}
+
+/**
+ * What "Cambia lo sconto" does to the term's running sale, for its button:
+ * only the last day moves (put, moved or taken away) — the same percent and
+ * rounding, another end, as the server words its label — or a new discount.
+ * Null when the sheet does not change a running sale.
+ */
+export function saleChange(running: SaleTerms | null, draft: SaleTerms): "endAdded" | "endMoved" | "endRemoved" | "discount" | null {
+  if (!running) return null;
+  if (running.percent !== draft.percent || running.rounding !== draft.rounding) return "discount";
+  if ((running.endsOn ?? null) === (draft.endsOn ?? null)) return "discount";
+  if (draft.endsOn == null) return "endRemoved";
+  return running.endsOn == null ? "endAdded" : "endMoved";
 }
 
 /** "domenica 18 ottobre" / "Sunday 18 October". */

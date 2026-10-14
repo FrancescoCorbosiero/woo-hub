@@ -16,29 +16,51 @@ import { usePathname, useRouter } from "next/navigation";
  */
 
 /**
- * The trail once the app shows `pathname`: a new screen goes on top; a back
- * gesture or button (`traversal`) takes the top off; a forward gesture, or a
+ * How the app came to show a path: a new screen (`push`), a back or forward
+ * gesture or button (`traversal`), or a back button going up to its parent in
+ * place of the screen it was on (`replace`).
+ */
+export type TrailStep = "push" | "traversal" | "replace";
+
+/**
+ * The trail once the app shows `pathname`: a new screen goes on top; a step
+ * back takes the top off; going up to the parent takes the top's place, so
+ * the screen left is never the parent's way back; a forward gesture, or a
  * jump the trail cannot place, starts it again from here — never a "back"
  * into a screen the browser does not have behind it.
  */
-export function nextTrail(trail: readonly string[], pathname: string, traversal: boolean): string[] {
+export function nextTrail(trail: readonly string[], pathname: string, step: TrailStep): string[] {
   if (trail.at(-1) === pathname) return [...trail];
-  if (!traversal) return [...trail, pathname];
+  if (step === "push") return [...trail, pathname];
+  if (step === "replace") return [...trail.slice(0, -1), pathname];
   if (trail.at(-2) === pathname) return trail.slice(0, -1);
   return [pathname];
+}
+
+/**
+ * A back button's tap on `trail`: a real step back to the screen before when
+ * there is one and `accepts` it; otherwise up to the button's parent.
+ */
+export function backStep(trail: readonly string[], accepts: (previous: string) => boolean): "back" | "up" {
+  const previous = trail.length >= 2 ? trail[trail.length - 2] : null;
+  return previous && accepts(previous) ? "back" : "up";
 }
 
 let trail: string[] = [];
 /** A back or forward gesture just changed the path: the next path is a traversal, not a new screen. */
 let traversed = false;
+/** A back button is going up to this path, in place of the screen it was on. */
+let replacing: string | null = null;
 
 function onPopState(): void {
   if (window.location.pathname !== trail.at(-1)) traversed = true;
 }
 
 function record(pathname: string): void {
-  trail = nextTrail(trail, pathname, traversed);
+  const step: TrailStep = traversed ? "traversal" : replacing === pathname ? "replace" : "push";
+  trail = nextTrail(trail, pathname, step);
   traversed = false;
+  replacing = null;
 }
 
 /** In the app shell: keeps the trail as the screens change. */
@@ -51,15 +73,12 @@ export function useScreenTrail(): void {
   React.useEffect(() => record(pathname), [pathname]);
 }
 
-/** The screen before this one, if this visit of the app has shown it. */
-function previousScreen(): string | null {
-  return trail.length >= 2 ? trail[trail.length - 2] : null;
-}
-
 /**
  * A back button's tap: back to the previous screen when there is one and
- * `accepts` it, otherwise to `fallback`. A modified click (a new tab) is left
- * to the browser.
+ * `accepts` it, otherwise up to `fallback`. Going up replaces the screen it
+ * was on, in the browser's history and in the trail: pushed, the parent's own
+ * back would find the child behind it and return there, and back would bounce
+ * between the two forever. A modified click (a new tab) is left to the browser.
  */
 export function useBack(fallback: string, accepts: (previous: string) => boolean = () => true): (e?: React.MouseEvent) => void {
   const router = useRouter();
@@ -67,9 +86,12 @@ export function useBack(fallback: string, accepts: (previous: string) => boolean
     (e?: React.MouseEvent) => {
       if (e && (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)) return;
       e?.preventDefault();
-      const previous = previousScreen();
-      if (previous && accepts(previous)) router.back();
-      else router.push(fallback);
+      if (backStep(trail, accepts) === "back") {
+        router.back();
+        return;
+      }
+      replacing = new URL(fallback, window.location.href).pathname;
+      router.replace(fallback);
     },
     [router, fallback, accepts],
   );

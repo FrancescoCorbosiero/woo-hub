@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { useI18n } from "@/i18n/provider";
 import type { ProductTagsView } from "@/lib/collections/types";
 import { loadProductTags, saveProductTags } from "@/server/actions/collections";
+import { NETWORK_CODE, plainError } from "./catalog/rules/errors";
 import { HEADING, ROW, ROW_INNER, ROWS, SHEET_CARD } from "./catalog/sheet/look";
 import { Close } from "./icons";
 
@@ -21,6 +22,8 @@ import { Close } from "./icons";
 type Chip = { id?: number; name: string };
 
 const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+/** A request that never reached the server (offline, a deploy): answered like a refusal. */
+const offline = () => ({ ok: false as const, code: NETWORK_CODE, error: "" });
 const signature = (chips: Chip[]) =>
   chips
     .map((c) => c.name.trim().toLowerCase())
@@ -30,6 +33,7 @@ const signature = (chips: Chip[]) =>
 export function TagsSection({ productId, onChanged }: { productId: number; onChanged: () => void }) {
   const { t } = useI18n();
   const tg = t.vetrina.tags;
+  const r = t.vetrinaCatalog.rules;
   const [view, setView] = React.useState<ProductTagsView | null | undefined>(undefined);
   const [error, setError] = React.useState<string | null>(null);
   const [chips, setChips] = React.useState<Chip[]>([]);
@@ -40,15 +44,16 @@ export function TagsSection({ productId, onChanged }: { productId: number; onCha
   const load = React.useCallback(async () => {
     setView(undefined);
     setError(null);
-    const res = await loadProductTags({ productId });
+    const res = await loadProductTags({ productId }).catch(offline);
     if (!res.ok) {
-      setError(res.error);
+      // Our words, never the server's: its log keeps the detail.
+      setError(res.code === NETWORK_CODE ? r.network : tg.loadFailed);
       setView(null);
       return;
     }
     setView(res.data);
     setChips(res.data.tags.map((x) => ({ id: x.id, name: x.name })));
-  }, [productId]);
+  }, [productId, r, tg]);
 
   React.useEffect(() => {
     void load();
@@ -102,9 +107,10 @@ export function TagsSection({ productId, onChanged }: { productId: number; onCha
     setSaving(true);
     try {
       // Only the change: a tag a bulk "Tag +" put on the product since the sheet opened stays.
-      const res = await saveProductTags({ productId, tags: chips, base: view!.tags.map((x) => x.id) });
+      const res = await saveProductTags({ productId, tags: chips, base: view!.tags.map((x) => x.id) }).catch(offline);
       if (!res.ok) {
-        toast.error(`${tg.failed}: ${res.error}`);
+        const why = plainError(res.code, { ...r.errors, network: r.network, notFound: tg.gone, invalid: r.errors.failed });
+        toast.error(tg.failed, { description: why });
         return;
       }
       const { joined, left, pending, error: refused } = res.data;

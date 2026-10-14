@@ -337,6 +337,7 @@ export const en: Dictionary = {
     copySku: "Copy SKU",
     notFoundTitle: "Product not found",
     loadFailed: "Couldn't load the product",
+    loadFailedBody: "Something went wrong reading this product. Try again in a moment; if it keeps happening, its catalog data may be incomplete.",
     notFoundBody:
       "This product is not in the catalog for the active market. The link may be stale, or the product was removed.",
     audit: "Audit prices (API)",
@@ -1590,7 +1591,6 @@ export const en: Dictionary = {
       heldHint: "The last check found a big change and waits for your confirmation.",
       confirm: "Confirm and apply",
       loading: "Loading…",
-      failed: "Failed",
     },
     tags: {
       title: "Tags",
@@ -1607,6 +1607,8 @@ export const en: Dictionary = {
       pending: "Tags saved: the sections update shortly.",
       inCollections: (names) => `In the automatic categories: ${names}`,
       failed: "Tags not saved",
+      loadFailed: "Couldn't read the product's tags.",
+      gone: "This product is no longer in the shop.",
       loading: "Loading the tags…",
       refused: (reason) => `Tags saved, but the store did not accept the change of category: ${reason}`,
     },

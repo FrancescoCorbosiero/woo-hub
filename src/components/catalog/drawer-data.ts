@@ -177,10 +177,12 @@ export async function loadDrawerData(
   const gs = pin === "kicksdb" ? undefined : covered;
   // With the shop's categories and brands, as the sync plans it: a margin set
   // on one of them shows here exactly as it will be written.
+  // A catalog row whose data lacks its sizes (an old or partial entry) opens with none, rather than not at all.
+  const source = gs?.product ?? entry.product;
   const {
     products: [product],
     uncertain,
-  } = await withStoreTermsChecked([gs?.product ?? entry.product], config.pricingRules);
+  } = await withStoreTermsChecked([{ ...source, variants: source.variants ?? [] }], config.pricingRules);
   const deliveryType = config.source.defaultDeliveryType;
 
   // Which rule owns the margin, collected as the variants are priced: sizes

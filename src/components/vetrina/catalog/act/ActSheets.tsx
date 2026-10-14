@@ -36,6 +36,8 @@ export interface ActRequest {
   endsOn?: string | null;
   /** Saldo only: the rounding it opens on (a term's running sale, changed). */
   rounding?: SaleRounding;
+  /** Saldo only: it changes the term's running sale, opened on its percent, last day and rounding. */
+  change?: boolean;
   /** Categoria only: the categories the product is in already (one product, from its sheet). */
   has?: readonly number[];
 }
@@ -68,6 +70,7 @@ export function ActSheets({
         percent={shown?.percent}
         endsOn={shown?.endsOn}
         rounding={shown?.rounding}
+        change={shown?.change}
       />
       <VisibilitySheet
         {...common}

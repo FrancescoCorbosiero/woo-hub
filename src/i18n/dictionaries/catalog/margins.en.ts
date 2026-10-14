@@ -32,6 +32,7 @@ export const marginsEn: typeof marginsIt = {
     standardIs: (value: string) => `Standard ${value}`,
     applies: (count: number) => (count === 0 ? "Applies to no product" : `Applies to ${products(count)}`),
     nonePriced: "No product at a Hub price, for now",
+    noneHere: "No Hub prices here",
     loading: "Reading the margin…",
     supplier: (count: number) => `${n(count)} at the supplier's price`,
     running: (done: number, total: number) => `Updating prices… ${n(done)}/${n(total)}`,

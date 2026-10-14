@@ -43,6 +43,12 @@ export async function getCollectionRow(id: string): Promise<SmartCollectionRow |
   return rows[0] ?? null;
 }
 
+/** The highest category id a rule is saved on; 0 with none. */
+export async function highestCollectionTermId(): Promise<number> {
+  const [row] = await db.select({ max: sql<number | null>`max(${smartCollections.termId})` }).from(smartCollections);
+  return Number(row?.max ?? 0);
+}
+
 export type CollectionInput = Pick<SmartCollection, "termId" | "name" | "match" | "conditions" | "enabled">;
 
 export async function insertCollection(input: CollectionInput): Promise<SmartCollectionRow> {

@@ -49,7 +49,7 @@ export const termEn: typeof termIt = {
     showing: (count = 2) => (count === 1 ? "Putting it back as it was…" : "Putting them back as they were…"),
     showingAll: (done: number, total: number) => `${total === 1 ? "Showing it" : "Showing them"} again… ${n(done)}/${n(total)}`,
     showHidden: (count: number) => (count === 1 ? "Show the hidden one" : `Show the ${n(count)} hidden`),
-    hideAdded: (count: number) => (count === 1 ? "Hide the one added since too" : `Hide the ${n(count)} added since too`),
+    hideAdded: (count: number) => (count === 1 ? "Hide the new arrival" : `Hide the ${n(count)} new arrivals`),
     hideAddedHint: "Added later: they hide by themselves within a few minutes, or right away from here.",
     hidingAdded: "Hiding them…",
     hiddenOf: (count: number, name: string) =>
@@ -106,6 +106,14 @@ export const termEn: typeof termIt = {
       bestselling: "Best sellers",
       priceAsc: "Price, low to high",
       priceDesc: "Price, high to low",
+      name: "Name",
+    },
+    short: {
+      shop: "Shop",
+      newest: "Newest",
+      bestselling: "Best sellers",
+      priceAsc: "Price ↑",
+      priceDesc: "Price ↓",
       name: "Name",
     },
   },

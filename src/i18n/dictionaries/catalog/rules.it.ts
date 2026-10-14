@@ -36,10 +36,26 @@ export const rulesIt = {
         ? `«${name}» è pronta: 1 prodotto dentro.`
         : `«${name}» è pronta: ${n(moved)} prodotti dentro.`,
   slow: (name: string) => `«${name}» è salvata: i prodotti arrivano tra poco.`,
-  failed: (error: string) => `Non riuscito: ${error}`,
   open: "Apri",
   loading: "Carico le categorie e i tag del negozio…",
   loadFailed: "Non riesco a leggere le categorie del negozio.",
   network: "Non riesco a raggiungere il server: riprova tra poco.",
   retry: "Riprova",
+
+  /**
+   * A rule's save (here, in the section's sheet, a product's tags) that did
+   * not go through, by what went wrong: never the server's own text, which
+   * its log keeps.
+   */
+  errors: {
+    failed: "Non riuscito, per un problema del server: riprova tra poco.",
+    notConfigured: "Il collegamento al negozio non è configurato: chiedi a chi gestisce il server.",
+    store: "Il negozio non ha accettato la modifica: controlla i permessi della sua chiave.",
+    invalid: "La regola non si può salvare così: controllala e riprova.",
+    notFound: "Questa categoria automatica non c'è più.",
+    /** Saved, but its first run stopped: the scheduled check runs it again. */
+    /** After «Anteprima non disponibile:», in place of the server's text. */
+    check: "riprova tra poco.",
+    moved: "Regola salvata, ma i prodotti non si sono spostati: l'Hub riprova al prossimo controllo.",
+  },
 };

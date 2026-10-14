@@ -179,7 +179,7 @@ export async function loadTermActions(taxonomy: CatalogTaxonomy, id: number): Pr
   };
 }
 
-/** "Nascondi anche questi": a hidden term's newcomers hidden now, rather than at the next check. */
+/** "Nascondi i nuovi arrivati": a hidden term's newcomers hidden now, rather than at the next check. */
 export async function hideTermNewcomers(): Promise<void> {
   await recover();
   await queueSweep();

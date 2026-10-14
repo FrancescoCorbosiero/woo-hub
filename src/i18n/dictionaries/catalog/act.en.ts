@@ -100,6 +100,11 @@ export const actEn: typeof actIt = {
     unsaleHint: "The full price comes back and the end date is cleared. “Undo” puts the sale back as it was.",
     start: (count: number) => `Put ${products(count)} on sale`,
     startPlain: "Put on sale",
+    endChange: {
+      endAdded: "Set the sale's end",
+      endMoved: "Move the sale's end",
+      endRemoved: "Remove the end date",
+    },
     stop: (count: number) => `End the sale on ${products(count)}`,
     stopPlain: "End the sale",
   },

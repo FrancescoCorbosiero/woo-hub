@@ -143,6 +143,11 @@ function Term({
   const back = backTarget(detail);
   const subtitle = [ancestors.map((a) => a.name).join(" › "), v.products(term.count)].filter(Boolean).join(" · ");
   const refreshCounts = React.useCallback(() => router.refresh(), [router]);
+  /** Products moved outside the tracker (a rule, the hidden term's newcomers): the panel's counts and the rows, read again. */
+  const refreshAll = React.useCallback(() => {
+    router.refresh();
+    setVersion((n) => n + 1);
+  }, [router]);
 
   // Its skeleton, next time, takes the room this screen takes (the chips' row once the facets say).
   const withinShown = controls.facets ? withinRowShown(controls.facets, filter) : null;
@@ -188,7 +193,7 @@ function Term({
       {!searching && (
         <>
           <ControlPanel term={term} onRule={() => setRuleOpen(true)} />
-          <TermActionsPanel term={term} />
+          <TermActionsPanel term={term} onChanged={refreshAll} />
         </>
       )}
 
@@ -233,11 +238,8 @@ function Term({
           termId={ruleOpen ? term.id : null}
           termName={term.name}
           onClose={() => setRuleOpen(false)}
-          onChanged={() => {
-            // The panel's rule and counts come from the server; the rows from the list.
-            router.refresh();
-            setVersion((n) => n + 1);
-          }}
+          // The panel's rule and counts come from the server; the rows from the list.
+          onChanged={refreshAll}
         />
       )}
 
@@ -371,7 +373,14 @@ const GHOST = "motion-safe:animate-pulse";
  * switch brings them back, and the row says so. The sale row puts the whole
  * term on sale, or changes or ends the sale standing on it.
  */
-function TermActionsPanel({ term }: { term: CatalogTerm }) {
+function TermActionsPanel({
+  term,
+  onChanged,
+}: {
+  term: CatalogTerm;
+  /** Products changed by what the tracker does not follow (the newcomers' hide): the screen reads its counts and rows again. */
+  onChanged: () => void;
+}) {
   const { t, locale } = useI18n();
   const p = t.vetrinaCatalog.term.panel;
   const ops = useOperations();
@@ -442,13 +451,16 @@ function TermActionsPanel({ term }: { term: CatalogTerm }) {
   }
 
   const [hidingAdded, setHidingAdded] = React.useState(false);
-  /** "Nascondi anche questi": the products that joined the hidden term since, hidden now under its hide. */
+  /** "Nascondi i nuovi arrivati": the products that joined the hidden term since, hidden now under its hide. */
   async function hideAdded() {
     setHidingAdded(true);
     const res = await call(() => hideTermNewcomers(), t.vetrinaCatalog.act.sheet.network);
     if (!res.ok) toast.error(res.error);
     await actions.mutate();
     setHidingAdded(false);
+    // Not an action the tracker follows: the counts row and the rows' "Nascosto" are read again here.
+    // A failure too: some may have been hidden before it stopped.
+    onChanged();
   }
 
   function openShowHidden(count: number) {
@@ -624,7 +636,9 @@ function TermActionsPanel({ term }: { term: CatalogTerm }) {
                 target,
                 label: term.name,
                 termKey,
-                ...(sale.kind === "on" ? { percent: sale.percent, endsOn: sale.endsOn, rounding: sale.rounding } : {}),
+                ...(sale.kind === "on"
+                  ? { percent: sale.percent, endsOn: sale.endsOn, rounding: sale.rounding, change: true }
+                  : {}),
               });
             }}
           >

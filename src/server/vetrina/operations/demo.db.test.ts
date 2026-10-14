@@ -159,4 +159,20 @@ describe.skipIf(!enabled)("the catalog's actions on the demo shop", () => {
     expect(op).toMatchObject({ status: "done", changed: 2, label: "Tag «estate» a 2 prodotti" });
     expect(a.tags).toContain("estate");
   });
+
+  it("gives a new demo category an id no saved rule holds: the rules outlive a restart, the demo's own terms do not", async () => {
+    const { db, smartCollections, listCollectionRows } = await load();
+    const { saveDraft } = await import("@/server/collections/service");
+    // A rule saved on a category an earlier demo shop created (its ids start at 900 on every boot).
+    await db.insert(smartCollections).values({ termId: 900, name: "Di prima", match: "all", conditions: [], enabled: false });
+    const id = await saveDraft({
+      newCategory: { name: "Nuova", parent: 0 },
+      match: "all",
+      conditions: [{ field: "tag", op: "is", value: "301", label: "saldi" }],
+      enabled: false,
+    });
+    const rows = await listCollectionRows();
+    expect(rows).toHaveLength(2);
+    expect(rows.find((r) => r.id === id)?.termId).toBe(901);
+  });
 });

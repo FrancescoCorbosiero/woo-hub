@@ -9,6 +9,7 @@ import {
   followedPercent,
   marginInput,
   marginText,
+  idleRowShown,
   nowText,
   ownPercent,
   rowShown,
@@ -97,6 +98,18 @@ describe("the Ricarico row", () => {
     // ...and its sheet opens on taking it away, all it can do.
     expect(startMode(stranded)).toBe("standard");
     expect(startMode(state({ own: { kind: "percent", percent: 10 } }))).toBe("set");
+  });
+
+  it("keeps a quiet row where no margin can act, so the panel does not shrink once the margin is read", () => {
+    const none = state({ priced: 0, applies: 0, supplier: 20, storeOnly: 3 });
+    expect(idleRowShown(none, 23)).toBe(true);
+    // An empty term drew no ghost: nothing to hold.
+    expect(idleRowShown(none, 0)).toBe(false);
+    // Where the row shows, it is the row.
+    expect(idleRowShown(state(), 23)).toBe(false);
+    expect(idleRowShown(state({ own: { kind: "percent", percent: 10 }, priced: 0 }), 23)).toBe(false);
+    expect(m.row.noneHere).toBe("Nessun prezzo dell'Hub qui");
+    expect(getDictionary("en").vetrinaCatalog.margins.row.noneHere).toBe("No Hub prices here");
   });
 
   it("follows the term's margin action while it runs — no other term's, no other kind", () => {

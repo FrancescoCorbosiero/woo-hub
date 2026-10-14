@@ -26,4 +26,19 @@ describe("the catalog's words agree with what they count, and name what they can
       "3 stay hidden: they are also in “Nike”, “Adidas” and 1 more, which you hid",
     );
   });
+
+  it("the panel's and the list's short lines stay short enough for one line on a phone", () => {
+    // The newcomers row's title: one line at 390px (about 30 characters of the row's 17px).
+    for (const panel of [termIt.panel, termEn.panel]) {
+      expect(panel.hideAdded(1).length).toBeLessThanOrEqual(30);
+      expect(panel.hideAdded(999).length).toBeLessThanOrEqual(30);
+    }
+    expect(termIt.panel.hideAdded(3)).toBe("Nascondi i 3 nuovi arrivati");
+    // The sort button beside the count and "Seleziona": its short words, never longer than the whole ones.
+    for (const sort of [termIt.sort, termEn.sort]) {
+      for (const key of Object.keys(sort.options) as (keyof typeof sort.options)[]) {
+        expect(sort.button(sort.short[key]).length).toBeLessThanOrEqual(19);
+      }
+    }
+  });
 });

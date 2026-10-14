@@ -21,6 +21,7 @@ import {
 } from "@/components/collections/editor-model";
 import { ConditionsField, MatchField, RuleProblems, type Look } from "@/components/collections/RuleFields";
 import { RulePreview, type PreviewLook } from "@/components/collections/RulePreview";
+import { NETWORK_CODE, plainError } from "./catalog/rules/errors";
 import { useSheetMount } from "./sheet-mount";
 
 /**
@@ -45,6 +46,9 @@ const PHONE_LOOK: Look = {
   add: "w-full rounded-2xl border border-dashed border-black/15 py-3 text-[15px] font-semibold text-primary disabled:opacity-40 dark:border-white/20",
   remove: "grid h-9 w-9 place-items-center rounded-full text-[15px] opacity-50 active:opacity-30",
 };
+
+/** A request that never reached the server (offline, a deploy): answered like a refusal. */
+const offline = () => ({ ok: false as const, code: NETWORK_CODE, error: "" });
 
 const PHONE_PREVIEW: PreviewLook = {
   frame: "space-y-2 rounded-2xl bg-white p-4 shadow-sm dark:bg-black/40",
@@ -71,6 +75,9 @@ export function CollectionSheet({
 }) {
   const { t } = useI18n();
   const a = t.vetrina.auto;
+  const r = t.vetrinaCatalog.rules;
+  // Failures in the owner's words, never the server's text (its log keeps that).
+  const said = (code: string) => plainError(code, { ...r.errors, network: r.network });
   const mountPoint = useSheetMount();
   const [data, setData] = React.useState<TermEditor | null | undefined>(undefined);
   const [error, setError] = React.useState<string | null>(null);
@@ -86,24 +93,26 @@ export function CollectionSheet({
     setData(undefined);
     setState(null);
     setError(null);
-    void loadCollectionForTerm({ termId }).then(async (res) => {
-      if (cancelled) return;
-      if (!res.ok) {
-        setError(res.error);
-        setData(null);
-        return;
-      }
-      setData(res.data);
-      setState(editorFrom(res.data.view, termId));
-      if (res.data.indexProducts > 0) return;
-      await waitForRuns(120_000);
-      const again = await loadCollectionForTerm({ termId });
-      if (!cancelled && again.ok) setData(again.data);
-    });
+    void loadCollectionForTerm({ termId })
+      .catch(offline)
+      .then(async (res) => {
+        if (cancelled) return;
+        if (!res.ok) {
+          setError(res.code === NETWORK_CODE ? r.network : r.loadFailed);
+          setData(null);
+          return;
+        }
+        setData(res.data);
+        setState(editorFrom(res.data.view, termId));
+        if (res.data.indexProducts > 0) return;
+        await waitForRuns(120_000);
+        const again = await loadCollectionForTerm({ termId }).catch(offline);
+        if (!cancelled && again.ok) setData(again.data);
+      });
     return () => {
       cancelled = true;
     };
-  }, [termId]);
+  }, [termId, r]);
 
   const draft = React.useMemo(() => (open && state ? toDraft(state) : null), [open, state]);
   const { check, checking, error: checkError } = useDraftCheck(draft, data?.indexProducts ?? 0);
@@ -116,7 +125,7 @@ export function CollectionSheet({
     const id = toast.loading(a.applying);
     const { status, done } = await waitForRuns(45_000);
     if (!done) toast(a.slow, { id });
-    else if (status?.runner.lastError) toast.error(`${a.failed}: ${status.runner.lastError}`, { id });
+    else if (status?.runner.lastError) toast.error(r.errors.moved, { id });
     else toast.success(a.applied(status?.runner.lastMoved ?? 0), { id });
     onChanged();
   }
@@ -125,9 +134,9 @@ export function CollectionSheet({
     if (!draft || busy) return;
     setBusy(true);
     try {
-      const res = await saveCollectionDraft(draft);
+      const res = await saveCollectionDraft(draft).catch(offline);
       if (!res.ok) {
-        toast.error(`${a.failed}: ${res.error}`);
+        toast.error(said(res.code));
         return;
       }
       onClose();
@@ -145,9 +154,9 @@ export function CollectionSheet({
     if (!view || busy || !window.confirm(a.deleteConfirm)) return;
     setBusy(true);
     try {
-      const res = await deleteCollection({ id: view.id });
+      const res = await deleteCollection({ id: view.id }).catch(offline);
       if (!res.ok) {
-        toast.error(`${a.failed}: ${res.error}`);
+        toast.error(said(res.code));
         return;
       }
       toast(a.deleted);
@@ -162,9 +171,9 @@ export function CollectionSheet({
     if (!view || busy) return;
     setBusy(true);
     try {
-      const res = await confirmCollection({ id: view.id });
+      const res = await confirmCollection({ id: view.id }).catch(offline);
       if (!res.ok) {
-        toast.error(`${a.failed}: ${res.error}`);
+        toast.error(said(res.code));
         return;
       }
       onClose();
@@ -231,7 +240,7 @@ export function CollectionSheet({
                 <RulePreview
                   preview={check?.preview ?? null}
                   checking={checking}
-                  error={checkError}
+                  error={checkError && r.errors.check}
                   indexProducts={data.indexProducts}
                   isNew={!view}
                   look={PHONE_PREVIEW}

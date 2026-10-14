@@ -31,6 +31,7 @@ import {
   useLastShown,
 } from "../act/parts";
 import { termHref } from "../term/list-model";
+import { NETWORK_CODE, plainError } from "./errors";
 import { takenBy } from "./naming";
 
 /**
@@ -140,10 +141,12 @@ function NewCategoryContent({ request, onClose }: { request: NewCategoryRequest;
   React.useEffect(() => {
     let alive = true;
     void loadCollectionOptions()
-      .catch(() => ({ ok: false as const, code: "failed", error: r.network }))
+      .catch(() => ({ ok: false as const, code: NETWORK_CODE, error: "" }))
       .then((res) => {
         if (!alive) return;
-        setLoaded(res.ok ? { state: "ready", editor: res.data } : { state: "failed", error: res.error || r.loadFailed });
+        // Our words, never the server's: its detail is in its log.
+        const error = !res.ok && res.code === NETWORK_CODE ? r.network : r.loadFailed;
+        setLoaded(res.ok ? { state: "ready", editor: res.data } : { state: "failed", error });
       });
     return () => {
       alive = false;
@@ -170,9 +173,10 @@ function NewCategoryContent({ request, onClose }: { request: NewCategoryRequest;
     if (!draft || !canSave) return;
     setPhase("saving");
     setError(null);
-    const res = await saveCollectionDraft(draft).catch(() => ({ ok: false as const, code: "failed", error: r.network }));
+    const res = await saveCollectionDraft(draft).catch(() => ({ ok: false as const, code: NETWORK_CODE, error: "" }));
     if (!res.ok) {
-      setError(r.failed(res.error));
+      // A failed query, the store's English: none of it is for the owner (the server logs it).
+      setError(plainError(res.code, { ...r.errors, network: r.network }));
       setPhase("edit");
       return;
     }
@@ -186,7 +190,7 @@ function NewCategoryContent({ request, onClose }: { request: NewCategoryRequest;
     const said = !done
       ? r.slow(name)
       : status?.runner.lastError
-        ? r.failed(status.runner.lastError)
+        ? r.errors.moved
         : r.created(name, status?.runner.lastMoved ?? 0);
     const tone = done && status?.runner.lastError ? toast.error : done ? toast.success : toast;
     if (open.current && href) {
@@ -289,7 +293,7 @@ function NewCategoryContent({ request, onClose }: { request: NewCategoryRequest;
             <RulePreview
               preview={check?.preview ?? null}
               checking={checking}
-              error={checkError}
+              error={checkError && r.errors.check}
               indexProducts={loaded.editor.indexProducts}
               isNew
               look={PHONE_PREVIEW}

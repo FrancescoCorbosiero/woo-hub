@@ -58,9 +58,8 @@ export const termIt = {
     showing: (count = 2): string => (count === 1 ? "Lo rimetto com'era…" : "Li rimetto com'erano…"),
     showingAll: (done: number, total: number) => `${total === 1 ? "Lo rimetto" : "Li rimetto"} in vista… ${n(done)}/${n(total)}`,
     showHidden: (count: number) => (count === 1 ? "Mostra l'unico nascosto" : `Mostra i ${n(count)} nascosti`),
-    /** Under the term's hide: products that joined it since and still show (the next check hides them). */
-    hideAdded: (count: number) =>
-      count === 1 ? "Nascondi anche quello aggiunto dopo" : `Nascondi anche i ${n(count)} aggiunti dopo`,
+    /** Under the term's hide: products that joined it since and still show (the next check hides them). One line at 390px. */
+    hideAdded: (count: number) => (count === 1 ? "Nascondi il nuovo arrivato" : `Nascondi i ${n(count)} nuovi arrivati`),
     hideAddedHint: "Arrivati dopo: si nascondono da soli entro pochi minuti, o subito da qui.",
     hidingAdded: "Li nascondo…",
     hiddenOf: (count: number, name: string) =>
@@ -122,6 +121,15 @@ export const termIt = {
       bestselling: "Più venduti",
       priceAsc: "Prezzo crescente",
       priceDesc: "Prezzo decrescente",
+      name: "Nome",
+    },
+    /** On the list's button, beside the count and "Seleziona": short, so the count keeps its room on a phone. */
+    short: {
+      shop: "Negozio",
+      newest: "Novità",
+      bestselling: "Più venduti",
+      priceAsc: "Prezzo ↑",
+      priceDesc: "Prezzo ↓",
       name: "Nome",
     },
   },
