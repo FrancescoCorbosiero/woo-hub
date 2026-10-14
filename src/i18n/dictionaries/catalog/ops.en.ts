@@ -1,5 +1,9 @@
-import { MAX_OPERATION_PRODUCTS } from "@/lib/vetrina/catalog-ops";
+import { MAX_OPERATION_PRODUCTS, MAX_TERM_PRODUCTS } from "@/lib/vetrina/catalog-ops";
 import type { opsIt } from "./ops.it";
+
+/** A sale's last day as the owner reads it: "31 October". */
+const longDay = (day: string) =>
+  new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", timeZone: "UTC" }).format(new Date(`${day}T00:00:00Z`));
 
 /** A count as the owner reads it: "1,234". */
 const n = (count: number) => count.toLocaleString("en-GB");
@@ -14,6 +18,7 @@ function nameList(names: readonly string[], total = names.length): string {
 }
 
 export const opsEn: typeof opsIt = {
+  money: (amount: number): string => new Intl.NumberFormat("en-GB", { style: "currency", currency: "EUR" }).format(amount),
   products,
   nameList,
 
@@ -21,6 +26,8 @@ export const opsEn: typeof opsIt = {
     hide: (count: number, term: string | null) => `${count === 1 ? "1 product hidden" : `${n(count)} products hidden`}${term ? ` · ${term}` : ""}`,
     show: (count: number) => (count === 1 ? "1 product visible again" : `${n(count)} products visible again`),
     sale: (percent: number, what: string) => `Sale −${percent}% · ${what}`,
+    saleEnds: (percent: number, what: string, endsOn: string | null) =>
+      `Sale −${percent}% · ${what}: ${endsOn ? `now until ${longDay(endsOn)}` : "now with no end"}`,
     unsale: (what: string) => `Sale ended · ${what}`,
     tag: (tag: string, count: number) => `Tag “${tag}” on ${products(count)}`,
     untag: (tag: string, count: number) => `Tag “${tag}” off ${products(count)}`,
@@ -68,6 +75,8 @@ export const opsEn: typeof opsIt = {
     pinned: (position: number) => `#${position} pinned`,
     shown: (position: number) => `#${position}`,
     notShown: "Not shown",
+    until: (day: string) => `until ${longDay(day)}`,
+    noEnd: "no end",
     addedTo: (category: string) => `In “${category}”, then pinned`,
   },
 
@@ -91,6 +100,12 @@ export const opsEn: typeof opsIt = {
     newTag: (tag: string) => `The tag “${tag}” does not exist yet: I'll create it.`,
     categoryAdded: (count: number, category: string) =>
       `${count === 1 ? "1 product is not" : `${n(count)} products are not`} in “${category}”: I'll add ${count === 1 ? "it" : "them"}, so ${count === 1 ? "it shows" : "they show"} in the section.`,
+    marginMoves: (count: number) =>
+      count === 1
+        ? "1 product changes margin with the category: its price is updated right after."
+        : `${n(count)} products change margin with the category: their price is updated right after.`,
+    intoHidden: (count: number, term: string) =>
+      `“${term}” is hidden in the shop: ${count === 1 ? "the product I add is hidden too" : `the ${n(count)} products I add are hidden too`}.`,
     shownAgain: (count: number) =>
       `${count === 1 ? "1 was hidden" : `${n(count)} were hidden`} from this section: ${count === 1 ? "it shows" : "they show"} again.`,
     dropped: (count: number, max: number) =>
@@ -118,6 +133,8 @@ export const opsEn: typeof opsIt = {
   error: {
     tooMany: (total: number) =>
       `That's ${n(total)} products: at most ${n(MAX_OPERATION_PRODUCTS)} at a time. Narrow it down with the filters.`,
+    termTooBig: (total: number) =>
+      `That's ${n(total)} products: more than the catalog holds (${n(MAX_TERM_PRODUCTS)}). Act on one sub-category at a time.`,
     empty: "No product chosen.",
     alreadyHidden: (term: string) => `The products of “${term}” are already hidden: use “Show” to bring them back.`,
     automatic: (category: string) => `“${category}” is automatic: its rule decides its products.`,
@@ -125,7 +142,7 @@ export const opsEn: typeof opsIt = {
     termGone: "This category or brand is no longer in the shop.",
     tagGone: "This tag is no longer in the shop.",
     tagRefused: (tag: string) => `The shop did not create the tag “${tag}”.`,
-    notPinnable: "Products are not pinned in this section from the Vetrina.",
+    notPinnable: "Products are not pinned in this section from the Showcase.",
     nothingToPin: (section: string) => `None of these products can be in ${section}.`,
     notFound: "This action is no longer in the log.",
     stillRunning: "Still running: wait for it to finish, then undo.",

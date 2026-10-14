@@ -129,6 +129,7 @@ const load = async () => ({
   ...(await import("./runner")),
   ...(await import("@/server/config/rule-list")),
   ...(await import("@/server/actions/config")),
+  ...(await import("@/server/sync/ledger")),
 });
 
 /** A KicksDB product: three sizes at a 100 € ask. */
@@ -421,6 +422,49 @@ describe.skipIf(!enabled)("a category's margin from the Vetrina (real SQL, stand
     expect(await termRules()).toEqual([]);
     expect(price(K_ID, 11)).toBe("135.99");
     expect(price(K_ID, 13)).toBe("199.00");
+  });
+
+  it("the reprice reads the store first: a WordPress edit and a sale made after the snapshot stand", async () => {
+    const { saveOverrides, emptyOverrides, listStoreEdits, getSnapshotProductsByIds } = await load();
+    // Size 44 is the rules' again; the Hub's copy still says 135,99 / 199 for 42 / 44.
+    await saveOverrides(emptyOverrides());
+    // Since the snapshot was read: 42 changed in WordPress, 44 put on sale.
+    store.products.get(K_ID)!.find((v) => v.id === 11)!.regular_price = "149.00";
+    store.products.get(K_ID)!.find((v) => v.id === 13)!.sale_price = "120.00";
+
+    const view = await run(nikeMargin(25));
+    expect(view.status).toBe("done");
+    expect(price(K_ID, 11)).toBe("149.00"); // the WordPress price is kept…
+    const { rows } = await listStoreEdits();
+    expect(rows.map((r) => [r.variationId, r.storePrice])).toEqual([[11, 149]]); // …and listed
+    expect(price(K_ID, 13)).toBe("199.00"); // on sale since: its regular price is left alone
+    const [copy] = await getSnapshotProductsByIds([K_ID]);
+    expect(copy.variations.find((v) => v.id === 13)?.sale_price).toBe("120.00"); // the snapshot learns the sale
+  });
+
+  it("a product moved out of a category with a margin is said to change margin, and repriced by the engine", async () => {
+    const { marginChanges, repriceMoved } = await import("./margin");
+    const { db, storeIndex, eq } = await load();
+    await run(nikeMargin(25));
+    expect(price(K_ID, 11)).toBe("125.99");
+    const move = (sku: string, from: number, to: number) => ({
+      sku,
+      before: { categories: [from], brands: [] },
+      after: { categories: [to], brands: [] },
+    });
+    // Out of Nike (Off-White → Sneakers): Nike's margin leaves it. Within Nike: nothing changes.
+    // The supplier's product never takes a store term's margin either way.
+    expect(await marginChanges([move(KICKS, OFF_WHITE, SNEAKERS), move(FEED, NIKE, SNEAKERS)])).toEqual([KICKS]);
+    expect(await marginChanges([move(KICKS, OFF_WHITE, NIKE)])).toEqual([]);
+
+    // The move lands (the index learns it from the store's answer), then the engine reprices it.
+    await db
+      .update(storeIndex)
+      .set({ categories: [{ id: SNEAKERS, slug: "sneakers", name: "Sneakers" }] })
+      .where(eq(storeIndex.productId, K_ID));
+    await repriceMoved([move(KICKS, OFF_WHITE, SNEAKERS)]);
+    expect(price(K_ID, 11)).toBe("135.99"); // the house margin again
+    expect(price(K_ID, 13)).toBe("199.00"); // its lock stands
   });
 
   it("changes a margin where it stands, and an undo over a newer margin is refused", async () => {

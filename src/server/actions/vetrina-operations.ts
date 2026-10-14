@@ -103,6 +103,18 @@ export async function loadTermActions(input: {
 }
 
 /**
+ * "Nascondi anche questi": the products that joined a hidden category or
+ * brand since its hide, hidden now with it instead of after the next check
+ * (filed under the term's own hide: its "Mostra" brings them back).
+ */
+export async function hideTermNewcomers(): Promise<VetrinaResult<null>> {
+  return answer(() => attempt(async () => {
+    await operations.hideTermNewcomers();
+    return null;
+  }));
+}
+
+/**
  * A category's or brand's margin (phase 4): its own, the one it gets from
  * a term above it, the standard, and how many of its products the Hub
  * prices — what its screen's "Ricarico" row and the margin sheet start from.

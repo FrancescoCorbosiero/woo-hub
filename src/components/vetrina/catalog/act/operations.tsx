@@ -81,7 +81,7 @@ export function OperationsProvider({ children }: { children: React.ReactNode }) 
             ? [
                 u.restored > 0 ? toasts.restored(u.restored) : "",
                 u.kept > 0 ? toasts.kept(u.kept) : "",
-                (u.held ?? 0) > 0 ? toasts.held(u.held ?? 0) : "",
+                (u.held ?? 0) > 0 ? toasts.held(u.held ?? 0, u.heldBy ?? []) : "",
                 u.failed > 0
                   ? refusedText(view.kind, u.failed, { products: toasts.undoRefused, sizes: toasts.undoRefusedSizes })
                   : "",

@@ -10,9 +10,9 @@ import { defaultCategoryIds, homepagePresence, withDescendants, type CatalogTree
 import { readRail } from "@/server/vetrina/service";
 import { VetrinaError } from "@/server/vetrina/source";
 import type { OperationLabelParams } from "@/server/db/schema";
-import { mapLimit, parseTermKey, resolveTarget, rowsInOrder, termName } from "./context";
+import { mapLimit, parseTermKey, resolveTarget, rowsInOrder, termName, wholeTermAction } from "./context";
 import { readSizes } from "./live";
-import { assessMargin } from "./margin";
+import { assessMargin, marginChanges } from "./margin";
 import {
   bump,
   labelParams,
@@ -26,12 +26,13 @@ import {
   reasonCounts,
   salePriceWords,
   sectionCounts,
+  standingSale,
   visibilityAfter,
   type Reason,
 } from "./plan";
-import { termOperationRows } from "./repo";
+import { termOperationRows, visibilityBeforeHide } from "./repo";
 import { pinnable, railFill, sectionMembers } from "./sections";
-import { heldByTermHides, heldTerms, logSince, standingTermHide, termSaleProducts } from "./standing";
+import { heldByTermHides, heldTerms, hiddenOver, logSince, shopToday, standingTermHide, termSaleProducts } from "./standing";
 import { words, type Words } from "./words";
 
 /**
@@ -126,7 +127,10 @@ function elsewhere(todo: IndexRow[], key: TermKey, trees: CatalogTrees, w: Words
 async function assessVisibility(ctx: Ctx, input: Extract<OperationInput, { kind: "hide" | "show" }>): Promise<Assessment> {
   const { kind } = input;
   const { w } = ctx;
-  const toChange = ctx.rows.filter((r) => visibilityAfter(kind, r.visibility || "visible") != null);
+  // The product sheet's switch: each back as it was before its hide.
+  const was = input.kind === "show" && input.restore ? await visibilityBeforeHide(ctx.rows.map((r) => r.id)) : new Map<number, string>();
+  const afterOf = (r: IndexRow) => visibilityAfter(kind, r.visibility || "visible", was.get(r.id));
+  const toChange = ctx.rows.filter((r) => afterOf(r) != null);
   const untouched = new Map<Reason, number>();
   bump(untouched, kind === "hide" ? w.untouched.alreadyHidden : w.untouched.alreadyVisible, ctx.rows.length - toChange.length);
   // A term panel's "Mostra i N nascosti": what another hidden category or brand holds stays for its own "Mostra".
@@ -140,7 +144,7 @@ async function assessVisibility(ctx: Ctx, input: Extract<OperationInput, { kind:
     id: r.id,
     name: r.name,
     before: w.state.visibility(r.visibility || "visible"),
-    after: w.state.visibility(visibilityAfter(kind, r.visibility || "visible")!),
+    after: w.state.visibility(afterOf(r)!),
   }));
   const warnings: string[] = [];
   let refusal: string | null = null;
@@ -149,7 +153,7 @@ async function assessVisibility(ctx: Ctx, input: Extract<OperationInput, { kind:
   if (termKey) {
     term = termName(ctx.trees, termKey);
     // "Mostra" undoes the standing hide: a second one would leave nothing to undo exactly.
-    if (await standingTermHide(await termOperationRows(termKey, await logSince()))) refusal = w.error.alreadyHidden(term);
+    if (await standingTermHide(termKey)) refusal = w.error.alreadyHidden(term);
     const also = elsewhere(todo, termKey, ctx.trees, w);
     if (also) warnings.push(also);
   }
@@ -179,11 +183,16 @@ async function assessSale(ctx: Ctx, input: Extract<OperationInput, { kind: "sale
   const term = termKey ? termName(ctx.trees, termKey) : null;
   // A sale's end only concerns what is on sale; the index says which (the run reads every size again).
   const candidates = input.kind === "sale" ? ctx.rows : ctx.rows.filter((r) => r.onSale);
+  const termRows = termKey ? await termOperationRows(termKey, await logSince()) : [];
   // A new sale on the whole term replaces the term's own: the products on it are not on a sale of their own.
-  const termSale =
-    input.kind === "sale" && termKey && ctx.live
-      ? await termSaleProducts(await termOperationRows(termKey, await logSince()))
-      : new Set<number>();
+  const termSale = input.kind === "sale" && termKey && ctx.live ? await termSaleProducts(termRows) : new Set<number>();
+  // "Cambia lo sconto" at the percent the term's sale already has: only its last day moves, and its label says so.
+  const standing = input.kind === "sale" && termKey ? standingSale(termRows, shopToday()) : null;
+  const endsOnly =
+    input.kind === "sale" &&
+    standing?.input.kind === "sale" &&
+    standing.input.percent === input.percent &&
+    (standing.input.endsOn ?? null) !== (input.endsOn ?? null);
   const untouched = new Map<Reason, number>();
   bump(untouched, w.untouched.noSale, ctx.rows.length - candidates.length);
   const sample: Sample[] = [];
@@ -234,7 +243,7 @@ async function assessSale(ctx: Ctx, input: Extract<OperationInput, { kind: "sale
   if (sections.length > 0) warnings.push(w.warning.sectionsShow(sections));
   return {
     preview: preview(input.kind, ctx, { changes, untouched, sample, warnings, sampled }, null),
-    label: labelParams(input, { count: candidates.length, term }),
+    label: labelParams(input, { count: candidates.length, term, endsOnly }),
     termKey,
     total: ctx.ids.length,
     refusal: null,
@@ -308,6 +317,25 @@ async function assessCategories(
     const left = todo.filter((r) => r.categories.every((c) => c.id === input.categoryId || defaults.has(c.id))).length;
     if (left > 0) warnings.push(w.warning.noCategoryLeft(left));
   }
+  // A margin set on a category follows its products: a move under another one changes their price.
+  if (!automatic && todo.length > 0) {
+    const moved = await marginChanges(
+      todo
+        .filter((r) => r.sku)
+        .map((r) => {
+          const brands = r.brands.map((b) => b.id);
+          const before = r.categories.map((c) => c.id);
+          const change = input.kind === "categorize" ? { add: input.categoryId } : { remove: input.categoryId };
+          return { sku: r.sku, before: { categories: before, brands }, after: { categories: listAfter(before, change) ?? before, brands } };
+        }),
+    );
+    if (moved.length > 0) warnings.push(w.warning.marginMoves(moved.length));
+  }
+  // A hidden category's products are hidden everywhere: those put into it join them.
+  if (input.kind === "categorize" && !automatic && todo.length > 0) {
+    const hidden = await hiddenOver("category", input.categoryId, ctx.trees);
+    if (hidden) warnings.push(w.warning.intoHidden(todo.length, hidden));
+  }
   const sample = todo.slice(0, SAMPLE).map((r) => {
     const after = listAfter(
       r.categories.map((c) => c.id),
@@ -349,7 +377,11 @@ async function assessPin(ctx: Ctx, input: Extract<OperationInput, { kind: "pin" 
   bump(untouched, (count) => w.untouched.overMax(count, max), plan.overflow.length);
   const warnings: string[] = [];
   const added = plan.placed.filter((id) => !members.has(id));
-  if (added.length > 0 && term) warnings.push(w.warning.categoryAdded(added.length, term.name));
+  if (added.length > 0 && term) {
+    warnings.push(w.warning.categoryAdded(added.length, term.name));
+    const hidden = await hiddenOver("category", term.id, ctx.trees);
+    if (hidden) warnings.push(w.warning.intoHidden(added.length, hidden));
+  }
   const shownAgain = plan.placed.filter((id) => rail.exclude.includes(id)).length;
   if (shownAgain > 0) warnings.push(w.warning.shownAgain(shownAgain));
   if (plan.dropped.length > 0) warnings.push(w.warning.dropped(plan.dropped.length, max));
@@ -390,7 +422,7 @@ async function assessPin(ctx: Ctx, input: Extract<OperationInput, { kind: "pin" 
  */
 export async function assess(input: OperationInput, opts: { live: boolean }): Promise<Assessment> {
   if (input.kind === "margin") return assessMargin(input, opts);
-  const target = await resolveTarget(input.target);
+  const target = await resolveTarget(input.target, { wholeTerm: wholeTermAction(input) });
   const { rows, missing } = await rowsInOrder(target.ids);
   const ctx: Ctx = { ids: target.ids, rows, missing, trees: target.trees, live: opts.live, w: words() };
   switch (input.kind) {

@@ -1,5 +1,5 @@
 import "server-only";
-import { getOverridesForWrite, saveOverrides } from "@/server/overrides/repo";
+import { updateOverrides } from "@/server/overrides/repo";
 import { withVariationPrice } from "@/server/overrides/model";
 import { listStoreEdits, openStoreEdits, supersedeStoreEditsById } from "./ledger";
 import { runPriceSync } from "./price-sync";
@@ -65,9 +65,9 @@ export async function keepStoreEdits(ids: number[] | "all"): Promise<{ kept: num
   const rows = await openStoreEdits(ids);
   const lockable = rows.filter((r) => r.euSize !== "" && r.storePrice != null);
   if (lockable.length > 0) {
-    let overrides = await getOverridesForWrite();
-    for (const r of lockable) overrides = withVariationPrice(overrides, r.sku, r.euSize, r.storePrice!);
-    await saveOverrides(overrides);
+    await updateOverrides((current) =>
+      lockable.reduce((next, r) => withVariationPrice(next, r.sku, r.euSize, r.storePrice!), current),
+    );
     await supersedeStoreEditsById(lockable.map((r) => r.variationId));
   }
   return { kept: lockable.length, notLockable: rows.length - lockable.length };

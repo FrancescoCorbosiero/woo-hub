@@ -54,9 +54,9 @@ export const ProductRow = React.memo(function ProductRow({
   /** A long press: the list starts selecting, with this product picked. None: no long press. */
   onLongPress?: (product: CatalogProduct) => void;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const live = card && !card.missing ? card : null;
-  const price = live ? formatFromPrice(live, t.vetrina.editor.from) : formatEuro(product.price);
+  const price = live ? formatFromPrice(live, t.vetrina.editor.from, locale) : formatEuro(product.price, locale);
   const press = useLongPress(onLongPress ? () => onLongPress(product) : undefined);
   const thumb = <Thumb image={card?.image ?? null} hasImage={product.hasImage} noPhotoLabel={t.vetrinaCatalog.term.row.noPhoto} />;
   const title = <span className="line-clamp-2 leading-snug">{product.name}</span>;

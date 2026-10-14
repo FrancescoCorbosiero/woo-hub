@@ -50,6 +50,7 @@ export const homeIt = {
     catalogLabel: (name: string) => `Apri «${name}» nel catalogo`,
     soldOut: (n: number) => (n === 1 ? "1 esaurito" : `${n.toLocaleString("it-IT")} esauriti`),
     hidden: (n: number) => (n === 1 ? "1 nascosto dal negozio" : `${n.toLocaleString("it-IT")} nascosti dal negozio`),
+    noPhoto: (n: number) => (n === 1 ? "1 senza foto" : `${n.toLocaleString("it-IT")} senza foto`),
     health: (parts: string) => `In vetrina: ${parts}`,
   },
 

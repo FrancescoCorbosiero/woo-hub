@@ -29,7 +29,6 @@ import {
   hide,
   pinToTop,
   pinsAfterPlacing,
-  sameState,
   show,
   unpin,
   type EditorRow,
@@ -42,6 +41,7 @@ import { changedFields, editableFields } from "@/lib/vetrina/fields";
 import type { HiddenReason, ProductCard, RailDetail, RailFallback, SectionDraft } from "@/lib/vetrina/types";
 import type { VetrinaRail, VetrinaResult } from "@/server/vetrina/service";
 import { loadVetrinaCards, loadVetrinaRail, publishVetrinaRail } from "@/server/actions/vetrina";
+import { useOperationSettled } from "./catalog/act/operations-context";
 import { railCatalogHref } from "./catalog/sheet/links";
 import { CollectionSheet } from "./CollectionSheet";
 import { ErrorState } from "./ErrorState";
@@ -51,6 +51,7 @@ import { ProductSheet } from "./ProductSheet";
 import { formatFromPrice } from "./format";
 import { ChevronRight, EyeOff, Funnel, Grip, Lock, More, Pin } from "./icons";
 import { SEGMENTED_COLORS } from "./segmented";
+import { edited, movedUnderDraft, movesSection } from "./section-reload";
 import { useBack } from "./use-back";
 
 export interface EditorOptions {
@@ -124,9 +125,6 @@ const stateOf = (rail: RailDetail): SectionDraft => ({
 const trimmed = (fields: Record<string, string>) =>
   Object.fromEntries(Object.entries(fields).map(([field, value]) => [field, value.trim()]));
 
-/** The draft holds changes not published yet: the order, the section's texts or its size. */
-const edited = (saved: SectionDraft, draft: SectionDraft) =>
-  !sameState(saved, draft) || changedFields(saved.fields, draft.fields).length > 0 || saved.limit !== draft.limit;
 
 function Editor({ railKey, initial, options }: { railKey: string; initial: VetrinaRail; options: EditorOptions }) {
   const { t } = useI18n();
@@ -198,6 +196,7 @@ function Editor({ railKey, initial, options }: { railKey: string; initial: Vetri
   const reloadMembers = React.useCallback(async () => {
     // The rail the draft was made over, as it was when asked: what "unedited" is measured against.
     const before = saved;
+    const shownBefore = base.visible;
     const fresh = await loadVetrinaRail({ key: railKey, fallback: draft.fallback });
     if (!fresh.ok) {
       toast.error(t.vetrina.errors[fresh.code] ?? fresh.error);
@@ -207,8 +206,19 @@ function Editor({ railKey, initial, options }: { railKey: string; initial: Vetri
     adoptRail(fresh.data);
     // The draft as it is now: the customer may have changed it while the rail was read.
     if (!edited(before, latestDraft.current)) setDraft(stateOf(fresh.data.rail));
-    else toast(v.changedMeanwhile);
-  }, [railKey, draft.fallback, saved, adoptRail, t, v]);
+    // Said only when the section really moved under the draft: its pins, hidden ones, texts, or products.
+    else if (
+      movedUnderDraft({ state: before, shown: shownBefore }, { state: stateOf(fresh.data.rail), shown: fresh.data.rail.visible })
+    ) {
+      toast(v.changedMeanwhile);
+    }
+  }, [railKey, draft.fallback, saved, base.visible, adoptRail, t, v]);
+
+  // An action that ended — from a toast's "Annulla", the log, a product's sheet — may have moved this section:
+  // a pin, a product hidden or shown, one put in or out of its category.
+  useOperationSettled((view) => {
+    if (movesSection(view.kind)) void reloadMembers();
+  });
 
   // A fallback we have no automatic order for yet: ask the site (nothing is saved).
   React.useEffect(() => {
@@ -353,6 +363,8 @@ function Editor({ railKey, initial, options }: { railKey: string; initial: Vetri
           adoptRail(fresh.data);
           setDraft(stateOf(fresh.data.rail));
         }
+        // The homepage the back button returns to is the router's copy from before: read again.
+        router.refresh();
         toast.dismiss();
         toast.success(demo ? v.publishedDemo : v.published, {
           action: base.pageLink
@@ -851,6 +863,8 @@ function Editor({ railKey, initial, options }: { railKey: string; initial: Vetri
           void loadVetrinaCards({ ids: [id] }).then((res) => {
             if (res.ok) absorb(res.data.cards, res.data.locks);
           });
+          // The homepage's cards show the old price until read again.
+          router.refresh();
         }}
         onTagsChanged={() => void reloadMembers()}
         confirmLeave={confirmLeave}
@@ -905,7 +919,7 @@ function RailRow({
   onDragEnd: () => void;
   onOpen: (id: number) => void;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const v = t.vetrina.editor;
   const controls = useDragControls();
   const ghost = kind === "ghost";
@@ -936,7 +950,7 @@ function RailRow({
               {card?.name ?? "…"}
             </span>
             <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[13px]">
-              {card && <span className="tabular-nums opacity-60">{formatFromPrice(card, v.from)}</span>}
+              {card && <span className="tabular-nums opacity-60">{formatFromPrice(card, v.from, locale)}</span>}
               {kind !== "auto" && (
                 <span className="inline-flex items-center gap-0.5 font-semibold text-amber-700 dark:text-amber-400">
                   <Pin className="h-3 w-3" />

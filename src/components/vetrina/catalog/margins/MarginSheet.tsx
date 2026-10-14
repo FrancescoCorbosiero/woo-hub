@@ -21,6 +21,7 @@ import {
   useStartAction,
   type PreviewState,
 } from "../act/parts";
+import { useRangeThumbFix } from "../act/range-thumb";
 import { formatCount } from "../format";
 import { Minus, Plus } from "./glyphs";
 import {
@@ -83,6 +84,8 @@ function MarginContent({
   const m = t.vetrinaCatalog.margins;
   const s = m.sheet;
   const [mode, setMode] = React.useState<MarginMode>(() => startMode(state));
+  // The slider's thumb where its value is from the first frame (Konsta's Range needs a nudge).
+  useRangeThumbFix(mode);
   const [percent, setPercent] = React.useState(() => startPercent(state));
   const rangeId = React.useId();
 
@@ -155,8 +158,6 @@ function MarginContent({
           <p className={`${CARD} px-4 py-3 text-[15px] leading-snug`}>{backText(state, m)}</p>
         )}
 
-        <p className="px-1 text-[13px] leading-snug opacity-60">{s.note}</p>
-
         {input ? (
           <>
             <Summary state={preview} />
@@ -166,6 +167,9 @@ function MarginContent({
         ) : (
           <p className={`${CARD} px-4 py-3 text-[15px] leading-snug`}>{s.same}</p>
         )}
+
+        {/* After what moves, not before it: on a small phone the preview starts in sight. */}
+        <p className="px-1 text-[13px] leading-snug opacity-60">{s.note}</p>
       </SheetBody>
 
       <SheetFooter error={error}>

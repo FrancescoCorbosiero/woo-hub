@@ -53,22 +53,39 @@ export function rowShown(state: TermMarginState): boolean {
 }
 
 /**
- * "Ricarico di questa categoria: 25%" / "Ricarico: 25% da «Nike»" /
- * "Ricarico: dalle regole dell'Hub" / "Ricarico: standard (a fasce)".
+ * The row's title, one short line on the narrowest phone — "Ricarico: 25%",
+ * "Ricarico: standard", "Ricarico: regole dell'Hub" — whose margin it is goes
+ * under it (rowText): a title that wrapped once read made the panel grow
+ * under the owner's thumb.
  */
-export function rowTitle(state: TermMarginState, taxonomy: CatalogTaxonomy, m: MarginWords): string {
-  if (state.own) return m.row.own(taxonomy, marginText(state.own, m));
-  if (state.inherited) return m.row.inherited(marginText(state.inherited.value, m), state.inherited.term);
+export function rowTitle(state: TermMarginState, m: MarginWords): string {
+  if (state.own) return m.row.value(marginText(state.own, m));
+  if (state.inherited) return m.row.value(marginText(state.inherited.value, m));
   // Another of the Hub's rules prices them (a catalog brand's, a family's): not the standard.
   if (state.hubRules > 0) return m.row.hub;
-  return m.row.standard(state.standard ? marginText(state.standard, m) : null);
+  return m.row.standard;
 }
 
-/** Under the title: how many products it applies to, and how many the supplier prices. */
-export function rowText(state: TermMarginState, m: MarginWords): string {
+/**
+ * Under the title: whose margin it is (this category's or brand's, a term
+ * above it's, the standard's value), how many products it applies to, and
+ * how many the supplier prices.
+ */
+export function rowText(state: TermMarginState, taxonomy: CatalogTaxonomy, m: MarginWords): string {
   // A margin of its own that prices nothing now.
   if (state.priced === 0) return m.row.nonePriced;
-  return [m.row.applies(state.applies), state.supplier > 0 ? m.row.supplier(state.supplier) : null].filter(Boolean).join(" · ");
+  const whose = state.own
+    ? m.row.ownOf(taxonomy)
+    : state.inherited
+      ? m.row.from(state.inherited.term)
+      : state.hubRules > 0
+        ? null
+        : state.standard
+          ? m.row.standardIs(marginText(state.standard, m))
+          : null;
+  return [whose, m.row.applies(state.applies), state.supplier > 0 ? m.row.supplier(state.supplier) : null]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 /** Under the title while a margin of this term runs: how far it got. */

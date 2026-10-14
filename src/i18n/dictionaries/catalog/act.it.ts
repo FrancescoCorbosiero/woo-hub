@@ -7,6 +7,14 @@
  */
 /** A count as the owner reads it: "1.234". */
 const n = (count: number) => count.toLocaleString("it-IT");
+
+/** "in «Nike»", "in «Nike» e «Adidas»", "in «Nike», «Adidas» e altri 2". */
+function inTerms(names: readonly string[]): string {
+  const list = names.slice(0, 2).map((name) => `«${name}»`);
+  const more = names.length - list.length;
+  const said = more > 0 ? `${list.join(", ")} e ${more === 1 ? "un altro" : `altri ${n(more)}`}` : list.join(" e ");
+  return `in ${said},`;
+}
 const products = (count: number) => (count === 1 ? "1 prodotto" : `${n(count)} prodotti`);
 /** "1 prodotto rifiutato", "3 prodotti rifiutati": the count and a word that agrees with it. */
 const agreed = (count: number, one: string, many: string) => (count === 1 ? `1 ${one}` : `${n(count)} ${many}`);
@@ -98,7 +106,7 @@ export const actIt = {
     endsNever: "Nessuna data: resta finché non lo togli tu.",
     endsOn: (day: string) => `Finisce ${day}, a fine giornata.`,
     endsToday: "Finisce stasera, a fine giornata.",
-    pickLabel: "L'ultimo giorno del saldo",
+    pickLabel: "Ultimo giorno",
     pickFirst: "Scegli il giorno qui sopra.",
     pickPast: "Scegli un giorno da oggi in poi.",
     regularNote: "Il prezzo pieno non cambia: lo decide sempre l'Hub.",
@@ -246,11 +254,13 @@ export const actIt = {
       count === 1 ? "1 prodotto lasciato com'era: cambiato nel frattempo" : `${n(count)} prodotti lasciati com'erano: cambiati nel frattempo`,
     undoRefused: (count: number) => agreed(count, "prodotto rifiutato dal negozio", "prodotti rifiutati dal negozio"),
     undoRefusedSizes: (count: number) => agreed(count, "taglia rifiutata dal negozio", "taglie rifiutate dal negozio"),
-    /** An undone hide left these hidden: another category or brand the owner hid still holds them. */
-    held: (count: number) =>
-      count === 1
-        ? "1 resta nascosto: è anche in una categoria o un brand che hai nascosto"
-        : `${n(count)} restano nascosti: sono anche in una categoria o un brand che hai nascosto`,
+    /** An undone hide left these hidden: another category or brand the owner hid still holds them (named, when known). */
+    held: (count: number, terms: readonly string[] = []) => {
+      const where = terms.length > 0 ? inTerms(terms) : "in una categoria o un brand";
+      return count === 1
+        ? `1 resta nascosto: è anche ${where} che hai nascosto`
+        : `${n(count)} restano nascosti: sono anche ${where} che hai nascosto`;
+    },
     undoFailed: "Annullamento non riuscito.",
     failed: "Non è andata a buon fine.",
   },

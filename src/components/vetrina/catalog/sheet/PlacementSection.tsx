@@ -195,9 +195,10 @@ export function PlacementSection({
       setConfirm({ input: { kind: "hide", target }, ...s.confirm.hide });
       return;
     }
-    // Shown again: the way back from a hide, at once (and undoable like any action).
+    // Shown again: the way back from a hide, at once (and undoable like any action) — as it was before
+    // that hide, "only in search" or "only in the catalog" included.
     setFlipping(true);
-    void start({ kind: "show", target }).then((res) => {
+    void start({ kind: "show", target, restore: true }).then((res) => {
       setFlipping(null);
       if (!res.ok) toast.error(res.error);
     });

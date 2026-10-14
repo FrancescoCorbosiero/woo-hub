@@ -84,14 +84,16 @@ export interface SaleWrite {
  * field as the single-product route does, which can refuse the empty dates
  * that end a sale). Only the sale price and its dates — never the regular
  * price. Returns what the store took and what it refused: a refusal (a 4xx)
- * is that product's, the run goes on; anything else stops it.
+ * is that product's, the run goes on; anything else stops it — and, for the
+ * sizes whose answer says, their regular price as the store holds it after
+ * the write (a sale is computed from the regular price read before it).
  */
 export async function writeSales(
   client: WooClient,
   productId: number,
   variable: boolean,
   writes: SaleWrite[],
-): Promise<{ written: SaleWrite[]; refused: SaleWrite[] }> {
+): Promise<{ written: SaleWrite[]; refused: SaleWrite[]; regular?: Map<number, number | null> }> {
   if (writes.length === 0) return { written: [], refused: [] };
   try {
     if (!variable) {
@@ -105,13 +107,17 @@ export async function writeSales(
     });
     const written: SaleWrite[] = [];
     const refused: SaleWrite[] = [];
+    const regular = new Map<number, number | null>();
     writes.forEach((w, i) => {
       // The store answers row by row in the order asked; a refused row may come without its id.
       const row = res.update.find((r) => r.id === w.variationId) ?? res.update[i];
       if (!row || row.error) refused.push(w);
-      else written.push(w);
+      else {
+        written.push(w);
+        if (w.variationId != null && "regular_price" in row) regular.set(w.variationId, priceCents(row.regular_price));
+      }
     });
-    return { written, refused };
+    return { written, refused, regular };
   } catch (e) {
     // The product gone between the read and the write, a value the store will not take.
     if (refusedByStore(e)) return { written: [], refused: writes };

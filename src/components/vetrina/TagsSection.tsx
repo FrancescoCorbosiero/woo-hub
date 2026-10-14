@@ -101,7 +101,8 @@ export function TagsSection({ productId, onChanged }: { productId: number; onCha
   async function save() {
     setSaving(true);
     try {
-      const res = await saveProductTags({ productId, tags: chips });
+      // Only the change: a tag a bulk "Tag +" put on the product since the sheet opened stays.
+      const res = await saveProductTags({ productId, tags: chips, base: view!.tags.map((x) => x.id) });
       if (!res.ok) {
         toast.error(`${tg.failed}: ${res.error}`);
         return;

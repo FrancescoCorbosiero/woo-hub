@@ -9,6 +9,7 @@ import {
   getSnapshotInfo,
   getSnapshotProductsBySkus,
   listStoreSkuSpellings,
+  snapshotCopyTime,
 } from "@/server/store-json/repo";
 import { resolveFromModel, sourceEuSize, variationSizeLabel } from "@/server/store-json/match";
 import { adoptPrices, ledgerForProducts, noteStoreEdits, settleStoreEdits } from "@/server/sync/ledger";
@@ -182,6 +183,13 @@ async function planChunk(
     },
   );
   const ledgerRows: PlannedRow[] = [];
+  // When the snapshot's copy of each product was taken. A price the Hub wrote
+  // after that is what the store holds, though the copy does not show it yet:
+  // a long apply records each product's write at once and patches the
+  // snapshot only at its end, and a plan made meanwhile must not take the
+  // Hub's own write for a WordPress edit, nor plan from the price before it.
+  const readAt = storeIndex ? await getSnapshotInfo().then((i) => (i ? new Date(i.uploadedAt) : null), () => null) : null;
+  const byStoreId = new Map([...(storeIndex?.values() ?? [])].map((p) => [p.id, p]));
 
   // Where the shop files each product (its store categories and brands,
   // ancestors included): what a margin set on a category or a brand prices
@@ -198,7 +206,12 @@ async function planChunk(
     const mappings = storeIndex ? resolveFromModel(storeIndex, product) : new Map();
     for (const m of mappings.values()) {
       const entry = ledger.get(m.storeVariationId);
-      if (entry) m.hubPrice = entry.price;
+      if (!entry) continue;
+      m.hubPrice = entry.price;
+      const copied = byStoreId.has(m.storeProductId) ? snapshotCopyTime(byStoreId.get(m.storeProductId)!, readAt) : null;
+      if (entry.storePrice == null && entry.writtenAt && copied != null && entry.writtenAt.getTime() > copied) {
+        m.currentPrice = entry.price;
+      }
     }
 
     // EU size per variant — needed both for the table and to key manual-price

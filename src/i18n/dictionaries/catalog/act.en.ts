@@ -2,6 +2,14 @@ import type { actIt } from "./act.it";
 
 /** A count as the owner reads it: "1,234". */
 const n = (count: number) => count.toLocaleString("en-GB");
+
+/** "in “Nike”, which", "in “Nike” and “Adidas”, which", "in “Nike”, “Adidas” and 2 more, which". */
+function inTerms(names: readonly string[]): string {
+  const list = names.slice(0, 2).map((name) => `“${name}”`);
+  const more = names.length - list.length;
+  const said = more > 0 ? `${list.join(", ")} and ${n(more)} more` : list.join(" and ");
+  return `in ${said}, which`;
+}
 const products = (count: number) => (count === 1 ? "1 product" : `${n(count)} products`);
 /** "Sale", "Sale and Nike", "Sale, Nike and Outlet". */
 const names = (list: readonly string[]) =>
@@ -85,7 +93,7 @@ export const actEn: typeof actIt = {
     endsNever: "No end date: it stays until you end it.",
     endsOn: (day: string) => `Ends ${day}, at the end of the day.`,
     endsToday: "Ends tonight, at the end of the day.",
-    pickLabel: "The sale's last day",
+    pickLabel: "Last day",
     pickFirst: "Pick the day above.",
     pickPast: "Pick a day from today on.",
     regularNote: "The full price does not change: the Hub always sets it.",
@@ -165,7 +173,7 @@ export const actEn: typeof actIt = {
       other: "Only the products it already shows.",
     },
     pinned: (count: number) => (count === 0 ? "None pinned" : `${n(count)} pinned`),
-    notPinnable: "Products can't be pinned here from the Vetrina.",
+    notPinnable: "Products can't be pinned here from the Showcase.",
     editing: "You're editing it: pin it from the section editor.",
     takesNone: (count: number) => (count === 1 ? "This product can't be here." : "None of these products can be here."),
     empty: "The homepage has no product sections.",
@@ -226,10 +234,10 @@ export const actEn: typeof actIt = {
       count === 1 ? "1 product left as it was: changed meanwhile" : `${n(count)} products left as they were: changed meanwhile`,
     undoRefused: (count: number) => `${products(count)} refused by the shop`,
     undoRefusedSizes: (count: number) => `${count === 1 ? "1 size" : `${n(count)} sizes`} refused by the shop`,
-    held: (count: number) =>
-      count === 1
-        ? "1 stays hidden: it is also in a category or brand you hid"
-        : `${n(count)} stay hidden: they are also in a category or brand you hid`,
+    held: (count: number, terms: readonly string[] = []) => {
+      const where = terms.length > 0 ? inTerms(terms) : "in a category or brand";
+      return count === 1 ? `1 stays hidden: it is also ${where} you hid` : `${n(count)} stay hidden: they are also ${where} you hid`;
+    },
     undoFailed: "Undo didn't work.",
     failed: "It didn't go through.",
   },

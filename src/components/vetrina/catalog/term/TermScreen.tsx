@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
+import { toast } from "sonner";
 import {
   Actions,
   ActionsButton,
@@ -30,12 +31,13 @@ import type {
 } from "@/lib/vetrina/catalog";
 import type { OperationTarget, OperationView, TermActionsState, TermKey } from "@/lib/vetrina/catalog-ops";
 import type { VetrinaErrorCode } from "@/lib/vetrina/types";
-import { loadTermActions } from "@/server/actions/vetrina-operations";
+import { hideTermNewcomers, loadTermActions } from "@/server/actions/vetrina-operations";
 import type { VetrinaResult } from "@/server/vetrina/service";
 import { CollectionSheet } from "../../CollectionSheet";
 import { ErrorState } from "../../ErrorState";
 import { EyeOff, Funnel, More } from "../../icons";
 import { ActSheets, type ActRequest } from "../act/ActSheets";
+import { call } from "../act/call";
 import { Eye, Percent } from "../act/icons";
 import { formatDay, formatTime, queryTarget } from "../act/model";
 import { useOperations, useOperationSettled } from "../act/operations-context";
@@ -68,7 +70,15 @@ import {
   termHref,
   type ListState,
 } from "./list-model";
-import { hasActions, saleState, toggleOn, visibilityState, type SaleState, type VisibilityState } from "./panel-model";
+import {
+  hasActions,
+  saleState,
+  saleUndoBack,
+  toggleOn,
+  visibilityState,
+  type SaleState,
+  type VisibilityState,
+} from "./panel-model";
 import { ProductList } from "./ProductList";
 import { SortActions } from "./SortActions";
 import { Ghost } from "./TermSkeleton";
@@ -431,6 +441,16 @@ function TermActionsPanel({ term }: { term: CatalogTerm }) {
     }
   }
 
+  const [hidingAdded, setHidingAdded] = React.useState(false);
+  /** "Nascondi anche questi": the products that joined the hidden term since, hidden now under its hide. */
+  async function hideAdded() {
+    setHidingAdded(true);
+    const res = await call(() => hideTermNewcomers(), t.vetrinaCatalog.act.sheet.network);
+    if (!res.ok) toast.error(res.error);
+    await actions.mutate();
+    setHidingAdded(false);
+  }
+
   function openShowHidden(count: number) {
     // Only those hidden one by one: what another hidden term holds stays for its own "Mostra".
     setAct({ kind: "show", target: hiddenTarget, label: p.hiddenOf(count, term.name), switchable: false, keepHeld: true });
@@ -464,6 +484,13 @@ function TermActionsPanel({ term }: { term: CatalogTerm }) {
         { revalidate: true },
       );
     });
+  }
+
+  function undoSaleLabel(state: Extract<SaleState, { kind: "on" }>): string {
+    const back = saleUndoBack(state);
+    if (back.kind === "percent") return p.saleUndoBack(back.percent);
+    if (back.kind === "end") return p.saleUndoBackEnd(back.endsOn ? formatDay(back.endsOn, locale) : null);
+    return p.saleUndo;
   }
 
   function started(view: OperationView) {
@@ -504,7 +531,8 @@ function TermActionsPanel({ term }: { term: CatalogTerm }) {
               </Button>
             ) : (
               <Toggle
-                className={SWITCH_TARGET}
+                // Held by another hidden term, it cannot be switched here: it looks so, not like a switch that is merely off.
+                className={`${SWITCH_TARGET} ${vis.kind === "held" ? "opacity-40" : ""}`}
                 checked={on}
                 disabled={!switchable}
                 onChange={flip}
@@ -523,6 +551,22 @@ function TermActionsPanel({ term }: { term: CatalogTerm }) {
               </PanelIcon>
             }
             title={<Ghost className={GHOST}>{p.showHidden(term.hidden)}</Ghost>}
+          />
+        )}
+        {/* Joined the term after its hide and still showing: hidden with it shortly, or now from here. */}
+        {vis.kind === "hidden" && vis.addedSince > 0 && (
+          <ListItem
+            link
+            linkComponent="button"
+            linkProps={{ type: "button", disabled: hidingAdded, onClick: () => void hideAdded() }}
+            contentClassName="w-full text-start"
+            media={
+              <PanelIcon tone="muted">
+                <EyeOff className="h-[18px] w-[18px]" />
+              </PanelIcon>
+            }
+            title={<span className="text-primary">{hidingAdded ? p.hidingAdded : p.hideAdded(vis.addedSince)}</span>}
+            text={p.hideAddedHint}
           />
         )}
         {vis.kind === "visible" && vis.hiddenHere > 0 && (
@@ -587,9 +631,7 @@ function TermActionsPanel({ term }: { term: CatalogTerm }) {
             {p.saleChange}
           </ActionsButton>
           {sale.kind === "on" && sale.view.undoable && (
-            <ActionsButton onClick={undoSale}>
-              {sale.replaces != null ? p.saleUndoBack(sale.replaces) : p.saleUndo}
-            </ActionsButton>
+            <ActionsButton onClick={undoSale}>{undoSaleLabel(sale)}</ActionsButton>
           )}
           <ActionsButton colors={DANGER_TEXT} onClick={stopSale}>
             {p.saleStop}
@@ -633,7 +675,7 @@ function VisibilityText({
             ? p.visibleHint
             : counts.hidden < counts.count
               ? p.hiddenOneByOne(counts.hidden)
-              : p.hiddenSince(formatTime(new Date().toISOString(), locale))}
+              : p.hiddenSince(formatTime(new Date().toISOString(), locale), counts.count)}
         </Ghost>
       );
     case "visible": {
@@ -660,11 +702,11 @@ function VisibilityText({
         <>
           {state.view.status === "failed"
             ? p.hiddenPartly(state.view.changed, state.view.progress.total)
-            : p.hiddenSince(formatTime(state.view.finishedAt ?? state.view.createdAt, locale))}
+            : p.hiddenSince(formatTime(state.view.finishedAt ?? state.view.createdAt, locale), counts.count)}
         </>
       );
     case "showing":
-      return <>{live(state.view).queued ? p.waiting : p.showing}</>;
+      return <>{live(state.view).queued ? p.waiting : p.showing(counts.count)}</>;
   }
 }
 

@@ -342,6 +342,9 @@ describe("store terms that cannot be read (never a price computed without them)"
     expect([...read.uncertain]).toEqual(["OW-1"]);
     expect(await cache.known(RULES)).toBe(false);
     expect(await cache.skusUnder({ storeCategory: 11 })).toEqual(["OW-1"]);
+    // Counting what a term's margin reaches, on the screen that lists it: the index's own terms.
+    const [listed] = await cache.withListedTerms([product("OW-1")], RULES);
+    expect(listed.storeCategories?.map((t) => t.id)).toEqual([10, 11, 12]);
   });
 
   it("known(): whether the terms the rules need can be read now", async () => {
@@ -352,6 +355,37 @@ describe("store terms that cannot be read (never a price computed without them)"
     expect(await cache.known(RULES)).toBe(true);
     expect(await cache.known(BRAND_RULES)).toBe(false);
     warn.mockRestore();
+  });
+});
+
+describe("termsForFiling (a new product the Publisher files)", () => {
+  it("places the filing's path and brand in their trees, a category made by the publish included", async () => {
+    const { source } = fakeSource([]);
+    const cache = storeTermsCache(source);
+    // 10 › 11 › 99: 99 was created by this very publish, no tree knows it yet.
+    expect(await cache.termsForFiling({ categories: [10, 11, 99], brands: [31] }, RULES)).toEqual({
+      storeCategories: [
+        { id: 10, depth: 0 },
+        { id: 11, depth: 1 },
+        { id: 99, depth: 2 },
+      ],
+      storeBrands: [
+        { id: 30, depth: 0 },
+        { id: 31, depth: 1 },
+      ],
+    });
+  });
+
+  it("nothing to place while no rule is scoped to a store term; null when a needed tree cannot be read", async () => {
+    const { source, failures } = fakeSource([]);
+    const cache = storeTermsCache(source);
+    expect(await cache.termsForFiling({ categories: [10], brands: [] }, [RULES[0]])).toEqual({});
+    failures.category = true;
+    expect(await cache.termsForFiling({ categories: [10, 11], brands: [] }, RULES)).toBeNull();
+    // A brand tree no rule needs does not hold the price.
+    failures.category = false;
+    failures.brand = true;
+    expect(await cache.termsForFiling({ categories: [10, 11], brands: [31] }, RULES)).not.toBeNull();
   });
 });
 

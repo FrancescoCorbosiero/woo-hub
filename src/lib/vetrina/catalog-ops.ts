@@ -18,6 +18,14 @@ export type TermKey = `${"category" | "brand"}:${number}`;
 
 export const MAX_OPERATION_PRODUCTS = 2000;
 
+/**
+ * A whole category's or brand's own hide or sale takes all of its products,
+ * however many: it cannot be narrowed (a part would read as the whole), and
+ * the runner works through it in chunks, one action at a time. The store
+ * index's own ceiling (a full read stops at 50 000).
+ */
+export const MAX_TERM_PRODUCTS = 50_000;
+
 /** How long a finished action can be undone ("Annulla"). A category or brand hidden by one stays undoable while it is hidden: "Mostra" undoes it. */
 export const OPERATION_UNDO_DAYS = 7;
 
@@ -36,6 +44,12 @@ export type OperationInput =
        * their own term's "Mostra".
        */
       keepHeld?: boolean;
+      /**
+       * Optional: put each product back as it was before its hide — "only in
+       * search", "only in the catalog" included — rather than visible
+       * everywhere. The product sheet's switch turned back on.
+       */
+      restore?: boolean;
     }
   | {
       kind: "sale";
@@ -201,9 +215,10 @@ export interface OperationView {
    * owner's newer word stands), products the store refused. A product partly
    * put back counts in each that applies. `held` (optional): products an
    * undone hide left hidden because another whole category or brand hidden
-   * by the owner still holds them — that one's "Mostra" brings them back.
+   * by the owner still holds them — that one's "Mostra" brings them back;
+   * `heldBy` (optional): those terms' names, the most first.
    */
-  undo?: { restored: number; kept: number; failed: number; held?: number } | null;
+  undo?: { restored: number; kept: number; failed: number; held?: number; heldBy?: string[] } | null;
 }
 
 /** A term's state for its screen: hidden by an action, and the sale running on it. */
@@ -222,6 +237,8 @@ export interface TermActionsState {
     operation: OperationView;
     rounding?: SaleRounding;
     replaces?: number | null;
+    /** The last day of the term's sale it took the place of (null: none), when one stands under it. */
+    replacesEndsOn?: string | null;
   } | null;
   /**
    * Optional (added in phase 3): the term's products and how many of them
@@ -230,9 +247,17 @@ export interface TermActionsState {
    * `held`, of the hidden, those the standing hide of another whole category
    * or brand holds, by that term's name (its "Mostra" brings them back, not
    * this term's); `ownSale`, the products on sale on their own — on sale,
-   * and not by the term's standing sale.
+   * and not by the term's standing sale; `addedSince`, under the term's own
+   * hide, the products that joined the term after it and are still listed
+   * (they are hidden with it shortly, or at once from the panel).
    */
-  counts?: { count: number; hidden: number; held?: { term: string; count: number }[]; ownSale?: number };
+  counts?: {
+    count: number;
+    hidden: number;
+    held?: { term: string; count: number }[];
+    ownSale?: number;
+    addedSince?: number;
+  };
 }
 
 /**

@@ -54,39 +54,38 @@ function op(status: OperationView["status"], over: Partial<OperationView> = {}):
 }
 
 describe("the Ricarico row", () => {
-  it("says the term's own margin, else a term above it's, else the standard", () => {
-    expect(rowTitle(state(), "category", m)).toBe("Ricarico: standard (a fasce)");
-    expect(rowTitle(state({ standard: null }), "category", m)).toBe("Ricarico: standard");
-    expect(
-      rowTitle(
-        state({
-          inherited: { term: "Nike", value: { kind: "percent", percent: 25 } },
-        }),
-        "category",
-        m,
-      ),
-    ).toBe("Ricarico: 25% da «Nike»");
+  it("says the term's own margin, else a term above it's, else the standard — one short title, whose under it", () => {
+    expect(rowTitle(state(), m)).toBe("Ricarico: standard");
+    expect(rowText(state(), "category", m)).toBe("Standard a fasce · Vale per 30 prodotti");
+    expect(rowText(state({ standard: null }), "category", m)).toBe("Vale per 30 prodotti");
+    const inherited = state({ inherited: { term: "Nike", value: { kind: "percent", percent: 25 } } });
+    expect(rowTitle(inherited, m)).toBe("Ricarico: 25%");
+    expect(rowText(inherited, "category", m)).toBe("Da «Nike» · Vale per 30 prodotti");
     const own = state({
       own: { kind: "percent", percent: 30 },
       inherited: { term: "Nike", value: { kind: "percent", percent: 25 } },
     });
-    expect(rowTitle(own, "category", m)).toBe("Ricarico di questa categoria: 30%");
-    expect(rowTitle(own, "brand", m)).toBe("Ricarico di questo brand: 30%");
+    expect(rowTitle(own, m)).toBe("Ricarico: 30%");
+    expect(rowText(own, "category", m)).toBe("Di questa categoria · Vale per 30 prodotti");
+    expect(rowText(own, "brand", m)).toBe("Di questo brand · Vale per 30 prodotti");
     expect(plain(marginText({ kind: "fixed", amount: 10 }, m))).toBe("+10 €");
   });
 
   it("never says «standard» when other Hub rules price its products (a catalog brand's +3 €, a family's)", () => {
-    expect(rowTitle(state({ hubRules: 30 }), "brand", m)).toBe("Ricarico: dalle regole dell'Hub");
+    expect(rowTitle(state({ hubRules: 30 }), m)).toBe("Ricarico: regole dell'Hub");
+    expect(rowText(state({ hubRules: 30 }), "brand", m)).toBe("Vale per 30 prodotti");
     // A term above it still decides first: a store term outranks every catalog rule.
-    expect(rowTitle(state({ hubRules: 4, inherited: { term: "Nike", value: { kind: "percent", percent: 25 } } }), "brand", m)).toBe(
-      "Ricarico: 25% da «Nike»",
-    );
+    const above = state({ hubRules: 4, inherited: { term: "Nike", value: { kind: "percent", percent: 25 } } });
+    expect(rowTitle(above, m)).toBe("Ricarico: 25%");
+    expect(rowText(above, "brand", m)).toBe("Da «Nike» · Vale per 30 prodotti");
   });
 
   it("says how many products it applies to, and how many the supplier prices", () => {
-    expect(rowText(state(), m)).toBe("Vale per 30 prodotti");
-    expect(rowText(state({ applies: 1, supplier: 12 }), m)).toBe("Vale per 1 prodotto · 12 col prezzo del fornitore");
-    expect(rowText(state({ applies: 0 }), m)).toBe("Nessun prodotto lo segue");
+    expect(rowText(state({ standard: null }), "category", m)).toBe("Vale per 30 prodotti");
+    expect(rowText(state({ standard: null, applies: 1, supplier: 12 }), "category", m)).toBe(
+      "Vale per 1 prodotto · 12 col prezzo del fornitore",
+    );
+    expect(rowText(state({ standard: null, applies: 0 }), "category", m)).toBe("Nessun prodotto lo segue");
   });
 
   it("shows where a margin can act, and wherever the term has one of its own — so it can be removed", () => {
@@ -94,7 +93,7 @@ describe("the Ricarico row", () => {
     expect(rowShown(state({ priced: 0, supplier: 20, storeOnly: 3 }))).toBe(false);
     const stranded = state({ own: { kind: "percent", percent: 10 }, priced: 0, applies: 0, supplier: 20 });
     expect(rowShown(stranded)).toBe(true);
-    expect(rowText(stranded, m)).toBe("Nessun prodotto col prezzo dell'Hub, per ora");
+    expect(rowText(stranded, "category", m)).toBe("Nessun prodotto col prezzo dell'Hub, per ora");
     // ...and its sheet opens on taking it away, all it can do.
     expect(startMode(stranded)).toBe("standard");
     expect(startMode(state({ own: { kind: "percent", percent: 10 } }))).toBe("set");

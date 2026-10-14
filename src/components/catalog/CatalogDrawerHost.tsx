@@ -38,16 +38,19 @@ function urlWithProduct(sku: string | null): string {
 export function ProductLink({
   sku,
   className,
+  title,
   children,
 }: {
   sku: string;
   className?: string;
+  title?: string;
   children: React.ReactNode;
 }) {
   return (
     <a
       href={`?product=${encodeURIComponent(sku)}`}
       className={className}
+      title={title}
       onClick={(e) => {
         if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
         e.preventDefault();

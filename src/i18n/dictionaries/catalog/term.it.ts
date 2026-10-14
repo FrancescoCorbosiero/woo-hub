@@ -29,6 +29,8 @@ export const termIt = {
 
   panel: {
     automatic: (rule: string) => `Automatica: ${rule}`,
+    /** A rule as the skeleton draws it, unseen: only its length matters. */
+    automaticSample: "con il tag «saldi» e disponibili",
     makeHint: "I prodotti entrano ed escono da soli, secondo una regola: per esempio tutti quelli col tag «saldi».",
     inHomepage: (section: string) => `In homepage: ${section}`,
     notInHomepage: "Non è in homepage",
@@ -45,14 +47,22 @@ export const termIt = {
     /** Hidden by another category or brand the owner hid: that one's switch brings them back. */
     heldBy: (count: number, terms: readonly string[]) =>
       `${count === 1 ? "1 resta nascosto" : `${n(count)} restano nascosti`} da ${quoted(terms)}`,
-    hiding: (done: number, total: number) => `Li nascondo… ${n(done)}/${n(total)}`,
+    hiding: (done: number, total: number) => `${total === 1 ? "Lo nascondo" : "Li nascondo"}… ${n(done)}/${n(total)}`,
     waiting: "In attesa: parte appena finisce l'azione prima.",
-    hiddenSince: (when: string) => `Nascosti da te · ${when}. Riaccendilo e tornano com'erano.`,
+    hiddenSince: (when: string, count = 2): string =>
+      count === 1
+        ? `Nascosto da te · ${when}. Riaccendilo e torna com'era.`
+        : `Nascosti da te · ${when}. Riaccendilo e tornano com'erano.`,
     hiddenPartly: (changed: number, total: number) =>
       `Nascosti in parte: ${n(changed)} su ${n(total)}. Riaccendilo e tornano com'erano.`,
-    showing: "Li rimetto com'erano…",
-    showingAll: (done: number, total: number) => `Li rimetto in vista… ${n(done)}/${n(total)}`,
+    showing: (count = 2): string => (count === 1 ? "Lo rimetto com'era…" : "Li rimetto com'erano…"),
+    showingAll: (done: number, total: number) => `${total === 1 ? "Lo rimetto" : "Li rimetto"} in vista… ${n(done)}/${n(total)}`,
     showHidden: (count: number) => (count === 1 ? "Mostra l'unico nascosto" : `Mostra i ${n(count)} nascosti`),
+    /** Under the term's hide: products that joined it since and still show (the next check hides them). */
+    hideAdded: (count: number) =>
+      count === 1 ? "Nascondi anche quello aggiunto dopo" : `Nascondi anche i ${n(count)} aggiunti dopo`,
+    hideAddedHint: "Arrivati dopo: si nascondono da soli entro pochi minuti, o subito da qui.",
+    hidingAdded: "Li nascondo…",
     hiddenOf: (count: number, name: string) =>
       `${count === 1 ? "1 prodotto nascosto" : `${n(count)} prodotti nascosti`} di «${name}»`,
 
@@ -74,6 +84,8 @@ export const termIt = {
     saleUndo: "Annulla questo saldo",
     /** …which replaced an earlier sale of the term: that one comes back. */
     saleUndoBack: (percent: number) => `Annulla il cambio: torna a −${percent}%`,
+    /** …at the same percent, only its end moved: the earlier end comes back. */
+    saleUndoBackEnd: (day: string | null) => (day ? `Annulla il cambio: di nuovo fino a ${day}` : "Annulla il cambio: di nuovo senza fine"),
     cancel: "Annulla",
     stateFailed: "Non riesco a leggere se è nascosta o in saldo.",
     retry: "Riprova",

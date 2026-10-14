@@ -6,7 +6,7 @@ import { VetrinaError } from "@/server/vetrina/source";
 import { messageOf } from "./live";
 import * as repo from "./repo";
 import { words } from "./words";
-import { runOperation, runUndo, type RunCtx, type Tally } from "./writes";
+import { runOperation, runUndo, sweepTermHides, type RunCtx, type Tally } from "./writes";
 
 /**
  * The catalog's actions run here, in the server process, in the background:
@@ -32,6 +32,8 @@ interface RunnerState {
   running: string | null;
   /** The restart check, once per process. */
   recovered: Promise<void> | null;
+  /** A sweep of the hidden terms' newcomers waiting its turn (one is enough): done when it has run. */
+  sweep?: Promise<void> | null;
 }
 
 const g = globalThis as { __vetrinaOperations?: RunnerState };
@@ -98,6 +100,36 @@ function context(op: VetrinaOperationRow, tally: Tally, write: (t: Tally) => Pro
   return storeClient().then((client) => ({ op, client, tally, step: () => write(tally) }));
 }
 
+/** Kinds whose run or undo can move products into a category: a hidden one hides them too. */
+const MOVES = new Set<VetrinaOperationRow["kind"]>(["categorize", "uncategorize", "pin"]);
+
+/**
+ * Hide what joined a hidden category or brand since its hide (writes.ts
+ * sweepTermHides): queued like an action — never beside one or an undo —
+ * once however often it is asked. Asked after the automatic categories'
+ * check (the index has caught up with the store), and after an action that
+ * moved products between categories.
+ */
+export function queueSweep(): Promise<void> {
+  const s = state();
+  if (s.sweep) return s.sweep;
+  let done!: () => void;
+  const finished = new Promise<void>((resolve) => (done = resolve));
+  s.sweep = finished;
+  enqueue("sweep", async () => {
+    // Asked again from here on: this one has started.
+    s.sweep = null;
+    try {
+      await recover();
+      const hidden = await sweepTermHides(await storeClient());
+      if (hidden > 0) console.log(`[vetrina-ops] ${hidden} product(s) that joined a hidden category or brand hidden with it`);
+    } finally {
+      done();
+    }
+  });
+  return finished;
+}
+
 /** Queue a filed action to run. */
 export function queueRun(id: string): void {
   enqueue(id, async () => {
@@ -108,6 +140,7 @@ export function queueRun(id: string): void {
       const ctx = await context(op, tally, (t) => repo.updateOperation(id, { ...t }));
       await runOperation(ctx);
       await repo.updateOperation(id, { ...tally, status: "done", finishedAt: new Date() });
+      if (MOVES.has(op.kind)) void queueSweep();
     } catch (e) {
       // A write sent before the failure, its answer never heard, may have
       // landed: what was filed counts as changed, so it can still be undone.
@@ -144,6 +177,7 @@ export function queueUndo(id: string, previous: Pick<VetrinaOperationRow, "statu
         total: tally.total,
         error: null,
       });
+      if (MOVES.has(op.kind)) void queueSweep();
     } catch (e) {
       await repo.updateOperation(id, {
         status: previous.status,

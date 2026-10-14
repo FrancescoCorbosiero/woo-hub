@@ -214,15 +214,24 @@ export interface TermShape {
   automatic: boolean;
   /** Rows of homepage sections: "Non è in homepage" counts as one. */
   sections: number;
-  /** It has products: the counts row, and the panel's actions (Visibile nel negozio, Saldo). */
+  /** It has products: the counts row, and the panel's actions (Visibile nel negozio, Saldo, Ricarico). */
   counted: boolean;
+  /** Some of its products hidden, not all: the panel's "Mostra i N nascosti" row. */
+  partlyHidden?: boolean;
   /** The sub-terms' chips. */
   children: boolean;
   /** The other taxonomy's chips (shown when they narrow the list). */
   within: boolean;
 }
 
-const DEFAULT_SHAPE: TermShape = { automatic: false, sections: 1, counted: true, children: false, within: true };
+const DEFAULT_SHAPE: TermShape = {
+  automatic: false,
+  sections: 1,
+  counted: true,
+  partlyHidden: false,
+  children: false,
+  within: true,
+};
 
 // In-memory only, per visit of the app: it is a guess at a layout, nothing to keep.
 const shapes = new Map<string, TermShape>();
@@ -233,6 +242,7 @@ export function shapeOf(term: CatalogTerm): Omit<TermShape, "within"> {
     automatic: term.automatic != null,
     sections: Math.max(1, term.sections.length),
     counted: term.count > 0,
+    partlyHidden: term.hidden > 0 && term.hidden < term.count,
     children: term.children.length > 0,
   };
 }

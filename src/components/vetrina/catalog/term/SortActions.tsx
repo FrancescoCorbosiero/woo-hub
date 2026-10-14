@@ -8,7 +8,9 @@ import { Check, SortArrows } from "./glyphs";
 
 /**
  * "Ordina: Negozio" above a list, and the action sheet it opens. "Negozio" is
- * the shop's own order (menu_order), the one its category pages use.
+ * the store's own order (menu_order, then name). The storefront adds to it:
+ * sold-out products last, and on a category a homepage section shows, that
+ * section's pins first — neither is applied here.
  */
 export function SortActions({ sort, onChange }: { sort: CatalogSort; onChange: (sort: CatalogSort) => void }) {
   const { t } = useI18n();

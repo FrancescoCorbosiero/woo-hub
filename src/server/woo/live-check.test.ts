@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { decideLiveWrites } from "./live-check";
+import { decideLiveWrites, liveRulesFrom } from "./live-check";
+import { emptyOverrides, withVariationPrice } from "@/server/overrides/model";
 import type { ApplyChange } from "./apply";
 
 const change = (over: Partial<ApplyChange> = {}): ApplyChange => ({
@@ -136,5 +137,31 @@ describe("decideLiveWrites — the last look before a live write", () => {
       expect(d.onSale).toHaveLength(1);
       expect(d.kept).toEqual([]);
     });
+  });
+});
+
+describe("liveRulesFrom — a lock that changed after the plan was made", () => {
+  const locked = (price: number) => withVariationPrice(emptyOverrides(), "DD1391-100", "42", price);
+
+  it("a lock set (or moved) since: the plan's price is not written, the stock still is", () => {
+    const rules = liveRulesFrom(locked(199));
+    const d = decideLiveWrites([change({ newStock: 3 })], [live(71, "120.00", null, 1)], rules);
+    expect(d.superseded).toHaveLength(1);
+    expect(d.write).toEqual([change({ newPrice: null, newStock: 3 })]);
+    expect(d.kept).toEqual([]);
+  });
+
+  it("a lock cleared since: the plan's lock price is not written", () => {
+    const d = decideLiveWrites([change({ locked: true, newPrice: 150 })], [live(71, "120.00")], liveRulesFrom(emptyOverrides()));
+    expect(d.superseded).toHaveLength(1);
+    expect(d.write).toEqual([]);
+  });
+
+  it("the same lock the plan priced at is written; so is a rules' price where no lock was or is", () => {
+    const same = decideLiveWrites([change({ locked: true, newPrice: 199 })], [live(71, "120.00")], liveRulesFrom(locked(199)));
+    expect(same.write).toHaveLength(1);
+    const none = decideLiveWrites([change()], [live(71, "120.00")], liveRulesFrom(emptyOverrides()));
+    expect(none.write).toEqual([change()]);
+    expect(none.superseded).toEqual([]);
   });
 });

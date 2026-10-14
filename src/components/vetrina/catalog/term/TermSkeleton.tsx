@@ -128,6 +128,7 @@ function TermTop({ taxonomy, shape }: { taxonomy: CatalogTaxonomy; shape: TermSh
   const { t } = useI18n();
   const v = t.vetrinaCatalog.term;
   const p = v.panel;
+  const m = t.vetrinaCatalog.margins;
   return (
     <>
       <List strong inset className="!mb-5 !mt-3">
@@ -135,7 +136,7 @@ function TermTop({ taxonomy, shape }: { taxonomy: CatalogTaxonomy; shape: TermSh
           (shape.automatic ? (
             <ListItem
               media={tile}
-              title={<Ghost className="line-clamp-2">{p.automatic("con il tag «saldi» e disponibili")}</Ghost>}
+              title={<Ghost className="line-clamp-2">{p.automatic(p.automaticSample)}</Ghost>}
             />
           ) : (
             <ListItem
@@ -158,7 +159,10 @@ function TermTop({ taxonomy, shape }: { taxonomy: CatalogTaxonomy; shape: TermSh
             text={<Ghost>{p.visibleHint}</Ghost>}
             after={<span className={`${box} h-7 w-16 rounded-full`} />}
           />
+          {shape.partlyHidden && <ListItem media={tile} title={<Ghost>{p.showHidden(2)}</Ghost>} />}
           <ListItem media={tile} title={<Ghost>{p.saleStart}</Ghost>} text={<Ghost>{p.saleHint}</Ghost>} />
+          {/* The margin row (MarginRow) draws its ghost from the first frame on a term with products. */}
+          <ListItem link linkComponent="div" media={tile} title={<Ghost>{m.row.standard}</Ghost>} text={<Ghost>{m.row.loading}</Ghost>} />
         </List>
       )}
 

@@ -607,8 +607,12 @@ export interface OperationSectionRecord {
   title: string;
   before: { pin: number[]; exclude: number[] };
   after: { pin: number[]; exclude: number[] };
-  /** The section's attrsHash right after the write: an undo over anything newer is refused. */
-  attrsHash: string;
+  /**
+   * The section's attrsHash right after the write: an undo over anything
+   * newer is refused. Null while the write's answer is not in (filed before
+   * the write; a lost answer leaves it so): the undo then goes by the pins.
+   */
+  attrsHash: string | null;
 }
 
 /** How an action's undo went (OperationView.undo). */
@@ -628,6 +632,12 @@ export interface OperationLabelParams {
   category?: string;
   section?: string;
   percent?: number;
+  /**
+   * A whole term's sale that only moved its end ("Cambia lo sconto" at the
+   * same percent): its new last day (YYYY-MM-DD), or null for none. Absent
+   * on every other action.
+   */
+  endsOnly?: { endsOn: string | null };
 }
 
 /**
@@ -662,6 +672,10 @@ export const vetrinaOperations = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     undoneAt: timestamp("undone_at", { withTimezone: true }),
+    // A whole term's hide that stopped hiding anything (its products shown
+    // another way) or that a newer hide of the term took over from: closed,
+    // it never stands again, whatever its products do later.
+    endedAt: timestamp("ended_at", { withTimezone: true }),
   },
   (t) => [
     index("vetrina_operations_created_idx").on(t.createdAt),
@@ -689,8 +703,11 @@ export const vetrinaOperationItems = pgTable(
     variationId: integer("variation_id"),
     // 'margin' is no product's value: a category's or brand's margin files
     // its pricing rule before and after here, on product 0 (operations/repo.ts
-    // fileMarginRecord). The column is plain text: the list is TypeScript's only.
-    field: text("field", { enum: ["visibility", "tags", "categories", "sale", "margin"] }).notNull(),
+    // fileMarginRecord). 'member' is none either: a product a whole term's
+    // hide found already hidden — nothing to put back, but no newcomer to the
+    // term either (operations/standing.ts). The column is plain text: the
+    // list is TypeScript's only.
+    field: text("field", { enum: ["visibility", "tags", "categories", "sale", "margin", "member"] }).notNull(),
     before: jsonb("before").$type<unknown>(),
     after: jsonb("after").$type<unknown>(),
   },

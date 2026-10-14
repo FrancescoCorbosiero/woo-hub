@@ -1,0 +1,1 @@
+ALTER TABLE "vetrina_operations" ADD COLUMN "ended_at" timestamp with time zone;

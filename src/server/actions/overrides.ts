@@ -1,7 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import { getOverridesForWrite, saveOverrides } from "@/server/overrides/repo";
+import { updateOverrides } from "@/server/overrides/repo";
 import { supersedeStoreEdits } from "@/server/sync/ledger";
 import {
   withGlobalSaleRule,
@@ -36,8 +36,7 @@ export async function setGlobalSaleRule(
   const parsed = GlobalSaleRuleSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "invalid input" };
   try {
-    const current = await getOverridesForWrite();
-    await saveOverrides(withGlobalSaleRule(current, parsed.data.followSaleRule));
+    await updateOverrides((current) => withGlobalSaleRule(current, parsed.data.followSaleRule));
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -57,8 +56,7 @@ export async function setProductSaleRule(
   const parsed = SaleRuleSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "invalid input" };
   try {
-    const current = await getOverridesForWrite();
-    await saveOverrides(withProductSaleRule(current, parsed.data.sku, parsed.data.followSaleRule));
+    await updateOverrides((current) => withProductSaleRule(current, parsed.data.sku, parsed.data.followSaleRule));
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -79,8 +77,7 @@ export async function setProductOwnerPin(
   const parsed = OwnerPinSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "invalid input" };
   try {
-    const current = await getOverridesForWrite();
-    await saveOverrides(withProductOwner(current, parsed.data.sku, parsed.data.owner));
+    await updateOverrides((current) => withProductOwner(current, parsed.data.sku, parsed.data.owner));
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -111,11 +108,9 @@ export async function setProductManualPrices(
   const parsed = BulkManualPricesSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "invalid input" };
   try {
-    let next = await getOverridesForWrite();
-    for (const p of parsed.data.prices) {
-      next = withVariationPrice(next, parsed.data.parentSku, p.euSize, p.price);
-    }
-    await saveOverrides(next);
+    await updateOverrides((current) =>
+      parsed.data.prices.reduce((next, p) => withVariationPrice(next, parsed.data.parentSku, p.euSize, p.price), current),
+    );
     await supersede(parsed.data.parentSku, parsed.data.prices.map((p) => p.euSize));
     return { ok: true };
   } catch (e) {
@@ -137,8 +132,7 @@ export async function setVariationManualPrice(
   const parsed = ManualPriceSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "invalid input" };
   try {
-    const current = await getOverridesForWrite();
-    await saveOverrides(
+    await updateOverrides((current) =>
       withVariationPrice(current, parsed.data.parentSku, parsed.data.euSize, parsed.data.price),
     );
     await supersede(parsed.data.parentSku, [parsed.data.euSize]);

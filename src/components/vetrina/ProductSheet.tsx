@@ -65,7 +65,7 @@ export function ProductSheet({
   confirmLeave?: () => boolean;
   demo: boolean;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const mountPoint = useSheetMount();
   const standalone = useStandalone();
   const p = t.vetrina.product;
@@ -208,14 +208,16 @@ export function ProductSheet({
 
   /**
    * An action from "Nel negozio" ended (or its "Annulla" did): the screen
-   * behind re-reads what it shows of the product. The sizes above stay as
-   * they are: a sale writes sale prices, never the prices shown there, and
-   * reading them again would drop what the owner is typing.
+   * behind re-reads the product's card. Its lists and the section editor
+   * hear of every action that ends on their own (useOperationSettled):
+   * telling them again here made the editor read the section twice, and say
+   * it had changed when nothing had. The sizes above stay as they are: a
+   * sale writes sale prices, never the prices shown there, and reading them
+   * again would drop what the owner is typing.
    */
   const acted = (view: OperationView) => {
     if (!shown) return;
     if (cardShows(view.kind)) onPricesChanged(shown.id);
-    onTagsChanged?.();
   };
 
   const hubLink = shown?.sku && !demo && !standalone ? `/?product=${encodeURIComponent(shown.sku)}` : null;
@@ -234,7 +236,7 @@ export function ProductSheet({
       r.kind === "percent" && r.markupPercent != null
         ? ` · ${r.markupPercent}%`
         : r.kind === "fixed" && r.markupFixed != null
-          ? ` · +${formatEuro(r.markupFixed)}`
+          ? ` · ${t.vetrinaCatalog.margins.value.fixed(r.markupFixed)}`
           : "";
     return p.rule(`${scope}${amount}`);
   };
@@ -259,7 +261,7 @@ export function ProductSheet({
                   <div className="mt-0.5 font-mono text-[12px] opacity-50">{shown.sku}</div>
                   <div className="mt-1 text-[14px]">
                     <span className="opacity-60">{p.priceOnSite}:</span>{" "}
-                    <span className="font-semibold tabular-nums">{formatCardPrice(shown)}</span>
+                    <span className="font-semibold tabular-nums">{formatCardPrice(shown, locale)}</span>
                   </div>
                 </div>
               </div>
@@ -307,7 +309,8 @@ export function ProductSheet({
                     </div>
                     {data.storeTermsUnknown && (
                       <p role="status" className="mb-2 px-1 text-[13px] leading-snug text-amber-700 dark:text-amber-400">
-                        {p.storeTermsUnknown}
+                        {/* On the demo shop its categories and brands are not the real shop's: said so, not as a failure. */}
+                        {demo ? p.storeTermsDemo : p.storeTermsUnknown}
                       </p>
                     )}
                     <div className="mb-1 flex items-center justify-between px-1">
@@ -343,15 +346,15 @@ export function ProductSheet({
                               <span className="w-14 shrink-0 text-[17px] font-semibold">{v.euSize ?? v.sizeLabel}</span>
                               <span className="min-w-0 flex-1 text-[12px] leading-tight">
                                 <span className="block opacity-50">
-                                  {p.market} {formatEuro(v.ask)}
+                                  {p.market} {formatEuro(v.ask, locale)}
                                 </span>
                                 <span className="block opacity-50">
-                                  {p.computed} {formatEuro(v.proposed)}
+                                  {p.computed} {formatEuro(v.proposed, locale)}
                                 </span>
-                                {below && <span className="block text-amber-700 dark:text-amber-400">{p.belowMarket(formatEuro(v.ask))}</span>}
+                                {below && <span className="block text-amber-700 dark:text-amber-400">{p.belowMarket(formatEuro(v.ask, locale))}</span>}
                                 {v.storeEdit && v.euSize && (
                                   <span className="mt-0.5 block text-amber-700 dark:text-amber-400">
-                                    <span className="font-semibold">{p.storeEdit(formatEuro(v.storeEdit.storePrice))}</span>
+                                    <span className="font-semibold">{p.storeEdit(formatEuro(v.storeEdit.storePrice, locale))}</span>
                                     <span className="mt-0.5 flex gap-3">
                                       <button
                                         type="button"
@@ -415,7 +418,7 @@ export function ProductSheet({
                       name={shown.name}
                       stockStatus={shown.stockStatus}
                       onSale={shown.onSale}
-                      price={shown.price != null ? formatCardPrice(shown) : undefined}
+                      price={shown.price != null ? formatCardPrice(shown, locale) : undefined}
                       refreshKey={moved}
                       onLeave={onClose}
                       confirmLeave={confirmLeave}

@@ -7,7 +7,11 @@
  * source of truth (see ./it.ts).
  */
 
-import { MAX_OPERATION_PRODUCTS } from "@/lib/vetrina/catalog-ops";
+import { MAX_OPERATION_PRODUCTS, MAX_TERM_PRODUCTS } from "@/lib/vetrina/catalog-ops";
+
+/** A sale's last day as the owner reads it: "31 ottobre". */
+const longDay = (day: string) =>
+  new Intl.DateTimeFormat("it-IT", { day: "numeric", month: "long", timeZone: "UTC" }).format(new Date(`${day}T00:00:00Z`));
 
 /** A count as the owner reads it: "1.234". */
 const n = (count: number) => count.toLocaleString("it-IT");
@@ -24,6 +28,8 @@ function nameList(names: readonly string[], total = names.length): string {
 }
 
 export const opsIt = {
+  /** A price as the owner reads it: "102,99 €" (in English, "€102.99"). */
+  money: (amount: number): string => new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(amount),
   products,
   nameList,
 
@@ -34,6 +40,9 @@ export const opsIt = {
     show: (count: number) => agreed(count, "prodotto di nuovo visibile", "prodotti di nuovo visibili"),
     /** `what`: the whole term's name, or the products' count. */
     sale: (percent: number, what: string) => `Saldo −${percent}% · ${what}`,
+    /** The same discount, another last day: what "Cambia lo sconto" did when only the end moved. */
+    saleEnds: (percent: number, what: string, endsOn: string | null) =>
+      `Saldo −${percent}% · ${what}: ${endsOn ? `ora fino al ${longDay(endsOn)}` : "ora senza fine"}`,
     unsale: (what: string) => `Saldo tolto · ${what}`,
     tag: (tag: string, count: number) => `Tag «${tag}» a ${products(count)}`,
     untag: (tag: string, count: number) => `Tag «${tag}» tolto da ${products(count)}`,
@@ -88,6 +97,8 @@ export const opsIt = {
     pinned: (position: number) => `#${position} fissato`,
     shown: (position: number) => `#${position}`,
     notShown: "Non in vista",
+    until: (day: string) => `fino al ${longDay(day)}`,
+    noEnd: "senza fine",
     addedTo: (category: string) => `In «${category}», poi fissato`,
   },
 
@@ -112,7 +123,15 @@ export const opsIt = {
       `${count === 1 ? "1 resta" : `${n(count)} restano`} senza categoria: WooCommerce ${count === 1 ? "lo mette" : "li mette"} in quella predefinita.`,
     newTag: (tag: string) => `Il tag «${tag}» non c'è ancora: lo creo.`,
     categoryAdded: (count: number, category: string) =>
-      `${count === 1 ? "1 prodotto non è" : `${n(count)} prodotti non sono`} in «${category}»: ${count === 1 ? "lo aggiungo" : "li aggiungo"}, così si vede nella sezione.`,
+      `${count === 1 ? "1 prodotto non è" : `${n(count)} prodotti non sono`} in «${category}»: ${count === 1 ? "lo aggiungo, così si vede" : "li aggiungo, così si vedono"} nella sezione.`,
+    /** Products put into a category that is (or sits under) a hidden one: hidden with it. */
+    /** Products a category move puts under another margin (a category's or brand's): repriced right after. */
+    marginMoves: (count: number) =>
+      count === 1
+        ? "1 prodotto cambia ricarico con la categoria: il suo prezzo si aggiorna subito dopo."
+        : `${n(count)} prodotti cambiano ricarico con la categoria: il loro prezzo si aggiorna subito dopo.`,
+    intoHidden: (count: number, term: string) =>
+      `«${term}» non è visibile nel negozio: ${count === 1 ? "anche il prodotto che aggiungo viene nascosto" : `anche i ${n(count)} prodotti che aggiungo vengono nascosti`}.`,
     shownAgain: (count: number) =>
       `${count === 1 ? "1 era nascosto" : `${n(count)} erano nascosti`} da questa sezione: ${count === 1 ? "torna" : "tornano"} a vedersi.`,
     dropped: (count: number, max: number) =>
@@ -145,6 +164,9 @@ export const opsIt = {
   error: {
     tooMany: (total: number) =>
       `Sono ${n(total)} prodotti: al massimo ${n(MAX_OPERATION_PRODUCTS)} alla volta. Restringi con i filtri.`,
+    /** A whole term's own action over more products than the store index holds: it cannot be narrowed. */
+    termTooBig: (total: number) =>
+      `Sono ${n(total)} prodotti: più di quanti il catalogo ne tiene (${n(MAX_TERM_PRODUCTS)}). Agisci su una sottocategoria alla volta.`,
     empty: "Nessun prodotto scelto.",
     alreadyHidden: (term: string) => `I prodotti di «${term}» sono già nascosti: per rimetterli in vista usa «Mostra».`,
     automatic: (category: string) => `«${category}» è automatica: i suoi prodotti li decide la regola.`,

@@ -20,6 +20,7 @@ import { ErrorState } from "./ErrorState";
 import { railHealth } from "./rail-health";
 import { FieldsSheet } from "./FieldsSheet";
 import { ActivityLink } from "./catalog/act/ActivityLink";
+import { useOperationSettled } from "./catalog/act/operations-context";
 import { Warning } from "./catalog/act/icons";
 import { railCatalogHref } from "./catalog/sheet/links";
 import { TabbarSpacer } from "./catalog/TabbarSpacer";
@@ -44,6 +45,10 @@ export function HomeScreen({ result }: { result: VetrinaResult<VetrinaHome> }) {
   const { t } = useI18n();
   const router = useRouter();
   const v = t.vetrina;
+  // An action that ended — or its "Annulla", from the log this tab opens — may have moved the page:
+  // a pin (a new revision of the homepage, so a block saved from the old one would be refused), a
+  // product hidden or put on sale (the cards' health line and prices). Read the page again.
+  useOperationSettled(() => router.refresh());
 
   // A block's texts, edited in a sheet and saved straight to the site.
   const [editingPath, setEditingPath] = React.useState<string | null>(null);
@@ -76,14 +81,12 @@ export function HomeScreen({ result }: { result: VetrinaResult<VetrinaHome> }) {
     <Page>
       <HomeNavbar
         subtitle={result.ok && result.data.source === "fixture" ? v.demo : undefined}
-        right={
-          <>
-            <ActivityLink />
-            <KLink iconOnly onClick={() => router.refresh()} aria-label={v.refresh}>
-              <Refresh className="h-5 w-5" />
-            </KLink>
-          </>
+        refresh={
+          <KLink iconOnly onClick={() => router.refresh()} aria-label={v.refresh}>
+            <Refresh className="h-5 w-5" />
+          </KLink>
         }
+        right={<ActivityLink />}
       />
 
       {!result.ok ? (
@@ -135,7 +138,7 @@ export function HomeScreen({ result }: { result: VetrinaResult<VetrinaHome> }) {
  * to the Hub (not on the Vetrina's own address) and, folded, a title that
  * stays clear of the side buttons.
  */
-function HomeNavbar({ subtitle, right }: { subtitle?: string; right: React.ReactNode }) {
+function HomeNavbar({ subtitle, refresh, right }: { subtitle?: string; refresh: React.ReactNode; right: React.ReactNode }) {
   const { t } = useI18n();
   // On the Vetrina's own address the operator Hub is not served: no way back to it.
   const standalone = useStandalone();
@@ -146,16 +149,20 @@ function HomeNavbar({ subtitle, right }: { subtitle?: string; right: React.React
       centerTitle
       title={t.vetrinaCatalog.home.tabs.homepage}
       subtitle={subtitle}
-      // Folded, the small title stays clear of the side buttons (two on the right: the log, refresh).
-      titleClassName={`truncate ${standalone ? "max-w-[calc(100%-200px)]" : "max-w-[calc(100%-224px)]"}`}
+      // Folded, the small title stays clear of the side buttons (Hub and refresh on the left, the log on the right).
+      titleClassName={`truncate ${standalone ? "max-w-[calc(100%-176px)]" : "max-w-[calc(100%-272px)]"}`}
       subtitleClassName="truncate"
+      // Refresh on the left, beside the way back, as on the Catalogo tab: switching tabs never moves it.
       left={
-        standalone ? undefined : (
-          <KLink href="/" component="a" className="gap-0.5">
-            <ChevronLeft className="h-5 w-5" />
-            {t.vetrina.backToHub}
-          </KLink>
-        )
+        <>
+          {!standalone && (
+            <KLink href="/" component="a" className="gap-0.5 !px-2">
+              <ChevronLeft className="h-5 w-5" />
+              {t.vetrina.backToHub}
+            </KLink>
+          )}
+          {refresh}
+        </>
       }
       right={right}
     />
@@ -174,14 +181,12 @@ export function HomeScreenSkeleton() {
   return (
     <Page>
       <HomeNavbar
-        right={
-          <>
-            <ActivityLink />
-            <KLink iconOnly aria-label={t.vetrina.refresh}>
-              <Preloader className="!h-5 !w-5" />
-            </KLink>
-          </>
+        refresh={
+          <KLink iconOnly aria-label={t.vetrina.refresh}>
+            <Preloader className="!h-5 !w-5" />
+          </KLink>
         }
+        right={<ActivityLink />}
       />
       <div aria-hidden className="space-y-3 px-4 pb-1 pt-1 motion-safe:animate-pulse">
         <div className="space-y-2 px-1 py-0.5">

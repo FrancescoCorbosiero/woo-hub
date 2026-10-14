@@ -252,6 +252,9 @@ export const it = {
   product: {
     exactMatch: "match esatto",
     noSku: "(nessuno SKU)",
+    /** Opens the product drawer: sizes and asks, locks, the price source, a re-sync. */
+    open: "Scheda",
+    openHint: "Apri la scheda del prodotto: taglie e prezzi, prezzi bloccati, fonte del prezzo",
     variants: (n: number) => `${n} varianti`,
     sel: (a: number, b: number) => `${a}/${b} sel`,
     headerSize: "Taglia (EU)",
@@ -1046,7 +1049,8 @@ export const it = {
       remove: "Togli la condizione",
       fields: {
         tag: "Tag",
-        brand: "Marchio",
+        // "Brand", as the Vetrina says it everywhere (its Categorie | Brand, the filters, the product sheet).
+        brand: "Brand",
         category: "Categoria",
         attribute: "Attributo",
         title: "Nome del prodotto",
@@ -1145,7 +1149,7 @@ export const it = {
     },
     words: {
       tag: { is: (v: string) => `tag «${v}»`, isNot: (v: string) => `senza il tag «${v}»` },
-      brand: { is: (v: string) => `marchio ${v}`, isNot: (v: string) => `marchio diverso da ${v}` },
+      brand: { is: (v: string) => `brand ${v}`, isNot: (v: string) => `brand diverso da ${v}` },
       category: { is: (v: string) => `in «${v}»`, isNot: (v: string) => `non in «${v}»` },
       attribute: {
         is: (name: string, v: string) => `${name}: ${v}`,
@@ -1580,6 +1584,8 @@ export const it = {
         `«${name}» (${taxonomy === "category" ? "categoria" : "brand"} del negozio)`,
       storeTermsUnknown:
         "Ora non riesco a leggere categorie e brand del negozio: questi prezzi potrebbero non tenere conto del loro ricarico. Finché non li rileggo, i prezzi di questo prodotto sul sito restano come sono.",
+      storeTermsDemo:
+        "Negozio dimostrativo: le sue categorie e i suoi brand non sono quelli del negozio vero, quindi qui i prezzi non tengono conto del loro ricarico.",
       belowMarket: (ask: string) => `Sotto il prezzo di mercato (${ask})`,
       storeEdit: (price: string) => `Cambiato su WordPress: ${price}`,
       storeEditKeep: "Tienilo",
@@ -1626,16 +1632,17 @@ export const it = {
       delete: "Togli la regola",
       deleteConfirm:
         "Togliere la regola? La categoria resta com'è, con i prodotti che ha adesso: da quel momento la riempi a mano.",
-      deleted: "Regola tolta: la sezione ora si riempie a mano.",
-      applying: "Aggiorno la sezione…",
+      // Worded around the category: the sheet opens from its catalog screen too, where no section may show it.
+      deleted: "Regola tolta: la categoria ora si riempie a mano.",
+      applying: "Aggiorno la categoria…",
       applied: (n: number) =>
         n === 0
           ? "Regola salvata: nessun prodotto da spostare."
           : n === 1
             ? "Regola salvata: 1 prodotto spostato."
             : `Regola salvata: ${n} prodotti spostati.`,
-      savedPaused: "Regola salvata in pausa: la sezione non cambia.",
-      slow: "Regola salvata: la sezione si aggiorna tra poco.",
+      savedPaused: "Regola salvata in pausa: la categoria non cambia.",
+      slow: "Regola salvata: la categoria si aggiorna tra poco.",
       heldHint: "L'ultimo controllo ha trovato un cambiamento grande e aspetta la tua conferma.",
       confirm: "Conferma e applica",
       loading: "Carico…",

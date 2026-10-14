@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { Range } from "konsta/react";
+import { useRangeThumbFix } from "./range-thumb";
 import { useI18n } from "@/i18n/provider";
 import type { OperationInput, OperationTarget, SaleRounding, TermKey } from "@/lib/vetrina/catalog-ops";
 import { endChoiceFor, endsOnFor, formatDay, isoDay, type EndChoice } from "./model";
@@ -47,8 +48,9 @@ export interface SaleSheetProps extends ActSheetProps {
 
 const PRESETS = [10, 20, 30, 40, 50] as const;
 // The date, at the end of its row as iOS Settings puts a value; the phone's dark date picker in dark mode.
+/** Room for a whole date at 16px ("31/10/2026" and the picker's mark) on a 320px phone, beside its short label. */
 const DATE_FIELD =
-  "h-11 min-w-0 flex-1 appearance-none bg-transparent pe-3 text-end text-[16px] outline-none focus-visible:!outline-none dark:[color-scheme:dark] [&::-webkit-date-and-time-value]:text-end";
+  "h-11 min-w-[9.5rem] flex-1 appearance-none bg-transparent pe-3 text-end text-[16px] outline-none focus-visible:!outline-none dark:[color-scheme:dark] [&::-webkit-date-and-time-value]:text-end";
 const MIN = 5;
 const MAX = 90;
 const STEP = 5;
@@ -89,6 +91,8 @@ function SaleContent({
   const [picked, setPicked] = React.useState(() => endChoiceFor(startEndsOn, today).picked);
   const rangeId = React.useId();
   const dateId = React.useId();
+  // The slider's thumb where its value is from the first frame (Konsta's Range needs a nudge).
+  useRangeThumbFix(mode);
 
   const endsOn = endsOnFor(end, today, picked || null);
   const filed = termKey ? { termKey } : {};
@@ -188,7 +192,7 @@ function SaleContent({
               {end === "pick" && (
                 <label htmlFor={dateId} className="mt-2 flex min-h-11 items-center gap-3 rounded-xl bg-white ps-3 dark:bg-[#2c2c2e]">
                   {/* Said beside the field: an empty date field on an iPhone shows nothing at all. */}
-                  <span className="shrink-0 text-[15px] opacity-60">{s.pickLabel}</span>
+                  <span className="min-w-0 truncate text-[15px] opacity-60">{s.pickLabel}</span>
                   <input
                     id={dateId}
                     type="date"

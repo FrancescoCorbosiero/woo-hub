@@ -1,7 +1,7 @@
 import "server-only";
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql, type SQL } from "drizzle-orm";
 import type { ScopedPricingRule } from "@core/config";
-import type { OperationInput, OperationKind } from "@/lib/vetrina/catalog-ops";
+import { OPERATION_UNDO_DAYS, type OperationInput, type OperationKind } from "@/lib/vetrina/catalog-ops";
 import { db } from "@/server/db/client";
 import { rowsOf } from "@/server/db/rows";
 import {
@@ -85,25 +85,84 @@ export async function termOperationRows(termKey: string, since: Date | null = nu
     .limit(limit);
 }
 
+/** A whole term's hide that may still stand (plan.ts, stands()): not undone, not closed, not a run that changed nothing. */
+const mayStand = (): SQL =>
+  and(
+    eq(vetrinaOperations.kind, "hide"),
+    isNotNull(vetrinaOperations.termKey),
+    isNull(vetrinaOperations.undoneAt),
+    isNull(vetrinaOperations.endedAt),
+    or(ne(vetrinaOperations.status, "failed"), sql`${vetrinaOperations.changed} > 0`),
+  )!;
+
 /**
- * The hides of a whole term that may still stand (plan.ts, stands()),
- * newest first: what an undone hide checks before showing a product again.
+ * The hides of a whole term that may still stand, newest first: what an
+ * undone hide checks before showing a product again.
  */
 export async function termHideRows(since: Date | null = null): Promise<VetrinaOperationRow[]> {
-  const op = vetrinaOperations;
   return db
     .select()
-    .from(op)
+    .from(vetrinaOperations)
+    .where(and(mayStand(), from(since)))
+    .orderBy(desc(vetrinaOperations.createdAt));
+}
+
+/**
+ * One term's hides that may still stand, newest first — read on their own,
+ * not through the term's last 50 actions: a term whose discount changed
+ * often never pushes its hide out of view.
+ */
+export async function termHides(termKey: string, since: Date | null = null): Promise<VetrinaOperationRow[]> {
+  return db
+    .select()
+    .from(vetrinaOperations)
+    .where(and(mayStand(), eq(vetrinaOperations.termKey, termKey), from(since)))
+    .orderBy(desc(vetrinaOperations.createdAt));
+}
+
+/** Close a whole term's hide for good (see the column): it never stands again. */
+export async function endOperation(id: string): Promise<void> {
+  await db
+    .update(vetrinaOperations)
+    .set({ endedAt: new Date() })
+    .where(and(eq(vetrinaOperations.id, id), isNull(vetrinaOperations.endedAt), isNull(vetrinaOperations.undoneAt)));
+}
+
+/** A new hide of the term starts: every earlier one is over (none still hid anything, or the new one is refused). */
+export async function endOtherTermHides(termKey: string, exceptId: string): Promise<void> {
+  await db
+    .update(vetrinaOperations)
+    .set({ endedAt: new Date() })
+    .where(and(mayStand(), eq(vetrinaOperations.termKey, termKey), ne(vetrinaOperations.id, exceptId)));
+}
+
+/**
+ * Of these products, those a hide NEWER than `op` hid and still stands for:
+ * that hide's own "Annulla" brings them back, an older hide's undo leaves
+ * them alone (the owner's later word).
+ */
+export async function hiddenSinceBy(op: VetrinaOperationRow, ids: readonly number[]): Promise<Set<number>> {
+  if (ids.length === 0) return new Set();
+  const o = vetrinaOperations;
+  const i = vetrinaOperationItems;
+  const rows = await db
+    .selectDistinct({ productId: i.productId })
+    .from(i)
+    .innerJoin(o, eq(o.id, i.operationId))
     .where(
       and(
-        eq(op.kind, "hide"),
-        isNotNull(op.termKey),
-        isNull(op.undoneAt),
-        or(ne(op.status, "failed"), sql`${op.changed} > 0`),
-        from(since),
+        eq(i.field, "visibility"),
+        sql`${i.after} = '"hidden"'::jsonb`,
+        inArray(i.productId, [...ids]),
+        eq(o.kind, "hide"),
+        ne(o.id, op.id),
+        sql`${o.createdAt} > ${op.createdAt.toISOString()}::timestamptz`,
+        isNull(o.undoneAt),
+        isNull(o.endedAt),
+        or(inArray(o.status, ["running", "done", "undoing"]), and(eq(o.status, "failed"), sql`${o.changed} > 0`)),
       ),
-    )
-    .orderBy(desc(op.createdAt));
+    );
+  return new Set(rows.map((r) => r.productId));
 }
 
 export type OperationUpdate = Partial<
@@ -112,6 +171,15 @@ export type OperationUpdate = Partial<
     "status" | "done" | "total" | "changed" | "failed" | "error" | "finishedAt" | "undoneAt" | "undo"
   >
 > & { section?: OperationSectionRecord | null };
+
+/** A hide's count of products it hid grows: its term's newcomers, hidden with it (standing.ts). */
+export async function addChanged(id: string, n: number): Promise<void> {
+  if (n <= 0) return;
+  await db
+    .update(vetrinaOperations)
+    .set({ changed: sql`${vetrinaOperations.changed} + ${n}` })
+    .where(eq(vetrinaOperations.id, id));
+}
 
 export async function updateOperation(id: string, set: OperationUpdate): Promise<void> {
   if (Object.keys(set).length === 0) return;
@@ -183,6 +251,60 @@ export async function setItemAfter(operationId: string, productId: number, field
     );
 }
 
+/**
+ * What each of these products was before the hide that holds it now — the
+ * newest standing hide that filed it: "visible", "search", "catalog". A
+ * product no standing hide filed is left out.
+ */
+export async function visibilityBeforeHide(ids: readonly number[]): Promise<Map<number, string>> {
+  const out = new Map<number, string>();
+  if (ids.length === 0) return out;
+  const o = vetrinaOperations;
+  const i = vetrinaOperationItems;
+  const rows = await db
+    .select({ productId: i.productId, before: i.before })
+    .from(i)
+    .innerJoin(o, eq(o.id, i.operationId))
+    .where(
+      and(
+        eq(i.field, "visibility"),
+        sql`${i.after} = '"hidden"'::jsonb`,
+        inArray(i.productId, [...ids]),
+        eq(o.kind, "hide"),
+        isNull(o.undoneAt),
+        isNull(o.endedAt),
+        inArray(o.status, ["done", "failed"]),
+      ),
+    )
+    .orderBy(desc(o.createdAt), desc(i.id));
+  for (const r of rows) {
+    if (!out.has(r.productId) && typeof r.before === "string") out.set(r.productId, r.before);
+  }
+  return out;
+}
+
+/** A sale size filed again: planned once more from a regular price that moved before its write landed. */
+export async function setSaleItem(
+  operationId: string,
+  productId: number,
+  variationId: number | null,
+  before: unknown,
+  after: unknown,
+): Promise<void> {
+  const i = vetrinaOperationItems;
+  await db
+    .update(i)
+    .set({ before, after })
+    .where(
+      and(
+        eq(i.operationId, operationId),
+        eq(i.productId, productId),
+        eq(i.field, "sale"),
+        variationId == null ? isNull(i.variationId) : eq(i.variationId, variationId),
+      ),
+    );
+}
+
 /** The products an action filed a value of `field` for. */
 export async function filedProducts(operationId: string, field: ItemField): Promise<number[]> {
   const rows = await db
@@ -192,12 +314,23 @@ export async function filedProducts(operationId: string, field: ItemField): Prom
   return rows.map((r) => r.productId);
 }
 
-/** How many products an action filed anything for: written, or sent with no answer heard. */
+/** Every product a whole term's hide has met: those it hid, and those it found hidden already ('member'). */
+export async function metProducts(operationId: string): Promise<Set<number>> {
+  const rows = await db
+    .selectDistinct({ productId: vetrinaOperationItems.productId })
+    .from(vetrinaOperationItems)
+    .where(
+      and(eq(vetrinaOperationItems.operationId, operationId), inArray(vetrinaOperationItems.field, ["visibility", "member"])),
+    );
+  return new Set(rows.map((r) => r.productId));
+}
+
+/** How many products an action filed a value for: written, or sent with no answer heard. */
 export async function filedCount(operationId: string): Promise<number> {
   const [row] = await db
     .select({ count: sql<number>`count(distinct ${vetrinaOperationItems.productId})::int` })
     .from(vetrinaOperationItems)
-    .where(eq(vetrinaOperationItems.operationId, operationId));
+    .where(and(eq(vetrinaOperationItems.operationId, operationId), ne(vetrinaOperationItems.field, "member")));
   return row?.count ?? 0;
 }
 
@@ -261,7 +394,7 @@ export async function listItems(operationId: string): Promise<VetrinaOperationIt
  * so they count as changed — and the action stays undoable. Undoing a value
  * that was never written finds it as it was, and leaves it.
  */
-const filedSql = sql<number>`(select count(distinct i.product_id) from ${vetrinaOperationItems} i where i.operation_id = ${vetrinaOperations.id})`;
+const filedSql = sql<number>`(select count(distinct i.product_id) from ${vetrinaOperationItems} i where i.operation_id = ${vetrinaOperations.id} and i.field <> 'member')`;
 
 /**
  * After a restart: every action left running (or undoing) was cut off with
@@ -291,19 +424,42 @@ export async function markInterrupted(messages: { run: string; undo: string }): 
 /**
  * Drop what is older than the log keeps — but never an action filed under a
  * whole term that still stands: plan.ts's keptForTerm(), said in SQL (a term
- * key, not a margin, not undone, and not a run that failed before changing
- * anything). Its hide's items are what "Mostra" puts back; its sales, and
- * their ends, are what the term's screen reads.
+ * key, not a margin, not undone, not closed, and not a run that failed
+ * before changing anything). Its hide's items are what "Mostra" puts back;
+ * its sales, and their ends, are what the term's screen reads.
+ *
+ * Except what the screen can no longer reach: the term's sales and ends of
+ * sale filed before an end that is past its undo — an end of sale ("Togli
+ * il saldo" on the whole term), or a sale whose last day is gone. The
+ * screen stops at that end (plan.ts standingSales), and nothing can undo
+ * it any more, so whatever lies behind it is never read again. Each term's
+ * new discount files a sale for every size: kept for ever, they would pile up.
  */
-export async function trimOperations(now = Date.now()): Promise<number> {
+export async function trimOperations(now = Date.now(), undoDays = OPERATION_UNDO_DAYS): Promise<number> {
   const before = new Date(now - KEEP_DAYS * 86_400_000);
+  const settled = new Date(now - undoDays * 86_400_000);
+  const today = new Date(now).toISOString().slice(0, 10);
   const op = vetrinaOperations;
+  const standing = (t: string) =>
+    sql.raw(`${t}.undone_at is null and ${t}.ended_at is null and (${t}.status <> 'failed' or ${t}.changed > 0)`);
+  // The newest end, on the same term, that is past its undo: everything behind it is out of reach.
+  const behindAnEnd = sql`exists (
+    select 1 from ${op} e
+    where e.term_key = ${op.termKey}
+      and e.kind in ('sale', 'unsale')
+      and ${standing("e")}
+      and (e.kind = 'unsale' or (e.input->>'endsOn' is not null and e.input->>'endsOn' < ${today}))
+      and coalesce(e.finished_at, e.created_at) < ${settled.toISOString()}::timestamptz
+      and (e.created_at > ${op.createdAt} or e.id = ${op.id})
+  )`;
   const gone = await db
     .delete(op)
     .where(
       and(
         lt(op.createdAt, before),
-        sql`not (${op.termKey} is not null and ${op.kind} <> 'margin' and ${op.undoneAt} is null and (${op.status} <> 'failed' or ${op.changed} > 0))`,
+        sql`not (${op.termKey} is not null and ${op.kind} <> 'margin' and ${op.undoneAt} is null and ${op.endedAt} is null
+                 and (${op.status} <> 'failed' or ${op.changed} > 0)
+                 and not (${op.kind} in ('sale', 'unsale') and ${behindAnEnd}))`,
       ),
     )
     .returning({ id: op.id });

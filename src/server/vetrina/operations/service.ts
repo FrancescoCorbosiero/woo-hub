@@ -20,9 +20,10 @@ import { checkMarginUndo, loadTermMargin as readTermMargin } from "./margin";
 import { labelText, standingSales, undoable } from "./plan";
 import { assess } from "./preview";
 import * as repo from "./repo";
-import { isQueued, queueRun, queueUndo, recover } from "./runner";
+import { isQueued, queueRun, queueSweep, queueUndo, recover } from "./runner";
 import { homepageSections } from "./sections";
-import { heldByTermHides, heldTerms, logSince, shopToday, standingTermHide, termSaleProducts } from "./standing";
+import { sectionVerdict } from "./writes";
+import { heldByTermHides, heldTerms, logSince, shopToday, standingTermHide, termNewcomers, termSaleProducts } from "./standing";
 import { words } from "./words";
 
 /**
@@ -115,8 +116,15 @@ export async function undoOperation(id: string): Promise<OperationView> {
   if (row.status === "failed" && row.changed === 0) throw new VetrinaError("invalid", w.error.nothingToUndo, 400);
   if (!undoable(row, Date.now(), OPERATION_UNDO_DAYS)) throw new VetrinaError("invalid", w.error.tooOld(OPERATION_UNDO_DAYS), 400);
   if (row.section) {
-    const { rail } = await readRail(row.section.key);
-    if (rail.attrsHash !== row.section.attrsHash) {
+    // A section deleted since has nothing to put back: the undo still takes back the categories the pin added.
+    const rail = await readRail(row.section.key).then(
+      (r) => r.rail,
+      (e: unknown) => {
+        if (e instanceof VetrinaError && e.code === "not_found") return null;
+        throw e;
+      },
+    );
+    if (rail && sectionVerdict(rail, row.section) === "changed") {
       throw new VetrinaError("stale", w.error.sectionChanged(row.section.title), 409);
     }
   }
@@ -142,7 +150,7 @@ export async function loadTermActions(taxonomy: CatalogTaxonomy, id: number): Pr
     logSince().then((since) => repo.termOperationRows(key, since)),
     readTermProducts(taxonomy, id),
   ]);
-  const hide = await standingTermHide(rows);
+  const hide = await standingTermHide(key);
   const [sale, under] = standingSales(rows, shopToday());
   // Under the term's own hide the switch undoes that hide: what others hold matters only without it.
   const held = hide ? new Map() : await heldByTermHides(products.hidden, (row) => row.termKey === key);
@@ -157,6 +165,7 @@ export async function loadTermActions(taxonomy: CatalogTaxonomy, id: number): Pr
             operation: operationView(sale),
             rounding: sale.input.rounding,
             replaces: under?.input.kind === "sale" ? under.input.percent : null,
+            ...(under?.input.kind === "sale" ? { replacesEndsOn: under.input.endsOn } : {}),
           }
         : null,
     counts: {
@@ -164,8 +173,16 @@ export async function loadTermActions(taxonomy: CatalogTaxonomy, id: number): Pr
       hidden: products.hidden.length,
       held: held.size > 0 ? heldTerms(held, await readCatalogTrees()) : [],
       ownSale: products.onSale.filter((productId) => !termSale.has(productId)).length,
+      // Joined the hidden term since, still listed: the next sweep hides them, or the panel's button now.
+      ...(hide ? { addedSince: (await termNewcomers(hide)).length } : {}),
     },
   };
+}
+
+/** "Nascondi anche questi": a hidden term's newcomers hidden now, rather than at the next check. */
+export async function hideTermNewcomers(): Promise<void> {
+  await recover();
+  await queueSweep();
 }
 
 /** A category's or brand's margin, for its screen's "Ricarico" row (phase 4). */

@@ -463,7 +463,7 @@ export function marginPriceWords(
   const say = (list: number[]) => {
     if (list.length === 0) return w.state.noPrice;
     const low = Math.min(...list.map(cents));
-    return new Set(list.map(cents)).size > 1 ? w.state.from(euro(low)) : euro(low);
+    return new Set(list.map(cents)).size > 1 ? w.state.from(euro(low, w)) : euro(low, w);
   };
   return { before: say(outcome.before), after: say(outcome.after) };
 }

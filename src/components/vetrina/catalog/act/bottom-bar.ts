@@ -50,5 +50,3 @@ export function useHoldBottomBar(shown: boolean): void {
  */
 export const SELECTION_BAR_EXTRA = "60px";
 
-/** Where things floating above the bottom bar sit: over the selection bar while it shows, else over the tab bar. */
-export const SELECTION_BAR_SPACE = `calc(var(--vetrina-tabbar, 0px) + ${SELECTION_BAR_EXTRA})`;

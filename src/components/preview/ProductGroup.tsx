@@ -5,6 +5,7 @@ import type { Plan, PlanItem } from "@core/core-spine";
 import { isActionable, summarize } from "@/lib/plan";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n/provider";
+import { ProductLink } from "@/components/catalog/CatalogDrawerHost";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -213,6 +214,16 @@ export function ProductGroup({
           </div>
         </button>
         <div className="flex shrink-0 items-center gap-1.5">
+          {/* The product's drawer — locks, the price source — where the preview's rows are decided. */}
+          {plan.sku && (
+            <ProductLink
+              sku={plan.sku}
+              className="rounded-md px-1.5 py-1 text-xs font-medium text-accent hover:underline"
+              title={t.product.openHint}
+            >
+              {t.product.open}
+            </ProductLink>
+          )}
           {s.update > 0 && <Badge variant="update">{t.product.shortUpd(s.update)}</Badge>}
           {s.create > 0 && <Badge variant="create">{t.product.shortNew(s.create)}</Badge>}
           {s.skip > 0 && <Badge variant="skip">{t.product.shortSkip(s.skip)}</Badge>}

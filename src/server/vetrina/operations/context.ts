@@ -1,5 +1,11 @@
 import "server-only";
-import { MAX_OPERATION_PRODUCTS, type OperationTarget, type TermKey } from "@/lib/vetrina/catalog-ops";
+import {
+  MAX_OPERATION_PRODUCTS,
+  MAX_TERM_PRODUCTS,
+  type OperationInput,
+  type OperationTarget,
+  type TermKey,
+} from "@/lib/vetrina/catalog-ops";
 import type { CatalogTaxonomy } from "@/lib/vetrina/catalog";
 import type { IndexRow } from "@/server/collections/index-rows";
 import { readIndexRowsById } from "@/server/collections/repo";
@@ -18,15 +24,22 @@ export interface ResolvedTarget {
   trees: CatalogTrees;
 }
 
-export async function resolveTarget(target: OperationTarget): Promise<ResolvedTarget> {
+export async function resolveTarget(target: OperationTarget, opts: { wholeTerm?: boolean } = {}): Promise<ResolvedTarget> {
   if (target.kind === "ids") {
     const ids = [...new Set(target.ids)];
     if (ids.length > MAX_OPERATION_PRODUCTS) throw new VetrinaError("invalid", words().error.tooMany(ids.length), 400);
     return { ids, trees: await readCatalogTrees() };
   }
-  const { ids, total, trees } = await resolveQueryTarget(target.query, MAX_OPERATION_PRODUCTS);
-  if (total > MAX_OPERATION_PRODUCTS) throw new VetrinaError("invalid", words().error.tooMany(total), 400);
+  // A whole term's own hide or sale cannot be narrowed: it takes the term, however big (MAX_TERM_PRODUCTS).
+  const cap = opts.wholeTerm ? MAX_TERM_PRODUCTS : MAX_OPERATION_PRODUCTS;
+  const { ids, total, trees } = await resolveQueryTarget(target.query, cap);
+  if (total > cap) throw new VetrinaError("invalid", opts.wholeTerm ? words().error.termTooBig(total) : words().error.tooMany(total), 400);
   return { ids, trees };
+}
+
+/** A whole term's own action (its key set; input.ts holds its target to the whole term): no cap of a selection's. */
+export function wholeTermAction(input: OperationInput): boolean {
+  return (input.kind === "hide" || input.kind === "sale" || input.kind === "unsale") && input.termKey != null;
 }
 
 /** These products' index rows in this order, and the ids the index does not hold (gone from the shop). */

@@ -33,13 +33,15 @@ export const marginsIt = {
   /** The row of the term's panel, next to "Saldo". */
   row: {
     title: "Ricarico",
-    own: (taxonomy: CatalogTaxonomy, value: string) =>
-      `${taxonomy === "category" ? "Ricarico di questa categoria" : "Ricarico di questo brand"}: ${value}`,
-    standard: (value: string | null) => (value ? `Ricarico: standard (${value})` : "Ricarico: standard"),
-    /** Without one of its own: the margin of a term above it. */
-    inherited: (value: string, term: string) => `Ricarico: ${value} da «${term}»`,
+    /** The title: one short line ("Ricarico: 25%"); whose it is goes under it. */
+    value: (value: string) => `Ricarico: ${value}`,
+    standard: "Ricarico: standard",
     /** Without one of its own, and other rules of the Hub (a brand's, a family's) price its products. */
-    hub: "Ricarico: dalle regole dell'Hub",
+    hub: "Ricarico: regole dell'Hub",
+    ownOf: (taxonomy: CatalogTaxonomy): string => (taxonomy === "category" ? "Di questa categoria" : "Di questo brand"),
+    /** Without one of its own: the margin of a term above it. */
+    from: (term: string) => `Da «${term}»`,
+    standardIs: (value: string) => `Standard ${value}`,
     applies: (count: number) => (count === 0 ? "Nessun prodotto lo segue" : `Vale per ${products(count)}`),
     /** A margin of its own, but none of its products has a Hub price now. */
     nonePriced: "Nessun prodotto col prezzo dell'Hub, per ora",
@@ -55,7 +57,8 @@ export const marginsIt = {
 
   sheet: {
     title: "Ricarico",
-    modes: { set: "Cambia il ricarico", standard: "Togli il suo ricarico" },
+    // Two segments side by side on a 320px phone: short enough for one line each.
+    modes: { set: "Cambia ricarico", standard: "Togli ricarico" },
     percentLabel: "Ricarico sul prezzo di mercato",
     percent: (percent: number) => `${n(percent)}%`,
     less: "Un punto in meno",

@@ -112,10 +112,15 @@ export async function ledgerForProducts(productIds: number[]): Promise<Map<numbe
   const ids = [...new Set(productIds.filter((id) => id > 0))];
   for (const part of chunks(ids)) {
     const rows = await db
-      .select({ variationId: priceLedger.variationId, price: priceLedger.price, storePrice: priceLedger.storePrice })
+      .select({
+        variationId: priceLedger.variationId,
+        price: priceLedger.price,
+        storePrice: priceLedger.storePrice,
+        writtenAt: priceLedger.writtenAt,
+      })
       .from(priceLedger)
       .where(inArray(priceLedger.productId, part));
-    for (const r of rows) out.set(r.variationId, { price: r.price, storePrice: r.storePrice });
+    for (const r of rows) out.set(r.variationId, { price: r.price, storePrice: r.storePrice, writtenAt: r.writtenAt });
   }
   return out;
 }
@@ -130,15 +135,19 @@ export async function ledgerForProducts(productIds: number[]): Promise<Map<numbe
  * publishing that product while the feed cycle was writing it — and the live
  * check, which only knew the plan, kept it. Such a note closes the row
  * instead of listing the Hub's own price as changed on WordPress.
+ *
+ * Returns how many of the notes are listed: what a writer can tell the
+ * person as "changed on WordPress, listed below".
  */
-export async function noteStoreEdits(notes: StoreEditNote[]): Promise<void> {
+export async function noteStoreEdits(notes: StoreEditNote[]): Promise<number> {
   const byId = new Map<number, StoreEditNote>();
   for (const n of notes) {
     if (n.variationId > 0 && !samePrice(n.storePrice, n.hubPrice)) byId.set(n.variationId, n);
   }
   const hubsOwn = sql`abs(${priceLedger.price} - excluded.store_price) < 0.005`;
+  let listed = 0;
   for (const part of chunks([...byId.values()])) {
-    await db
+    const rows = await db
       .insert(priceLedger)
       .values(
         part.map((n) => ({
@@ -165,8 +174,11 @@ export async function noteStoreEdits(notes: StoreEditNote[]): Promise<void> {
           title: sql`coalesce(nullif(excluded.title, ''), ${priceLedger.title})`,
           sizeLabel: sql`coalesce(nullif(excluded.size_label, ''), ${priceLedger.sizeLabel})`,
         },
-      });
+      })
+      .returning({ storePrice: priceLedger.storePrice });
+    listed += rows.filter((r) => r.storePrice != null).length;
   }
+  return listed;
 }
 
 /** Close the edits of variations whose store price is the Hub's again (adopting `price` when given). */

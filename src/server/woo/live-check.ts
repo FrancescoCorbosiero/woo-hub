@@ -1,4 +1,5 @@
 import { samePrice } from "@core/core-spine";
+import { followSaleRuleFor, manualPriceFor, type StoreOverrides } from "@/server/overrides/model";
 import { hasActiveSale, managedStock, parsePrice } from "@/server/store-json/match";
 import type { StoreVariation } from "@/server/store-json/model";
 import type { ApplyChange } from "./apply";
@@ -48,6 +49,8 @@ export interface LiveWrites {
   onSale: ApplyChange[];
   /** Changes aimed at a variation the store no longer has. */
   gone: ApplyChange[];
+  /** Prices not written: the size's lock changed after the plan was made. */
+  superseded: ApplyChange[];
 }
 
 /** What the check knows besides the store: the Hub's own rules, as they stand at the write. */
@@ -59,11 +62,16 @@ export interface LiveRules {
   yieldsToSale?: (change: ApplyChange) => boolean;
   /** A size whose price a person decided just now: written even where the store moved. */
   decided?: (change: ApplyChange) => boolean;
+  /**
+   * A size whose lock changed after the plan was made (set, moved, cleared):
+   * the plan's price is not written, whatever the store shows. Omitted: none.
+   */
+  superseded?: (change: ApplyChange) => boolean;
 }
 
 export function decideLiveWrites(changes: ApplyChange[], live: LiveVariation[], rules: LiveRules = {}): LiveWrites {
   const byId = new Map(live.map((v) => [v.id, v]));
-  const out: LiveWrites = { write: [], kept: [], onSale: [], gone: [] };
+  const out: LiveWrites = { write: [], kept: [], onSale: [], gone: [], superseded: [] };
   for (const c of changes) {
     const v = byId.get(c.storeVariationId);
     if (!v) {
@@ -71,7 +79,10 @@ export function decideLiveWrites(changes: ApplyChange[], live: LiveVariation[], 
       continue;
     }
     let next = c;
-    if (c.newPrice != null) {
+    if (c.newPrice != null && (rules.superseded?.(c) ?? false)) {
+      out.superseded.push(c);
+      next = withoutPrice(next, v);
+    } else if (c.newPrice != null) {
       const storePrice = parsePrice(v.regular_price);
       const asPlanned =
         storePrice == null
@@ -86,12 +97,7 @@ export function decideLiveWrites(changes: ApplyChange[], live: LiveVariation[], 
         // written over its absence either.
         if (moved && storePrice != null) out.kept.push({ change: c, storePrice });
         if (onSale) out.onSale.push(c);
-        next = { ...next, newPrice: null };
-        // A feed row carries its quantity along with its price: alone, it is
-        // worth a write only when the store's differs.
-        if (next.newStock != null && managedStock(v as StoreVariation) === next.newStock) {
-          next = { ...next, newStock: null };
-        }
+        next = withoutPrice(next, v);
       }
     }
     if (next.newGtin != null && (v.global_unique_id ?? "").trim()) next = { ...next, newGtin: null };
@@ -99,4 +105,39 @@ export function decideLiveWrites(changes: ApplyChange[], live: LiveVariation[], 
     out.write.push(next);
   }
   return out;
+}
+
+/**
+ * A change with its price taken out. A feed row carries its quantity along
+ * with its price: alone, it is worth a write only when the store's differs.
+ */
+function withoutPrice(c: ApplyChange, v: LiveVariation): ApplyChange {
+  const next = { ...c, newPrice: null };
+  if (next.newStock != null && managedStock(v as StoreVariation) === next.newStock) return { ...next, newStock: null };
+  return next;
+}
+
+/**
+ * The Hub's rules for the live check, as they stand at the write — not as they
+ * stood when the plan was made:
+ *  - a size gives way to a sale price on the store when its product follows
+ *    the sale rule and the size carries no lock (a lock wins over a sale
+ *    price, as in buildPlan);
+ *  - a size whose lock changed since the plan was made — set or moved (the
+ *    Hub drawer saves a lock without writing it), or cleared — is not written
+ *    at the plan's price: that price is nobody's word any more. The next plan
+ *    writes the lock, or the rules' price.
+ */
+export function liveRulesFrom(overrides: StoreOverrides, decided?: (change: ApplyChange) => boolean): LiveRules {
+  return {
+    yieldsToSale: (c) =>
+      followSaleRuleFor(overrides, c.sku) && (!c.euSize || manualPriceFor(overrides, c.sku, c.euSize) == null),
+    superseded: (c) => {
+      if (!c.euSize || c.newPrice == null) return false;
+      const lock = manualPriceFor(overrides, c.sku, c.euSize);
+      if (lock == null) return c.locked === true;
+      return !samePrice(lock, c.newPrice);
+    },
+    decided,
+  };
 }

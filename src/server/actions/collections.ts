@@ -141,6 +141,8 @@ export async function loadProductTags(input: { productId: number }): Promise<Col
 export async function saveProductTags(input: {
   productId: number;
   tags: { id?: number; name: string }[];
+  /** The tags the sheet loaded: only its change is written, over the product's tags as they are now. */
+  base?: number[];
 }): Promise<CollectionsResult<ProductTagsResult>> {
   const parsed = z
     .object({
@@ -148,8 +150,9 @@ export async function saveProductTags(input: {
       tags: z
         .array(z.object({ id: z.number().int().positive().optional(), name: z.string().trim().max(120) }))
         .max(50),
+      base: z.array(z.number().int().positive()).max(200).optional(),
     })
     .safeParse(input);
   if (!parsed.success) return invalid();
-  return attempt(() => service.saveProductTags(parsed.data.productId, parsed.data.tags));
+  return attempt(() => service.saveProductTags(parsed.data.productId, parsed.data.tags, parsed.data.base));
 }

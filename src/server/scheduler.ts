@@ -371,6 +371,7 @@ const RUN_STEP: Record<StepName, () => Promise<StepOutcome | null>> = {
     const { runFull } = await import("@/server/collections/runner");
     const outcome = await runFull();
     if (!outcome) return null;
+    await sweepHiddenTerms();
     console.log(`[scheduler] automatic categories: ${outcome.read} products read, ${outcome.moved} moved`);
     return { ok: true, count: outcome.moved, note: `${outcome.read} products read` };
   },
@@ -704,6 +705,20 @@ async function pullOrders(): Promise<void> {
 }
 
 /**
+ * The index has caught up with the store: a product that joined a category
+ * or brand the owner hid in the Vetrina is hidden with it (its products are
+ * hidden everywhere). Queued behind the Vetrina's actions; never fatal.
+ */
+async function sweepHiddenTerms(): Promise<void> {
+  try {
+    const { queueSweep } = await import("@/server/vetrina/operations/runner");
+    void queueSweep();
+  } catch (e) {
+    console.warn(`[scheduler] hidden categories not swept: ${messageOf(e)}`);
+  }
+}
+
+/**
  * The automatic categories' check, then again every SCHEDULER_COLLECTIONS_MINUTES.
  * Said once when it starts failing and once when it recovers, not every round.
  */
@@ -716,6 +731,7 @@ async function checkCollections(): Promise<void> {
       if (s.collectionsError) console.log("[scheduler] automatic categories are working again");
       s.collectionsLastAt = Date.now();
       s.collectionsLastMoved = outcome.moved;
+      await sweepHiddenTerms();
     }
     s.collectionsError = null;
   } catch (e) {

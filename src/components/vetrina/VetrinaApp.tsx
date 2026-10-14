@@ -29,6 +29,7 @@ export function VetrinaApp({
   children: ReactNode;
 }) {
   const [mount, setMount] = React.useState<HTMLDivElement | null>(null);
+  const dark = useDarkClass();
   const tab = tabOf(usePathname());
   // What the back buttons go back to (./use-back.ts).
   useScreenTrail();
@@ -53,6 +54,8 @@ export function VetrinaApp({
         </StandaloneContext.Provider>
         {/* Below the navbar (44px + its gap): a toast with "Annulla" must not cover the back button or "⋯" for its 10 seconds. */}
         <Toaster
+          // The app's dark mode is a class on <html> (the theme toggle), which sonner does not read on its own.
+          theme={dark ? "dark" : "light"}
           position="top-center"
           offset={{ top: "calc(env(safe-area-inset-top) + 56px)" }}
           mobileOffset={{ top: "calc(env(safe-area-inset-top) + 56px)" }}
@@ -66,4 +69,18 @@ export function VetrinaApp({
       </div>
     </div>
   );
+}
+
+/** Whether <html> carries the "dark" class — the theme toggle's — followed as it changes. */
+function useDarkClass(): boolean {
+  const [dark, setDark] = React.useState(false);
+  React.useEffect(() => {
+    const root = document.documentElement;
+    const read = () => setDark(root.classList.contains("dark"));
+    read();
+    const watch = new MutationObserver(read);
+    watch.observe(root, { attributes: true, attributeFilter: ["class"] });
+    return () => watch.disconnect();
+  }, []);
+  return dark;
 }

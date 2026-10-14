@@ -56,6 +56,8 @@ const store = vi.hoisted(() => ({
   gone: new Set<number>(),
   /** Slows every batch: a second action has every chance to slip in between. */
   delayMs: 0,
+  /** Runs once, right before the next sizes' batch lands: the engine writing a regular price meanwhile. */
+  beforeSizes: null as null | ((productId: number) => void),
   clock: Date.parse("2026-10-13T08:00:00Z"),
   nextTerm: 900,
   client: null as unknown,
@@ -69,6 +71,8 @@ const home = vi.hoisted(() => ({
   >(),
   modified: "2026-10-13 08:00:00",
   collections: {} as Record<number, unknown>,
+  /** The next write lands, but its answer is lost (a timeout). */
+  loseAnswer: false,
 }));
 
 const checks = vi.hoisted(() => ({ requested: 0 }));
@@ -132,6 +136,10 @@ vi.mock("@/server/vetrina/service", async () => {
       r.pin = [...input.pin];
       r.exclude = [...input.exclude];
       r.hash += 1;
+      if (home.loseAnswer) {
+        home.loseAnswer = false;
+        throw new Error("no answer within 20s");
+      }
       return { dryRun: false, changed: true, before: "", after: "", modifiedGmt: home.modified, attrsHash: `hash-${r.hash}`, rendered: [], fields: {} };
     },
   };
@@ -238,13 +246,17 @@ store.client = {
   async batchVariations(productId: number, payload: { update?: Record<string, unknown>[] }) {
     await pause();
     if (store.gone.has(productId)) throw Object.assign(new Error("Invalid ID."), { status: 404 });
+    const meanwhile = store.beforeSizes;
+    store.beforeSizes = null;
+    meanwhile?.(productId);
     const p = products().get(productId)!;
     const update = (payload.update ?? []).map((row) => {
       store.writes.push({ what: "size", id: row.id as number, body: row });
       const size = p.sizes.find((s) => s.id === row.id);
       if (!size || store.refuse.has(row.id as number)) return { id: row.id as number, error: { code: "invalid", message: "refused" } };
       applySale(size, row);
-      return { id: size.id };
+      // As WooCommerce answers: the size as saved, its regular price included.
+      return { id: size.id, regular_price: size.regular_price, sale_price: size.sale_price };
     });
     saved(p);
     return { create: [], update, delete: [] };
@@ -365,9 +377,11 @@ describe.skipIf(!enabled)("the catalog's actions (real SQL, stand-in store)", ()
     store.refuse.clear();
     store.gone.clear();
     store.delayMs = 0;
+    store.beforeSizes = null;
     checks.requested = 0;
     home.rails.clear();
     home.collections = {};
+    home.loseAnswer = false;
 
     add({ id: 1, name: "Air Max", sizes: [size(11, "129.00"), size(12, "139.00")] });
     add({ id: 2, name: "Dunk Low", categories: [10, 11], brands: [101], sizes: [size(21, "99.00", "89.00"), size(22, "")] });
@@ -403,10 +417,12 @@ describe.skipIf(!enabled)("the catalog's actions (real SQL, stand-in store)", ()
     expect(op).toMatchObject({ status: "done", changed: 3, failed: 0, label: "3 prodotti nascosti · Sneakers", undoable: true });
     expect([1, 2, 3, 4].map((id) => product(id).visibility)).toEqual(["hidden", "hidden", "hidden", "hidden"]);
     expect((await readIndexRowsById([1])).map((r) => r.visibility)).toEqual(["hidden"]);
-    expect((await listItems(op.id)).map((i) => [i.productId, i.before, i.after])).toEqual([
-      [1, "visible", "hidden"],
-      [2, "visible", "hidden"],
-      [3, "visible", "hidden"],
+    expect((await listItems(op.id)).map((i) => [i.productId, i.field, i.before, i.after])).toEqual([
+      // Gazelle (4) was hidden already: met, nothing to put back — and no newcomer to hide later.
+      [4, "member", null, null],
+      [1, "visibility", "visible", "hidden"],
+      [2, "visibility", "visible", "hidden"],
+      [3, "visibility", "visible", "hidden"],
     ]);
 
     const state = await loadTermActions("category", 10);
@@ -468,7 +484,8 @@ describe.skipIf(!enabled)("the catalog's actions (real SQL, stand-in store)", ()
     // The owner re-priced one size by hand since: that one stays.
     product(1).sizes[1].sale_price = "120.00";
     const undone = await undo(op.id);
-    expect(undone.undo).toMatchObject({ kept: 1, failed: 0 });
+    // One word per product: Air Max (a size put back, one changed since) is "left as it was", never both.
+    expect(undone.undo).toMatchObject({ restored: 3, kept: 1, failed: 0 });
     expect(checks.requested).toBe(2);
     expect(product(1).sizes.map((s) => s.sale_price)).toEqual(["", "120.00"]);
     expect(product(2).sizes[0]).toMatchObject({ sale_price: "89.00", date_on_sale_to: null });
@@ -476,6 +493,39 @@ describe.skipIf(!enabled)("the catalog's actions (real SQL, stand-in store)", ()
     expect(regularWrites()).toEqual([]);
     expect((await getSnapshotProductsByIds([1]))[0].variations.map((v) => v.sale_price)).toEqual(["", "110.99"]);
     expect((await loadTermActions("category", 10)).sale).toBeNull();
+  });
+
+  it("an end of sale undone over a regular price the engine moved since leaves that size as it is", async () => {
+    // Air Max's 42 at 129 is on a sale of 102,99; 43 at 139, on 110,99.
+    product(1).sizes[0].sale_price = "102.99";
+    product(1).sizes[1].sale_price = "110.99";
+    await indexStore();
+    const op = await run({ kind: "unsale", target: ids(1) });
+    expect(product(1).sizes.map((s) => s.sale_price)).toEqual(["", ""]);
+    // Off sale, the engine prices 42 again: 150.
+    product(1).sizes[0].regular_price = "150.00";
+    const undone = await undo(op.id);
+    expect(undone.undo).toEqual({ restored: 0, kept: 1, failed: 0 });
+    // 43 gets its sale back; 42's old sale price is not put over its new regular price.
+    expect(product(1).sizes.map((s) => s.sale_price)).toEqual(["", "110.99"]);
+    expect(regularWrites()).toEqual([]);
+  });
+
+  it("a regular price the engine writes between a sale's read and its write: the sale is planned again from it", async () => {
+    const { listItems } = await load();
+    // The feed cycle writes 42 at 150 (was 129) while the sale is under way.
+    store.beforeSizes = (productId) => {
+      if (productId === 1) product(1).sizes[0].regular_price = "150.00";
+    };
+    const op = await run({ kind: "sale", target: ids(1), percent: 20, rounding: "charm", endsOn: null });
+    expect(op).toMatchObject({ status: "done", changed: 1 });
+    // 20 % off the price the size has now — 119,99, not 102,99 (31 % off 150).
+    expect(product(1).sizes.map((s) => s.sale_price)).toEqual(["119.99", "110.99"]);
+    expect((await listItems(op.id)).map((i) => [i.variationId, (i.before as { regular: string }).regular, (i.after as { price: string }).price])).toEqual([
+      [11, "150.00", "119.99"],
+      [12, "139.00", "110.99"],
+    ]);
+    expect(regularWrites()).toEqual([]);
   });
 
   it("ends a sale only where there is one, and «Annulla» puts it back", async () => {
@@ -566,7 +616,7 @@ describe.skipIf(!enabled)("the catalog's actions (real SQL, stand-in store)", ()
     const preview = await previewOperation(input);
     expect(preview.changes).toBe(3);
     expect(preview.warnings).toEqual([
-      "2 prodotti non sono in «Saldi»: li aggiungo, così si vede nella sezione.",
+      "2 prodotti non sono in «Saldi»: li aggiungo, così si vedono nella sezione.",
       "1 era nascosto da questa sezione: torna a vedersi.",
     ]);
     expect(preview.sample.map((s) => s.after)).toEqual(["In «Saldi», poi fissato", "In «Saldi», poi fissato", "#3 fissato"]);
@@ -583,6 +633,32 @@ describe.skipIf(!enabled)("the catalog's actions (real SQL, stand-in store)", ()
     expect(undone.status).toBe("undone");
     expect(rail).toMatchObject({ pin: [5], exclude: [2] });
     expect(product(3).categories).toEqual([10]);
+    expect(product(1).categories).toEqual([10]);
+  });
+
+  it("a pin whose answer was lost is filed all the same, and undone by its pins; one whose section is gone undoes the rest", async () => {
+    home.rails.set("category:saldi#0", {
+      key: "category:saldi#0",
+      title: "SALDI",
+      taxonomy: "product_cat",
+      term: { id: 11, name: "Saldi", slug: "saldi" },
+      pin: [5],
+      exclude: [],
+      hash: 1,
+    });
+    const rail = home.rails.get("category:saldi#0")!;
+    home.loseAnswer = true;
+    const lost = await run({ kind: "pin", target: ids(2), sectionKey: "category:saldi#0" });
+    expect(lost).toMatchObject({ status: "failed", undoable: true });
+    expect(rail.pin).toEqual([2, 5]);
+    expect((await undo(lost.id)).status).toBe("undone");
+    expect(rail.pin).toEqual([5]);
+
+    // Air Max put into Saldi and pinned; the section is deleted since: the category it gained still comes off.
+    const pinned = await run({ kind: "pin", target: ids(1), sectionKey: "category:saldi#0" });
+    expect(product(1).categories).toEqual([10, 11]);
+    home.rails.delete("category:saldi#0");
+    expect((await undo(pinned.id)).status).toBe("undone");
     expect(product(1).categories).toEqual([10]);
   });
 
@@ -707,16 +783,17 @@ describe.skipIf(!enabled)("the catalog's actions (real SQL, stand-in store)", ()
     const sneakers = await run({ kind: "hide", target: category(10), termKey: "category:10" });
     expect(sneakers.changed).toBe(3);
     const nike = await run({ kind: "hide", target: brand(100), termKey: "brand:100" });
-    // Already hidden by the first: only Calze (5) is the Nike hide's own.
-    expect((await listItems(nike.id)).map((i) => i.productId)).toEqual([5]);
+    // Already hidden by the first: only Calze (5) is the Nike hide's own; Air Max and Dunk Low it only met.
+    const visibilityOf = async (id: string) => (await listItems(id)).filter((i) => i.field === "visibility");
+    expect((await visibilityOf(nike.id)).map((i) => i.productId)).toEqual([5]);
 
     // "Mostra" on Sneakers: Samba (3) comes back; Air Max and Dunk Low stay hidden — Nike still is.
     const shown = await undo(sneakers.id);
-    expect(shown.undo).toEqual({ restored: 1, kept: 0, failed: 0, held: 2 });
+    expect(shown.undo).toEqual({ restored: 1, kept: 0, failed: 0, held: 2, heldBy: ["Nike"] });
     expect([1, 2, 3, 4, 5].map((id) => product(id).visibility)).toEqual(["hidden", "hidden", "visible", "hidden", "hidden"]);
     expect((await loadTermActions("brand", 100)).hiddenBy?.id).toBe(nike.id);
     // The Nike hide holds them now, as they were before either hide.
-    expect((await listItems(nike.id)).map((i) => [i.productId, i.before]).sort()).toEqual([
+    expect((await visibilityOf(nike.id)).map((i) => [i.productId, i.before]).sort()).toEqual([
       [1, "visible"],
       [2, "visible"],
       [5, "visible"],
@@ -805,6 +882,24 @@ describe.skipIf(!enabled)("the catalog's actions (real SQL, stand-in store)", ()
     expect(again.warnings.join(" ")).not.toContain("usa «Mostra»");
   });
 
+  it("a change of the term's sale that only moves its end says so: the rows, the label, the panel's undo", async () => {
+    const { previewOperation, loadTermActions } = await load();
+    const sale = (endsOn: string | null): OperationInput => ({
+      kind: "sale",
+      target: category(10),
+      percent: 30,
+      rounding: "exact",
+      endsOn,
+      termKey: "category:10",
+    });
+    await run(sale(null));
+    const preview = await previewOperation(sale("2099-12-31"));
+    expect(plainSample(preview, 1)).toEqual({ before: "da 90,30 € · senza fine", after: "da 90,30 € · fino al 31 dicembre" });
+    const moved = await run(sale("2099-12-31"));
+    expect(moved.label).toBe("Saldo −30% · Sneakers: ora fino al 31 dicembre");
+    expect((await loadTermActions("category", 10)).sale).toMatchObject({ percent: 30, replaces: 30, replacesEndsOn: null });
+  });
+
   it("warns when a sale puts a deeper discount up, and when its end takes a product's own sale with it", async () => {
     const { previewOperation, loadTermActions } = await load();
     // Dunk Low (2) is already 10% off: 5% off would put it up; with an end date, its own sale ends then too.
@@ -864,10 +959,152 @@ describe.skipIf(!enabled)("the catalog's actions (real SQL, stand-in store)", ()
     expect((await inLanguage("en", () => loadOperation(op.id))).label).toBe("2 products hidden");
   });
 
+  describe("a whole term's hide over time", () => {
+    it("closes once its products were shown another way: hidden again, «Mostra» puts back all of them", async () => {
+      const { getOperation } = await load();
+      const first = await run({ kind: "hide", target: category(10), termKey: "category:10" });
+      await run({ kind: "show", target: ids(1, 2, 3) });
+      // The first hide stops hiding anything: closed for good, at once.
+      expect((await getOperation(first.id))?.endedAt).not.toBeNull();
+      const second = await run({ kind: "hide", target: category(10), termKey: "category:10" });
+      expect(second).toMatchObject({ status: "done", changed: 3 });
+      // "Mostra" is the second's undo: the closed first one holds nothing back.
+      expect((await undo(second.id)).undo).toEqual({ restored: 3, kept: 0, failed: 0 });
+      expect([1, 2, 3, 4].map((id) => product(id).visibility)).toEqual(["visible", "visible", "visible", "hidden"]);
+    });
+
+    it("a product of a term shown again, then hidden one by one, never brings the term's old hide back", async () => {
+      const { loadTermActions } = await load();
+      await run({ kind: "hide", target: category(10), termKey: "category:10" });
+      await run({ kind: "show", target: ids(1, 2, 3) });
+      const one = await run({ kind: "hide", target: ids(1) });
+      const state = await loadTermActions("category", 10);
+      expect(state.hiddenBy).toBeNull();
+      expect(state.counts).toMatchObject({ hidden: 2, held: [] });
+      expect((await undo(one.id)).undo).toEqual({ restored: 1, kept: 0, failed: 0 });
+      expect(product(1).visibility).toBe("visible");
+    });
+
+    it("«Mostra» on a term leaves a product hidden again one by one since: that hide's own «Annulla» brings it back", async () => {
+      const term = await run({ kind: "hide", target: category(10), termKey: "category:10" });
+      await run({ kind: "show", target: ids(1) });
+      const again = await run({ kind: "hide", target: ids(1) });
+      expect((await undo(term.id)).undo).toEqual({ restored: 2, kept: 1, failed: 0 });
+      expect([1, 2, 3].map((id) => product(id).visibility)).toEqual(["hidden", "visible", "visible"]);
+      expect((await undo(again.id)).undo).toEqual({ restored: 1, kept: 0, failed: 0 });
+      expect(product(1).visibility).toBe("visible");
+    });
+
+    it("hides what joins the term later, filed under its hide, so «Mostra» puts it back too", async () => {
+      const { loadTermActions, hideTermNewcomers, listItems, previewOperation, idle } = await load();
+      const hide = await run({ kind: "hide", target: category(10), termKey: "category:10" });
+      // Published into Sneakers after the hide (the Publisher, a rule, WordPress): it shows.
+      add({ id: 6, name: "Forum", categories: [10], sizes: [size(61, "100.00")] });
+      await indexStore();
+      expect((await loadTermActions("category", 10)).counts?.addedSince).toBe(1);
+      // Gazelle, hidden before the term's hide and shown by the owner since, is his to decide: not a newcomer.
+      await run({ kind: "show", target: ids(4) });
+
+      await hideTermNewcomers();
+      expect(product(6).visibility).toBe("hidden");
+      expect(product(4).visibility).toBe("visible");
+      expect((await listItems(hide.id)).filter((i) => i.productId === 6).map((i) => [i.field, i.before, i.after])).toEqual([
+        ["visibility", "visible", "hidden"],
+      ]);
+      expect((await loadTermActions("category", 10)).counts?.addedSince).toBe(0);
+
+      // Put into the hidden category from the Vetrina: the preview says so, and it is hidden with it.
+      const into: OperationInput = { kind: "categorize", target: ids(5), categoryId: 10 };
+      expect((await previewOperation(into)).warnings).toContain(
+        "«Sneakers» non è visibile nel negozio: anche il prodotto che aggiungo viene nascosto.",
+      );
+      await run(into);
+      await idle();
+      expect(product(5).visibility).toBe("hidden");
+
+      // "Mostra": every product the hide hid, newcomers included, back as it was.
+      expect((await undo(hide.id)).undo).toMatchObject({ restored: 5, kept: 0 });
+      expect([1, 2, 3, 4, 5, 6].map((id) => product(id).visibility)).toEqual(["visible", "visible", "visible", "visible", "visible", "visible"]);
+    });
+
+    it("reads the term's hide however many actions came after it", async () => {
+      const { db, vetrinaOperations, loadTermActions } = await load();
+      const hide = await run({ kind: "hide", target: category(10), termKey: "category:10" });
+      const sale = { kind: "unsale" as const, target: category(10), termKey: "category:10" as const };
+      await db.insert(vetrinaOperations).values(
+        Array.from({ length: 55 }, (_, i) => ({
+          kind: "unsale" as const,
+          input: sale,
+          label: `unsale ${i}`,
+          termKey: "category:10",
+          status: "done" as const,
+          changed: 1,
+          createdAt: new Date(Date.now() + (i + 1) * 1000),
+        })),
+      );
+      expect((await loadTermActions("category", 10)).hiddenBy?.id).toBe(hide.id);
+    });
+  });
+
+  it("the product sheet's switch puts a product back as it was before its hide: «only in search» stays so", async () => {
+    const { previewOperation } = await load();
+    product(2).visibility = "search";
+    await indexStore();
+    await run({ kind: "hide", target: ids(2) });
+    expect(product(2).visibility).toBe("hidden");
+    const back: OperationInput = { kind: "show", target: ids(2), restore: true };
+    expect((await previewOperation(back)).sample.map((x) => x.after)).toEqual(["Solo nella ricerca"]);
+    await run(back);
+    expect(product(2).visibility).toBe("search");
+    // A plain "Mostra" (a selection's) shows everywhere, as it says.
+    await run({ kind: "hide", target: ids(2) });
+    await run({ kind: "show", target: ids(2) });
+    expect(product(2).visibility).toBe("visible");
+  });
+
+  it("drops what the term's screen can no longer reach: a closed hide, sales behind an end of sale past its undo", async () => {
+    const { db, vetrinaOperations, trimOperations, listOperations } = await load();
+    const day = 86_400_000;
+    const at = (daysAgo: number) => new Date(Date.now() - daysAgo * day);
+    const sale = (percent: number) => ({ kind: "sale" as const, target: category(10), percent, rounding: "charm" as const, endsOn: null, termKey: "category:10" as const });
+    const row = (label: string, extra: Record<string, unknown>) => ({
+      kind: "sale" as const,
+      input: sale(20),
+      label,
+      termKey: "category:10",
+      status: "done" as const,
+      changed: 1,
+      ...extra,
+    });
+    await db.insert(vetrinaOperations).values([
+      row("closed hide", { kind: "hide", input: { kind: "hide", target: category(12), termKey: "category:12" }, termKey: "category:12", createdAt: at(40), endedAt: at(35) }),
+      // Category 10: a sale, ended for good 50 days ago, then a new one still running.
+      row("old sale", { createdAt: at(60), finishedAt: at(60) }),
+      row("old end", { kind: "unsale", input: { kind: "unsale", target: category(10), termKey: "category:10" }, createdAt: at(50), finishedAt: at(50) }),
+      row("running sale", { input: sale(30), createdAt: at(40), finishedAt: at(40) }),
+      // Category 20: an end of sale two days old, still undoable — the sale behind it stays for its "Annulla".
+      row("sale behind a recent end", { termKey: "category:20", input: { ...sale(10), termKey: "category:20" }, createdAt: at(45), finishedAt: at(45) }),
+      row("recent end", { kind: "unsale", termKey: "category:20", input: { kind: "unsale", target: category(20), termKey: "category:20" }, createdAt: at(2), finishedAt: at(2) }),
+    ]);
+    expect(await trimOperations()).toBe(3);
+    expect((await listOperations(10)).map((o) => o.label).sort()).toEqual(["recent end", "running sale", "sale behind a recent end"]);
+  });
+
   it("refuses more products than an action takes, and an empty one", async () => {
     const { previewOperation, startOperation } = await load();
     const many = ids(...Array.from({ length: 2001 }, (_, i) => i + 1));
     await expect(previewOperation({ kind: "hide", target: many })).rejects.toThrow("Sono 2001 prodotti: al massimo 2000 alla volta");
     await expect(startOperation({ kind: "hide", target: category(12) })).rejects.toThrow("Nessun prodotto scelto.");
+  });
+
+  it("hides a whole term however big it is: its switch cannot be narrowed, a selection can", async () => {
+    const { previewOperation } = await load();
+    for (let id = 1000; id < 3005; id++) add({ id, categories: [20], sizes: [] });
+    await indexStore();
+    // "Visibile nel negozio" off on Outlet: all 2005 of them.
+    const whole = await previewOperation({ kind: "hide", target: category(20), termKey: "category:20" });
+    expect(whole.changes).toBe(2005);
+    // The same products as a selection's "Tutti": narrowed with the filters, as the refusal says.
+    await expect(previewOperation({ kind: "hide", target: category(20) })).rejects.toThrow("al massimo 2000 alla volta");
   });
 });

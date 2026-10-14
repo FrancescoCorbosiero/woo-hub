@@ -87,9 +87,9 @@ function VisibilityContent({
         )}
       </SheetHead>
       <SheetBody>
-        {/* One product says "it"; a list, or a query of any size, says "they". */}
+        {/* One product says "it", several "they": a query, as many as its preview finds (until then, "they"). */}
         <p className={`${CARD} px-4 py-3 text-[15px] leading-snug`}>
-          {v.hint[mode](target.kind === "ids" ? target.ids.length : 2)}
+          {v.hint[mode](target.kind === "ids" ? target.ids.length : count || 2)}
         </p>
         <PreviewView state={preview} />
       </SheetBody>

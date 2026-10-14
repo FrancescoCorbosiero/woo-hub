@@ -4,7 +4,7 @@ import type { marginsIt } from "./margins.it";
 /** A count as the owner reads it: "1,234". */
 const n = (count: number) => count.toLocaleString("en-GB");
 const products = (count: number) => (count === 1 ? "1 product" : `${n(count)} products`);
-/** "+10 €" for a whole amount, "+10,50 €" otherwise. */
+/** "+€10" for a whole amount, "+€10.50" otherwise. */
 const euro = (amount: number) =>
   new Intl.NumberFormat("en-GB", {
     style: "currency",
@@ -24,25 +24,26 @@ export const marginsEn: typeof marginsIt = {
 
   row: {
     title: "Margin",
-    own: (taxonomy: CatalogTaxonomy, value: string) =>
-      `${taxonomy === "category" ? "This category's margin" : "This brand's margin"}: ${value}`,
-    standard: (value: string | null) => (value ? `Margin: standard (${value})` : "Margin: standard"),
-    inherited: (value: string, term: string) => `Margin: ${value} from “${term}”`,
-    hub: "Margin: from the Hub's rules",
+    value: (value: string) => `Margin: ${value}`,
+    standard: "Margin: standard",
+    hub: "Margin: the Hub's rules",
+    ownOf: (taxonomy: CatalogTaxonomy) => (taxonomy === "category" ? "This category's" : "This brand's"),
+    from: (term: string) => `From “${term}”`,
+    standardIs: (value: string) => `Standard ${value}`,
     applies: (count: number) => (count === 0 ? "Applies to no product" : `Applies to ${products(count)}`),
     nonePriced: "No product at a Hub price, for now",
     loading: "Reading the margin…",
     supplier: (count: number) => `${n(count)} at the supplier's price`,
     running: (done: number, total: number) => `Updating prices… ${n(done)}/${n(total)}`,
     undoing: "Putting the previous margin back…",
-    waiting: "Waiting: starts as soon as the action before ends.",
+    waiting: "Waiting: it starts as soon as the action before it ends.",
     failed: "Can't read the margin.",
-    retry: "Retry",
+    retry: "Try again",
   },
 
   sheet: {
     title: "Margin",
-    modes: { set: "Change the margin", standard: "Remove its own margin" },
+    modes: { set: "Change margin", standard: "Remove margin" },
     percentLabel: "Margin on the market price",
     percent: (percent: number) => `${n(percent)}%`,
     less: "One point less",

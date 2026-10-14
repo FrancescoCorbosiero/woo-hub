@@ -44,6 +44,7 @@ export const homeEn: typeof homeIt = {
     catalogLabel: (name: string) => `Open “${name}” in the catalog`,
     soldOut: (n: number) => `${n.toLocaleString("en-GB")} sold out`,
     hidden: (n: number) => `${n.toLocaleString("en-GB")} hidden from the shop`,
+    noPhoto: (n: number) => `${n.toLocaleString("en-GB")} without a photo`,
     health: (parts: string) => `On show: ${parts}`,
   },
 

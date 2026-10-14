@@ -31,6 +31,8 @@ export interface LedgerEntry {
   price: number;
   /** The store price the Hub is keeping there; null = in step. */
   storePrice: number | null;
+  /** When the Hub wrote `price` (or took it as its own). */
+  writtenAt?: Date;
 }
 
 /** A store price the Hub is keeping instead of writing over it. */

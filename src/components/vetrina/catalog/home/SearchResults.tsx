@@ -10,6 +10,7 @@ import { toProductCard, type CatalogProduct, type CatalogSearch } from "@/lib/ve
 import type { VetrinaResult } from "@/server/vetrina/service";
 import { loadCatalogPage, searchCatalog } from "@/server/actions/vetrina-catalog";
 import { ProductSheet } from "../../ProductSheet";
+import { useOperationSettled } from "../act/operations-context";
 import { formatCount } from "../format";
 import { ProductRow } from "../term/ProductRow";
 import { useProductCards } from "../term/use-product-cards";
@@ -78,6 +79,9 @@ export function SearchResults({
 
   const [more, setMore] = React.useState<More | null>(null);
   const [loadingMore, setLoadingMore] = React.useState(false);
+  // An action ended: the first answer is read again (CatalogHome), and the rows loaded past it would keep
+  // their old badges ("Nascosto", "In saldo"): dropped, they come back fresh with the next "Mostra altri".
+  useOperationSettled(() => setMore(null));
   const found = data?.result.ok ? data.result.data : null;
   const products = React.useMemo(() => {
     if (!found || !data) return [];
@@ -132,7 +136,7 @@ export function SearchResults({
     return (
       <Block strong inset className={`space-y-3 text-center ${current ? "" : "opacity-50"}`}>
         <p className="text-[17px]">{r.failed}</p>
-        <Button rounded tonal onClick={() => void mutate()}>
+        <Button rounded tonal onClick={() => void mutate()} className="!h-11">
           {r.retry}
         </Button>
         {/* The technical words ("Failed to fetch") only for whoever asks, as ErrorState does. */}

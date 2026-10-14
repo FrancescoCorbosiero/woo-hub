@@ -589,11 +589,12 @@ Terms without a homepage rail keep today's order.
 ### 8.1 Scope
 
 `RuleScope` gains `storeCategory?` / `storeBrand?`: a WooCommerce `product_cat` or
-`product_brand` term **id** (never a slug or a name: a term renamed in WordPress keeps
-its rule), plus `storeTermName?`, the term's path when the rule was saved ("Saldi ›
-Nike"), a label only. Products carry their terms, **ancestors included**, each with its
-depth, as `storeCategories` / `storeBrands`. So a "Nike" rule covers Nike Off-White,
-unless a more specific rule takes it.
+`product_brand` term **id** — never a slug or a name: a term renamed in WordPress keeps
+its rule, and a slug changed in WordPress never orphans it — plus `storeTermName?`, the
+term's path when the rule was saved ("Saldi › Nike"), a label only (shown, never
+matched). Products carry their terms, **ancestors included**, each with its depth, as
+`storeCategories` / `storeBrands`. So a "Nike" rule covers Nike Off-White, unless a more
+specific rule takes it.
 
 A store-term rule **never** applies to a product the supplier feed prices (GoldenSneakers:
 its presented price already holds the supplier's margin and passes through) nor to a
@@ -609,9 +610,12 @@ Matched rules are ordered, the most specific last (core/config.ts
 2. between two store-term rules: the deeper term wins — a sub-term beats its parent
    ("Nike › Off-White" over "Nike"); a category rule and a brand rule meet on the same
    scale, each term's depth in its own tree
-3. weight = today's SCOPE_WEIGHT sum
+3. weight = today's SCOPE_WEIGHT sum (between two store-term rules at the same depth it
+   only tells apart a rule naming both a category and a brand: the Vetrina's rules name one)
 4. ties   → the later rule in the list wins (as today)
 ```
+
+So between two store-term rules: the deeper term, then the later rule.
 
 - **Full order**: manual lock > sale price held > SKU rule > store-term rule >
   brand / family / name / source / size rules.
@@ -638,6 +642,13 @@ Matched rules are ordered, the most specific last (core/config.ts
   **drawer and the product sheet**, the **Margins coverage**, the **price audit**, the
   **Publisher** and the **rebuild**. Cached a minute; a product moved by a Vetrina action
   drops the cache at once.
+- **A product the index does not hold yet** — one the Publisher is creating — is priced
+  by the categories and brand it is being filed under (`storeTermsForFiling`), placed in
+  their trees: a "Nike" margin prices a new Nike product from its first write.
+- **A product moved between categories** from the Vetrina ("Categoria +/−", a pin into
+  a manual category's section, or their undo) whose winning rule changes with the move is
+  repriced right after, through the same `runPriceSync({ skus, liveCheck: true })`; the
+  categorize preview says how many change margin.
 - **Never a price computed without the terms it needs.** A failed read keeps the last
   good index and trees for the process lifetime. With none (a cold process whose store
   does not answer, or the Vetrina on its demo shop, whose index is not the real shop's),

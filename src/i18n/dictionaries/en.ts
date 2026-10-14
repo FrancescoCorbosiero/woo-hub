@@ -244,6 +244,8 @@ export const en: Dictionary = {
   product: {
     exactMatch: "exact match",
     noSku: "(no SKU)",
+    open: "Details",
+    openHint: "Open the product's drawer: sizes and prices, locked prices, price source",
     variants: (n) => `${n} variants`,
     sel: (a, b) => `${a}/${b} sel`,
     headerSize: "Size (EU)",
@@ -1534,6 +1536,8 @@ export const en: Dictionary = {
       storeTermRule: (name, taxonomy) => `“${name}” (store ${taxonomy === "category" ? "category" : "brand"})`,
       storeTermsUnknown:
         "The shop's categories and brands can't be read right now: these prices may miss their margin. Until they can, this product's prices on the site stay as they are.",
+      storeTermsDemo:
+        "Demo shop: its categories and brands are not the real shop's, so these prices leave out their margin.",
       belowMarket: (ask) => `Below the market price (${ask})`,
       storeEdit: (price) => `Changed on WordPress: ${price}`,
       storeEditKeep: "Keep it",
@@ -1577,12 +1581,12 @@ export const en: Dictionary = {
       cancel: "Cancel",
       delete: "Remove the rule",
       deleteConfirm: "Remove the rule? The category stays as it is, with the products it has now: from then on you fill it by hand.",
-      deleted: "Rule removed: the section is now filled by hand.",
-      applying: "Updating the section…",
+      deleted: "Rule removed: the category is now filled by hand.",
+      applying: "Updating the category…",
       applied: (n) =>
         n === 0 ? "Rule saved: no product to move." : n === 1 ? "Rule saved: 1 product moved." : `Rule saved: ${n} products moved.`,
-      savedPaused: "Rule saved paused: the section does not change.",
-      slow: "Rule saved: the section updates shortly.",
+      savedPaused: "Rule saved paused: the category does not change.",
+      slow: "Rule saved: the category updates shortly.",
       heldHint: "The last check found a big change and waits for your confirmation.",
       confirm: "Confirm and apply",
       loading: "Loading…",

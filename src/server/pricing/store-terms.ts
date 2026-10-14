@@ -304,9 +304,10 @@ export function storeTermsCache(
   async function checked<T extends StoreTermCarrier>(
     products: readonly T[],
     rules: readonly ScopedPricingRule[],
+    listing = false,
   ): Promise<StoreTermsRead<T>> {
     if (products.length === 0 || !needsStoreTerms(rules)) return { products: [...products], uncertain: new Set() };
-    const v = blind() ? UNKNOWN : await view();
+    const v = blind() && !listing ? UNKNOWN : await view();
     const needed = taxonomiesNeeded(rules);
     const uncertain = new Set<string>();
     const out = products.map((p) => {
@@ -338,6 +339,18 @@ export function storeTermsCache(
     },
 
     /**
+     * The index's own terms, blind or not (the demo shop's, while the
+     * Vetrina runs on it): for counting which of a term's products a margin
+     * reaches, as the screen listing them does — never for a price.
+     */
+    async withListedTerms<T extends StoreTermCarrier>(
+      products: readonly T[],
+      rules: readonly ScopedPricingRule[],
+    ): Promise<T[]> {
+      return (await checked(products, rules, true)).products;
+    },
+
+    /**
      * Every SKU a store-term scope reaches — the term's own products and its
      * sub-terms' — whoever prices them: the SKUs a reprice after saving such
      * a rule walks. Empty when nothing can be read.
@@ -354,6 +367,50 @@ export function storeTermsCache(
         out.push(sku);
       }
       return out;
+    },
+
+    /**
+     * The store terms a product will have once filed under these ids — a new
+     * product the Publisher is about to create, which the index cannot hold
+     * yet: each with its ancestors and depth. `categories` is the filing's
+     * path, broadest first, so a category created by this very publish (not
+     * in any tree read yet) still gets its place. {} when no enabled rule is
+     * scoped to a store term; null when a tree some rule needs cannot be read
+     * (the price is then held, never written without its margin).
+     */
+    async termsForFiling(
+      own: { categories: readonly number[]; brands: readonly number[] },
+      rules: readonly ScopedPricingRule[],
+    ): Promise<Pick<StoreTermCarrier, "storeCategories" | "storeBrands"> | null> {
+      if (!needsStoreTerms(rules)) return {};
+      if (blind()) return null;
+      const v = await view();
+      const needed = taxonomiesNeeded(rules);
+      const treeOf = async (tax: StoreTaxonomy, ids: readonly number[]) => {
+        if (ids.length === 0) return NO_PARENTS;
+        const held = v.parents[tax];
+        // Read only when some indexed product is filed in this taxonomy: ask now.
+        if (held != null && held !== NO_PARENTS) return held;
+        return source.readTree(tax).catch((e) => {
+          warn(`${tax} tree`, e);
+          return lastTrees[tax] ?? null;
+        });
+      };
+      const [catTree, brandTree] = await Promise.all([
+        treeOf("category", own.categories),
+        treeOf("brand", own.brands),
+      ]);
+      if ((needed.category && catTree == null) || (needed.brand && brandTree == null)) return null;
+      // The filing's own path says each category's parent, the tree the rest.
+      const catParents = new Map(catTree ?? NO_PARENTS);
+      own.categories.forEach((id, i) => {
+        if (i > 0) catParents.set(id, own.categories[i - 1]);
+      });
+      const leaf = own.categories.length > 0 ? [own.categories[own.categories.length - 1]] : [];
+      return {
+        storeCategories: expandStoreTerms(leaf, catParents),
+        storeBrands: expandStoreTerms(own.brands, brandTree ?? NO_PARENTS),
+      };
     },
 
     /**
@@ -431,6 +488,14 @@ export function withStoreTerms<T extends StoreTermCarrier>(
   return shop.withStoreTerms(products, rules);
 }
 
+/** See storeTermsCache().withListedTerms — counts on the screen that lists a term's products. */
+export function withListedTerms<T extends StoreTermCarrier>(
+  products: readonly T[],
+  rules: readonly ScopedPricingRule[],
+): Promise<T[]> {
+  return shop.withListedTerms(products, rules);
+}
+
 /** See storeTermsCache().withStoreTermsChecked — for whatever writes a price, or must flag one. */
 export function withStoreTermsChecked<T extends StoreTermCarrier>(
   products: readonly T[],
@@ -450,6 +515,14 @@ export async function withStoreTermsIn<K, T extends StoreTermCarrier>(
     rules,
   );
   return { products: new Map(entries.map(([k], i) => [k, read.products[i]])), uncertain: read.uncertain };
+}
+
+/** See storeTermsCache().termsForFiling — the shop's term trees. */
+export function storeTermsForFiling(
+  own: { categories: readonly number[]; brands: readonly number[] },
+  rules: readonly ScopedPricingRule[],
+): Promise<Pick<StoreTermCarrier, "storeCategories" | "storeBrands"> | null> {
+  return shop.termsForFiling(own, rules);
 }
 
 /** See storeTermsCache().skusUnder. */

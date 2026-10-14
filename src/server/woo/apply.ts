@@ -7,7 +7,7 @@ import { getActiveConfig } from "@/server/config/repo";
 import {
   getSnapshotProductsByIds,
   getSnapshotProductsBySkus,
-  upsertSnapshotProducts,
+  upsertSnapshotProductsAsOf,
 } from "@/server/store-json/repo";
 import { planMissingSizes, type MissingSizeRow } from "@/server/store-json/missing-sizes-plan";
 import { planProductSanitize, type ProductSanitizeOps } from "@/server/store-json/sanitize-plan";
@@ -15,14 +15,13 @@ import { planFeedTakeover } from "@/server/store-json/takeover-plan";
 import { variationSizeLabel } from "@/server/store-json/match";
 import { gsOwnedProducts } from "@/server/feeds/owner";
 import { getOverrides } from "@/server/overrides/repo";
-import { followSaleRuleFor, manualPriceFor, type StoreOverrides } from "@/server/overrides/model";
 import { forgetVariations, noteStoreEdits, recordPriceWrites, type LedgerWrite } from "@/server/sync/ledger";
 import type { StoreProductModel, StoreVariation } from "@/server/store-json/model";
 import { chunk } from "@/server/adapters/http";
 import { skuKey } from "@/lib/skus";
 import { normalizeGtin } from "@/lib/gtin";
 import { getWooClient } from "./client";
-import { decideLiveWrites, type LiveRules } from "./live-check";
+import { decideLiveWrites, liveRulesFrom } from "./live-check";
 import { toStoreVariation } from "./store-product";
 import { assertSnapshotIsThisStore } from "@/server/woo/site-guard";
 
@@ -40,12 +39,16 @@ import { assertSnapshotIsThisStore } from "@/server/woo/site-guard";
  *
  * Dry-run is the default posture — it computes and records the exact writes
  * and deletions without touching the store. Every run lands in apply_audit.
- * After a live run, the stored snapshot is patched to the post-apply state for
- * every product that fully succeeded, so the next preview reflects reality
- * without a re-pull, and every price the store took goes into the price ledger
- * (src/server/sync/ledger.ts) — the Hub's last word, which tells a later edit
- * in WordPress apart. Live runs read each product again first and keep a price
- * changed since the plan was made (liveCheck, see live-check.ts).
+ * Every price the store took goes into the price ledger
+ * (src/server/sync/ledger.ts) as soon as its product is written — the Hub's
+ * last word, which tells a later edit in WordPress apart, and which a plan
+ * made meanwhile reads (a whole-store apply runs for many minutes, and the
+ * feed cycle or the Vetrina may write alongside it). After a live run, the
+ * stored snapshot is patched to the post-apply state for every product that
+ * succeeded, each as it stood right after its own write, so the next preview
+ * reflects reality without a re-pull. Live runs read each product again first
+ * and keep a price changed since the plan was made (liveCheck, see
+ * live-check.ts).
  */
 
 export interface ApplySelection {
@@ -153,6 +156,8 @@ export interface ApplyChange {
   newGtin: string | null;
   /** Canonical EU size of the variant, from the plan row: the ledger's lock key. */
   euSize: string | null;
+  /** The plan priced it at the size's lock (a person's price), not by the rules. */
+  locked?: boolean;
 }
 
 /** Per-product cleanup, compact for the dry-run panel. */
@@ -343,6 +348,7 @@ async function collectChanges(
           newStock: writesPrice ? (item.stockQuantity ?? null) : null,
           newGtin,
           euSize: item.euSize ?? null,
+          locked: item.locked === true,
         });
       }
     }
@@ -565,30 +571,56 @@ export async function applySync(options: ApplyOptions): Promise<ApplyOutcome> {
   const written = new Map<number, ApplyChange[]>();
   // Products read live before writing: their sizes as the store has them now.
   const liveSizes = new Map<number, StoreVariation[]>();
-  const kept: { change: ApplyChange; storePrice: number }[] = [];
+  // When each product was as the snapshot patch will say: right after its write.
+  const asOf = new Map<number, Date>();
+  // Prices the live check kept that are listed as changed on WordPress.
+  let keptListed = 0;
   // Prices left alone because their size went on sale after the plan was made.
   let onSale = 0;
   const liveRules = options.liveCheck ? liveRulesFrom(await getOverrides(), options.decided) : {};
-  // Variations the store no longer has once this apply is done.
-  const gone: number[] = [];
   // Products that took new sizes: their parent and sizes as the store has them after.
   const afterSizes = new Map<number, { attributes: unknown; variations: StoreVariation[] }>();
   const sizesAdded: (NewSize & { variationId: number; euNorm: string })[] = [];
+  const productById = new Map(products.map((p) => [p.id, p]));
   let finished = 0;
   options.onProgress?.(0, productIds.length);
+
+  /**
+   * Tell the ledger what one product's write did, as soon as it is done: a
+   * plan made while the rest of the run is still going reads the Hub's word
+   * on this product, not the one from before the run. Best-effort: the write
+   * happened either way.
+   */
+  async function record(
+    productId: number,
+    writes: ApplyChange[],
+    keptEdits: { change: ApplyChange; storePrice: number }[],
+    goneIds: number[],
+    sizeWrites: LedgerWrite[] = [],
+  ): Promise<void> {
+    try {
+      keptListed += await recordLedger(productById.get(productId), writes, keptEdits, goneIds, sizeWrites);
+    } catch (e) {
+      console.error(
+        `[ledger] not recorded for product ${productId} (run ${options.runId}): ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
 
   await forEachLimit(productIds, concurrency, async (productId) => {
     const ops = opsByProduct.get(productId);
     let prices = priceByProduct.get(productId) ?? [];
+    let keptHere: { change: ApplyChange; storePrice: number }[] = [];
+    const goneHere: number[] = [];
     try {
       if (options.liveCheck && prices.length > 0) {
         // No answer, no write: a store that cannot be read is not written blind.
         const fresh = await client.getAllVariations(productId);
         const decision = decideLiveWrites(prices, fresh, liveRules);
         prices = decision.write;
-        kept.push(...decision.kept);
+        keptHere = decision.kept;
         onSale += decision.onSale.length;
-        gone.push(...decision.gone.map((c) => c.storeVariationId));
+        goneHere.push(...decision.gone.map((c) => c.storeVariationId));
         liveSizes.set(productId, fresh.map(toStoreVariation));
       }
 
@@ -637,7 +669,9 @@ export async function applySync(options: ApplyOptions): Promise<ApplyOutcome> {
       updated += took.length;
       written.set(productId, took);
       succeeded.add(productId);
-      gone.push(...(ops?.deleteVariationIds ?? []));
+      asOf.set(productId, new Date());
+      goneHere.push(...(ops?.deleteVariationIds ?? []));
+      await record(productId, took, keptHere, goneHere);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       if (prices.length > 0) {
@@ -645,6 +679,8 @@ export async function applySync(options: ApplyOptions): Promise<ApplyOutcome> {
       } else {
         failed.push({ stockxVariantId: `product:${productId}`, error: message });
       }
+      // What the live read found still stands: an edit kept is listed, a size gone is forgotten.
+      if (keptHere.length > 0 || goneHere.length > 0) await record(productId, [], keptHere, goneHere);
     }
 
     const work = sizesByProduct.get(productId);
@@ -673,13 +709,14 @@ export async function applySync(options: ApplyOptions): Promise<ApplyOutcome> {
       if (plan.create.length === 0) return;
       if (plan.parentAttributes) await client.updateProduct(productId, { attributes: plan.parentAttributes });
       const res = await client.batchVariations(productId, { create: plan.create.map((c) => c.payload) });
+      const added: (NewSize & { variationId: number; euNorm: string })[] = [];
       plan.create.forEach((c, i) => {
         const row = res.create[i];
         if (row?.error != null || row?.id == null) {
           failed.push({ stockxVariantId: c.stockxVariantId, error: row?.error?.message ?? row?.error?.code ?? "size not created" });
           return;
         }
-        sizesAdded.push({
+        added.push({
           sku: work.sku,
           storeProductId: productId,
           sizeLabel: c.label,
@@ -689,6 +726,24 @@ export async function applySync(options: ApplyOptions): Promise<ApplyOutcome> {
           euNorm: c.euNorm,
         });
       });
+      sizesAdded.push(...added);
+      await record(
+        productId,
+        [],
+        [],
+        [],
+        added
+          .filter((a) => a.price != null)
+          .map((a) => ({
+            variationId: a.variationId,
+            productId,
+            sku: a.sku,
+            euSize: a.euNorm,
+            price: a.price!,
+            title: productById.get(productId)?.name ?? null,
+            sizeLabel: a.sizeLabel,
+          })),
+      );
       // The store's answer, for the snapshot: what it holds now.
       const after = await client.getAllVariations(productId).catch(() => null);
       afterSizes.set(productId, {
@@ -704,41 +759,40 @@ export async function applySync(options: ApplyOptions): Promise<ApplyOutcome> {
             ],
       });
       succeeded.add(productId);
+      asOf.set(productId, new Date());
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       for (const id of work.plannedIds) failed.push({ stockxVariantId: id, error: message });
     }
   }
 
-  // 4. Patch the stored snapshot to the post-apply state of succeeded products,
+  // 5. Patch the stored snapshot to the post-apply state of succeeded products,
   //    so the next preview reflects reality without a full re-pull — from the
-  //    store's own answer where the live check read one.
+  //    store's own answer where the live check read one. Once, at the end:
+  //    the snapshot is one document, and rewriting it per product would cost
+  //    seconds each on a large shop. The ledger, written per product above,
+  //    is what a plan made meanwhile goes by (see planChunk in preview.ts);
+  //    each product is dated by its own write, so a later write's patch that
+  //    landed meanwhile is not put back to this run's older copy.
   //
   //    Only the products that actually succeeded are written, in SQL. Handing
   //    the whole model back to be re-serialized meant ~140 MB of string on top
   //    of the copy already in memory, at the end of the heaviest operation the
   //    app has.
   if (succeeded.size > 0 && products.length > 0) {
-    await upsertSnapshotProducts(patchedProducts(products, succeeded, opsByProduct, written, liveSizes, afterSizes));
+    const patched = patchedProducts(products, succeeded, opsByProduct, written, liveSizes, afterSizes);
+    await upsertSnapshotProductsAsOf(
+      patched.map((product) => ({
+        product,
+        asOf: asOf.get(product.id) ?? new Date(),
+        // A cleanup or new sizes change the sizes themselves: that copy replaces the old one.
+        wrote:
+          opsByProduct.has(product.id) || afterSizes.has(product.id)
+            ? undefined
+            : (copy: StoreProductModel) => writeInto(copy, written.get(product.id) ?? []),
+      })),
+    );
   }
-
-  // 5. The ledger: every price the store took is the Hub's last word on that
-  //    variation, and every price the live check kept is a store edit to list.
-  //    Best-effort, after the fact: the writes happened either way.
-  const sizeWrites: LedgerWrite[] = sizesAdded
-    .filter((a) => a.price != null)
-    .map((a) => ({
-      variationId: a.variationId,
-      productId: a.storeProductId,
-      sku: a.sku,
-      euSize: a.euNorm,
-      price: a.price!,
-      title: products.find((p) => p.id === a.storeProductId)?.name ?? null,
-      sizeLabel: a.sizeLabel,
-    }));
-  await recordLedger(products, written, kept, gone, sizeWrites).catch((e) =>
-    console.error(`[ledger] not recorded for run ${options.runId}: ${e instanceof Error ? e.message : String(e)}`),
-  );
 
   const status: ApplyAuditRow["status"] =
     failed.length === 0 ? "applied" : succeeded.size > 0 ? "partial" : "failed";
@@ -763,7 +817,7 @@ export async function applySync(options: ApplyOptions): Promise<ApplyOutcome> {
     cleanupDetails: cleanupDetails.slice(0, OUTCOME_SAMPLE),
     cleanupDetailsTotal: cleanupDetails.length,
     gtinsWritten: changes.filter((c) => c.newGtin).length,
-    keptStoreEdits: kept.length,
+    keptStoreEdits: keptListed,
     keptOnSale: onSale,
     sizes: {
       planned: sizesPlanned.length,
@@ -798,34 +852,20 @@ function emptyOutcome(cleanup: CleanupSummary | null): ApplyOutcome {
 }
 
 /**
- * The Hub's rules for the live check, as they stand at the write — not as they
- * stood when the plan was made: a size gives way to a sale price on the store
- * when its product follows the sale rule and the size carries no lock (a lock
- * wins over a sale price, as in buildPlan).
- */
-function liveRulesFrom(overrides: StoreOverrides, decided?: (change: ApplyChange) => boolean): LiveRules {
-  return {
-    yieldsToSale: (c) =>
-      followSaleRuleFor(overrides, c.sku) && (!c.euSize || manualPriceFor(overrides, c.sku, c.euSize) == null),
-    decided,
-  };
-}
-
-/**
- * What a live apply tells the price ledger: the variations gone, the prices
- * written, and the store edits it kept.
+ * What one product's live write tells the price ledger: the variations gone,
+ * the prices written, and the store edits it kept. Returns how many of those
+ * edits are listed (a price kept because it was the Hub's own newer write is
+ * not).
  */
 async function recordLedger(
-  products: StoreProductModel[],
-  written: ReadonlyMap<number, ApplyChange[]>,
+  product: StoreProductModel | undefined,
+  written: ApplyChange[],
   kept: { change: ApplyChange; storePrice: number }[],
   gone: number[],
   sizeWrites: LedgerWrite[] = [],
-): Promise<void> {
+): Promise<number> {
   await forgetVariations(gone);
-  const byId = new Map(products.map((p) => [p.id, p]));
   const describe = (c: ApplyChange) => {
-    const product = byId.get(c.storeProductId);
     const vrt = product?.variations.find((v) => v.id === c.storeVariationId);
     return {
       variationId: c.storeVariationId,
@@ -837,11 +877,9 @@ async function recordLedger(
     };
   };
   const writes: LedgerWrite[] = [];
-  for (const list of written.values()) {
-    for (const c of list) if (c.newPrice != null) writes.push({ ...describe(c), price: c.newPrice });
-  }
+  for (const c of written) if (c.newPrice != null) writes.push({ ...describe(c), price: c.newPrice });
   await recordPriceWrites([...writes, ...sizeWrites]);
-  await noteStoreEdits(
+  return noteStoreEdits(
     kept.map(({ change, storePrice }) => ({
       ...describe(change),
       storePrice,
@@ -877,21 +915,26 @@ function patchedProducts(
     const next = added
       ? { ...(ops?.sanitized ?? p), attributes: added.attributes, variations: added.variations }
       : (ops?.sanitized ?? (fresh ? { ...p, variations: fresh } : p));
-    const byId = new Map(next.variations.map((v) => [v.id, v]));
-    for (const c of written.get(p.id) ?? []) {
-      const vrt = byId.get(c.storeVariationId);
-      if (!vrt) continue;
-      if (c.newPrice != null) vrt.regular_price = c.newPrice.toFixed(2);
-      if (c.newStock != null) {
-        vrt.manage_stock = true;
-        vrt.stock_quantity = c.newStock;
-        vrt.stock_status = c.newStock > 0 ? "instock" : "outofstock";
-      }
-      if (c.newGtin) vrt.global_unique_id = c.newGtin;
-    }
+    writeInto(next, written.get(p.id) ?? []);
     out.push(next);
   }
   return out;
+}
+
+/** What a product took, written into a copy of it. */
+function writeInto(product: StoreProductModel, took: ApplyChange[]): void {
+  const byId = new Map(product.variations.map((v) => [v.id, v]));
+  for (const c of took) {
+    const vrt = byId.get(c.storeVariationId);
+    if (!vrt) continue;
+    if (c.newPrice != null) vrt.regular_price = c.newPrice.toFixed(2);
+    if (c.newStock != null) {
+      vrt.manage_stock = true;
+      vrt.stock_quantity = c.newStock;
+      vrt.stock_status = c.newStock > 0 ? "instock" : "outofstock";
+    }
+    if (c.newGtin) vrt.global_unique_id = c.newGtin;
+  }
 }
 
 export interface ApplyHistoryEntry {

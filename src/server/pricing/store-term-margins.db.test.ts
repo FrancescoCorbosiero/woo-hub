@@ -39,12 +39,17 @@ const OFF_WHITE = 912;
 // Store product ids of their own: other suites leave index rows behind.
 const K_ID = 9101;
 const F_ID = 9102;
+// A product the shop does not carry yet: the Publisher creates it.
+const NEW_SKU = "STM-NEW-1";
+const NEW_ID = 9103;
 
 const store = vi.hoisted(() => ({
   products: new Map<number, FakeVariation[]>(),
   categories: [] as { id: number; name: string; slug: string; parent: number }[],
   /** The store's category listing fails (a 5xx after retries, a timeout). */
   treeDown: false,
+  /** Products the Publisher created, as it sent them. */
+  created: [] as Record<string, unknown>[],
 }));
 
 const kicks = vi.hoisted(() => ({ products: new Map<string, SourceProduct>() }));
@@ -53,7 +58,10 @@ vi.mock("@/server/woo/client", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/server/woo/client")>();
   const client = {
     getAllVariations: async (productId: number) => structuredClone(store.products.get(productId) ?? []),
-    batchVariations: async (productId: number, payload: { update?: Record<string, unknown>[] }) => {
+    batchVariations: async (
+      productId: number,
+      payload: { update?: Record<string, unknown>[]; create?: Record<string, unknown>[] },
+    ) => {
       const sizes = store.products.get(productId) ?? [];
       const update = (payload.update ?? []).map((row) => {
         const v = sizes.find((s) => s.id === row.id);
@@ -62,9 +70,30 @@ vi.mock("@/server/woo/client", async (importOriginal) => {
         if (row.stock_quantity != null) v.stock_quantity = Number(row.stock_quantity);
         return { id: row.id as number };
       });
-      return { create: [], update, delete: [] };
+      // The Publisher's sizes: created with the price it planned.
+      const create = (payload.create ?? []).map((row) => {
+        const id = productId * 10 + sizes.length + 1;
+        sizes.push({
+          id,
+          sku: String(row.sku ?? ""),
+          regular_price: String(row.regular_price ?? ""),
+          manage_stock: false,
+          stock_quantity: null,
+          attributes: [],
+        });
+        return { id };
+      });
+      store.products.set(productId, sizes);
+      return { create, update, delete: [] };
     },
     updateProduct: async () => undefined,
+    findProductsBySku: async () => [],
+    createProduct: async (body: Record<string, unknown>) => {
+      store.created.push(body);
+      return { id: NEW_ID, sku: body.sku, name: body.name, status: "draft", images: [] };
+    },
+    getAttributeTaxonomies: async () => [{ id: 1, name: "Taglia", slug: "pa_taglia" }],
+    createAttribute: async () => null,
     listCategories: async () => {
       if (store.treeDown) throw Object.assign(new Error("Bad gateway"), { status: 502 });
       return structuredClone(store.categories);
@@ -177,8 +206,10 @@ describe.skipIf(!enabled)("a margin on a store category (real SQL, stand-in stor
     await db.delete(config);
     if (savedConfig.length > 0) await db.insert(config).values(savedConfig as never);
     await db.delete(storeIndex).where(inArray(storeIndex.productId, [K_ID, F_ID]));
-    await db.delete(catalogProducts).where(inArray(catalogProducts.sku, [KICKS, FEED]));
+    await db.delete(catalogProducts).where(inArray(catalogProducts.sku, [KICKS, FEED, NEW_SKU]));
     await db.delete(feedItems).where(inArray(feedItems.sku, [FEED]));
+    const { mediaJobs } = await load();
+    await db.delete(mediaJobs).where(inArray(mediaJobs.sku, [NEW_SKU]));
   });
 
   beforeEach(async () => {
@@ -201,7 +232,9 @@ describe.skipIf(!enabled)("a margin on a store category (real SQL, stand-in stor
     await db.delete(priceLedger);
     await db.delete(storeOverrides);
     await db.delete(storeIndex).where(inArray(storeIndex.productId, [K_ID, F_ID]));
-    await db.delete(catalogProducts).where(inArray(catalogProducts.sku, [KICKS, FEED]));
+    await db.delete(catalogProducts).where(inArray(catalogProducts.sku, [KICKS, FEED, NEW_SKU]));
+    store.products.delete(NEW_ID);
+    store.created = [];
 
     // The house rules as shipped, plus the owner's "Ricarico 25%" on Nike.
     await db.delete(config);
@@ -322,6 +355,8 @@ describe.skipIf(!enabled)("a margin on a store category (real SQL, stand-in stor
   it("saving the rule list keeps the store term (a Margins tab save never widens it to the whole shop)", async () => {
     const { savePricingRules, getActiveConfig, pricingRulesVersion } = await load();
     const cfg = await getActiveConfig();
+    // A fingerprint the editor never loaded (any length, any text) is refused as stale: nothing written.
+    expect(await savePricingRules(cfg.pricingRules, "x".repeat(5000))).toMatchObject({ ok: false, stale: true });
     const saved = await savePricingRules(cfg.pricingRules, pricingRulesVersion(cfg.pricingRules));
     expect(saved.ok).toBe(true);
     const kept = (await getActiveConfig()).pricingRules.find((r) => r.id === NIKE_MARGIN.id);
@@ -334,6 +369,23 @@ describe.skipIf(!enabled)("a margin on a store category (real SQL, stand-in stor
     forgetStoreTerms();
     await runPriceSync({ skus: [KICKS], liveCheck: true });
     expect(price(K_ID, 11)).toBe("135.99"); // already the house price: nothing moved
+  });
+
+  it("a new product is published at the margin of the category it is filed under, not the house one", async () => {
+    const { upsertCatalog, db, mediaJobs, inArray, priceLedger, eq } = await load();
+    const { publishProducts } = await import("@/server/woo/publish");
+    await db.delete(mediaJobs).where(inArray(mediaJobs.sku, [NEW_SKU]));
+    // KicksDB files it under Sneakers › Nike: the store's own categories 910 › 911.
+    await upsertCatalog("IT", [
+      { ...kicksProduct, stockxId: "sx-stm-new", sku: NEW_SKU, category: "Sneakers", secondaryCategory: "Nike" },
+    ]);
+    const outcome = await publishProducts([NEW_SKU], { dryRun: false });
+    expect(outcome.products[0]).toMatchObject({ action: "create", error: null });
+    expect(store.created[0]?.categories).toEqual([{ id: SNEAKERS }, { id: NIKE }]);
+    // Nike's 25 % (125,99), from the first write — not the house 35 % (135,99).
+    expect(store.products.get(NEW_ID)?.map((v) => v.regular_price)).toEqual(["125.99", "125.99"]);
+    const ledger = await db.select().from(priceLedger).where(eq(priceLedger.productId, NEW_ID));
+    expect(ledger.map((r) => r.price)).toEqual([125.99, 125.99]);
   });
 
   it("a cold process that cannot read the category tree holds the price rather than write the general one", async () => {

@@ -103,7 +103,12 @@ const WHOLE_TERM = { message: problem("termTarget"), path: ["termKey"] };
 
 export const OperationInputSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("hide"), target: TargetSchema, termKey: TermKeySchema.optional() }).refine(wholeTerm, WHOLE_TERM),
-  z.object({ kind: z.literal("show"), target: TargetSchema, keepHeld: z.boolean().optional() }),
+  z.object({
+    kind: z.literal("show"),
+    target: TargetSchema,
+    keepHeld: z.boolean().optional(),
+    restore: z.boolean().optional(),
+  }),
   z
     .object({
       kind: z.literal("sale"),

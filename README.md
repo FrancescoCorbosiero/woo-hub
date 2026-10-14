@@ -109,7 +109,9 @@ Publish filter/sort/paginate in SQL.
   sync honors them automatically). Store-only products instead show the LIVE
   store view — per-size shelf price and real stock — **directly editable**:
   changes are written to WooCommerce immediately and mirrored into the
-  snapshot. The Feeds tab's product list opens it; an old `/catalog` link
+  snapshot. The Feeds tab's product list opens it, and so do the Publish
+  tab's rows (lock sizes before publishing: the Publisher honours locks) and
+  the Sync and Preview tabs' products ("Details"); an old `/catalog` link
   lands on the dashboard with its drawer open. Browsing the shop by category
   and brand belongs to the Vetrina (see
   [docs/vetrina-catalog.md](docs/vetrina-catalog.md)).
@@ -178,8 +180,9 @@ Publish filter/sort/paginate in SQL.
   write, from the Vetrina say, which is simply left alone); a size put on sale
   since keeps its price while its product follows the sale rule and the size
   has no lock; a size a person just decided (a lock set in the Vetrina, a size
-  handed back to the rules) is written all the same. The tab says how many it
-  left alone. The contract, race by race:
+  handed back to the rules) is written all the same; a size whose lock was set,
+  moved or cleared since the plan is not written at the plan's price. The tab
+  says how many it left alone. The contract, race by race:
   [docs/vetrina-catalog.md §3](docs/vetrina-catalog.md#3-prices-one-engine-one-way-in).
 - **Publish** (`/publish`) — the catalog→store direction. Every other write
   path works on products the store already has (the sync walks the snapshot:
@@ -227,7 +230,7 @@ Publish filter/sort/paginate in SQL.
   are scoped by source, brand, **product family / sub-family** (the catalog's
   own tree), name, SKU or size range; each card reports how many products it
   really prices and what the engine charges at three sample asks. See
-  [Scoped rules](#scoped-rules-a-family-with-its-own-margin).
+  [Scoped rules](#scoped-rules-a-family-a-category-or-a-brand-with-its-own-margin).
 - **Automatic categories** (`/collections`) — Shopify's automated collections,
   on WooCommerce: a category gets a rule on the products' tags, brands,
   attributes, name, price, sale, stock or age, and holds exactly the products
@@ -410,7 +413,7 @@ factory). After upgrading an existing DB, press **Reset** once — the stored
 config row still carries the old flat rule. Precedence for any variant price:
 **manual lock > sale rule > computed price**.
 
-### Scoped rules: a family with its own margin
+### Scoped rules: a family, a category or a brand with its own margin
 
 The banded default is only the **catch-all**. The **Margins** tab (`/pricing`)
 edits the whole rule list, and any rule can carve out a slice of the catalog —
@@ -423,21 +426,27 @@ classifier (`src/server/catalog/classify.ts`), so a family rule covers them
 too, not just KicksDB rows.
 
 A rule can also be scoped to one of the **shop's own categories or brands**
-(`storeCategory` / `storeBrand`, a WooCommerce term id, its sub-terms
-included) — the Vetrina's "Ricarico" on a category, or "+ Margine per
+(`storeCategory` / `storeBrand`: a WooCommerce term **id**, never a slug, its
+sub-terms included; `storeTermName` keeps the term's path as a label only) —
+the Vetrina's "Ricarico" on a category or a brand, or "+ Margine per
 categoria o brand del negozio" here. It applies to KicksDB-priced products
 only: never to a GoldenSneakers price (the supplier's margin is already in it)
 nor to a store-only product. Products get their store terms from the store
-index right before every price is computed; when those cannot be read, the
-sync holds the prices they could change rather than write the general one.
+index right before every price is computed — a product being published, from
+the categories and brand it is filed under — and a product the Vetrina moves
+into or out of a category with a margin is repriced right after. When the
+terms cannot be read, the sync holds the prices they could change rather than
+write the general one.
 
 Two properties make the list predictable:
 
-- **The narrowest rule wins, not the one with the most fields.** Rules rank
-  in tiers first: a **SKU** rule, then a **store category or brand** rule (the
-  deeper term first: a sub-category beats its category, and a category and a
-  brand meet by depth in their own trees), then every other rule. Within a
-  tier, scopes are weighted by how few products they describe (`sku` ⊂
+- **The narrowest rule wins, not the one with the most fields.** For any
+  size, the full order is: **manual lock > sale price held** (the product
+  follows the sale rule) **> SKU rule > store category or brand rule** (the
+  deeper term first — a sub-category beats its category, and a category and a
+  brand meet by depth in their own trees — then the later rule in the list)
+  **> every other rule** (source, brand, family, name, sizes). Among those
+  other rules, scopes are weighted by how few products they describe (`sku` ⊂
   `secondaryCategory` / `model` ⊂ `category` ⊂ `brand` ⊂ `source`), and on a
   tie the later rule in the list wins. Text matching is case-insensitive.
 - **One rule owns the margin.** The most specific rule that states a margin
@@ -457,6 +466,16 @@ The product drawer names the rule behind its proposed prices.
 The list has more than one editor (this tab, the pricing bar, the Vetrina):
 every save is a locked read-modify-write, and this tab refuses to save over a
 list that changed since it was opened — reload, then edit.
+
+**The Vetrina's catalog.** The owner browses the shop by its own categories
+and brands on the phone (the Vetrina's Catalogo tab) and acts on one product
+or many — hide and show (a whole category or brand too, its products hidden
+everywhere, newcomers included, and "Mostra" restoring exactly), sales,
+tags, categories, homepage pins, a category's or brand's margin — each with a
+preview, a background run and "Annulla". Its price actions never write a
+regular price: a sale is the sale price only, and a margin is a store-term
+rule in this list, applied by the engine. The design, the decisions and the
+price contract with the engine: [docs/vetrina-catalog.md](docs/vetrina-catalog.md).
 
 **Rolling back** past the store-term rules: an older engine ignores their
 scope keys and would apply them to every product, supplier prices included.

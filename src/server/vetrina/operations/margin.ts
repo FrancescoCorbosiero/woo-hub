@@ -1,7 +1,7 @@
 import "server-only";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { AppConfig, ProductScopeAxes } from "@core/config";
-import { declaresMarkup, MAX_PRICING_RULES, winningMarkupRuleId } from "@core/config";
+import { declaresMarkup, isStoreTermScope, MAX_PRICING_RULES, winningMarkupRuleId } from "@core/config";
 import type { SourceProduct } from "@core/core-spine";
 import type { MarginPreview, OperationInput, OperationPreview, TermMarginState } from "@/lib/vetrina/catalog-ops";
 import { skuKey } from "@/lib/skus";
@@ -15,7 +15,14 @@ import { catalogProducts, storeIndex, type OperationUndoOutcome, type VetrinaOpe
 import { activeFeedSkus, GS_FEED } from "@/server/feeds/repo";
 import { followSaleRuleFor, manualPriceFor, skusPinnedTo, type StoreOverrides } from "@/server/overrides/model";
 import { getOverrides } from "@/server/overrides/repo";
-import { forgetStoreTerms, skusUnderStoreTerm, storeTermsKnown, withStoreTerms } from "@/server/pricing/store-terms";
+import {
+  expandStoreTerms,
+  forgetStoreTerms,
+  skusUnderStoreTerm,
+  storeTermsKnown,
+  withListedTerms,
+  withStoreTerms,
+} from "@/server/pricing/store-terms";
 import { ledgerForProducts, type LedgerEntry } from "@/server/sync/ledger";
 import { resolveFromModel, sourceEuSize } from "@/server/store-json/match";
 import { getSnapshotInfo, getSnapshotProductsBySkus } from "@/server/store-json/repo";
@@ -149,8 +156,11 @@ async function catalogAxes(market: string, skus: readonly string[]): Promise<Map
  * handed back to KicksDB); a SKU the catalog does not hold from a source is
  * store-only; the rest the Hub prices from the market.
  */
-async function termProducts(term: MarginTerm, market: string): Promise<TermProducts> {
-  const skus = [...new Set((await skusUnderStoreTerm(storeScope(term))).map(skuKey))];
+/** Who prices each of these SKUs (canonical), and their catalog rows: the supplier's feed, the market, or nobody (store-only). */
+async function ownersOf(
+  market: string,
+  skus: readonly string[],
+): Promise<{ owner: (sku: string) => Owner; rows: Map<string, ProductScopeAxes>; overrides: StoreOverrides | null }> {
   const [rows, feed, overrides] = await Promise.all([catalogAxes(market, skus), activeFeedSkus(GS_FEED), getOverrides().catch(() => null)]);
   const feedSkus = new Set([...feed].map(skuKey));
   const pinned = new Set((overrides ? skusPinnedTo(overrides, "kicksdb") : []).map(skuKey));
@@ -160,6 +170,12 @@ async function termProducts(term: MarginTerm, market: string): Promise<TermProdu
     if (!row || row.source === "woo") return "store";
     return ((row.source ?? "").trim().toLowerCase() || "kicksdb") === "kicksdb" ? "market" : "supplier";
   };
+  return { owner, rows, overrides };
+}
+
+async function termProducts(term: MarginTerm, market: string): Promise<TermProducts> {
+  const skus = [...new Set((await skusUnderStoreTerm(storeScope(term))).map(skuKey))];
+  const { owner, rows, overrides } = await ownersOf(market, skus);
   const out: TermProducts = {
     market: [],
     supplier: 0,
@@ -177,6 +193,62 @@ async function termProducts(term: MarginTerm, market: string): Promise<TermProdu
     }
   }
   return out;
+}
+
+/** A product's place in the store's terms (own ids, as the index files them), before and after a move. */
+export interface TermMove {
+  sku: string;
+  before: { categories: readonly number[]; brands: readonly number[] };
+  after: { categories: readonly number[]; brands: readonly number[] };
+}
+
+/**
+ * Of these products moved between categories, the market-priced ones whose
+ * margin changes with the move: a margin set on a category or a brand prices
+ * its products (phase 4), so a product put into "Outlet" takes Outlet's — or
+ * leaves Nike's. Judged as the sync will: the rule that wins for the product
+ * before and after. The categorize preview says how many; the move reprices
+ * them once it lands (writes.ts). None while no rule is scoped to a store term.
+ */
+export async function marginChanges(moves: readonly TermMove[]): Promise<string[]> {
+  if (moves.length === 0) return [];
+  const config = await getActiveConfig();
+  if (!config.pricingRules.some((r) => r.enabled && isStoreTermScope(r.scope))) return [];
+  const skus = [...new Set(moves.map((m) => skuKey(m.sku)).filter(Boolean))];
+  const [{ owner, rows }, trees] = await Promise.all([ownersOf(config.source.market, skus), readCatalogTrees()]);
+  const placed = (axes: ProductScopeAxes, own: TermMove["before"]): ProductScopeAxes => ({
+    ...axes,
+    storeCategories: expandStoreTerms(own.categories, trees.category.parents),
+    storeBrands: expandStoreTerms(own.brands, trees.brand.parents),
+  });
+  const out: string[] = [];
+  for (const move of moves) {
+    const sku = skuKey(move.sku);
+    const axes = rows.get(sku);
+    if (!axes || owner(sku) !== "market") continue;
+    const was = winningMarkupRuleId(placed(axes, move.before), config.pricingRules);
+    const now = winningMarkupRuleId(placed(axes, move.after), config.pricingRules);
+    if (was !== now) out.push(sku);
+  }
+  return out;
+}
+
+/**
+ * Reprice the products a move between categories put under another margin,
+ * through the ordinary sync (the live check included), a slice at a time —
+ * the engine stays the only writer of their prices. Best-effort: the move
+ * happened, and the next sync prices them anyway. Never on the demo shop.
+ */
+export async function repriceMoved(moves: readonly TermMove[]): Promise<void> {
+  if (demoMode()) return;
+  try {
+    // The index learnt the move from the store's answer: the store terms are read again with it.
+    forgetStoreTerms();
+    const skus = await marginChanges(moves);
+    for (const part of chunks(skus, REPRICE_CHUNK)) await runPriceSync({ skus: part, liveCheck: true });
+  } catch (e) {
+    console.warn(`[vetrina-ops] products moved to another margin not repriced now (the next sync does it): ${messageOf(e)}`);
+  }
 }
 
 /**
@@ -198,7 +270,9 @@ async function appliesTo(
   // Any percent: who a rule prices does not depend on its margin.
   const change = withTermMargin(config.pricingRules, term, facts.path, 0);
   const without = withTermMargin(config.pricingRules, term, facts.path, null).rules;
-  const axes = await withStoreTerms([...products.axes.values()], change.rules);
+  // The index's own terms — the demo shop's too: the count is of the products this screen lists, and on
+  // the demo the pricing's view of them is blind (it mirrors another shop), which counted none.
+  const axes = await withListedTerms([...products.axes.values()], change.rules);
   const byId = new Map(config.pricingRules.map((r) => [r.id, r]));
   const ancestors = new Set(facts.ancestors.map((a) => a.id));
   const key = term.taxonomy === "category" ? "storeCategory" : "storeBrand";

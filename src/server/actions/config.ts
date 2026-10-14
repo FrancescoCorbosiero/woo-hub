@@ -188,12 +188,6 @@ export interface SaveRulesResult {
   version?: string;
 }
 
-/** The current rule list and its fingerprint, for the margins editor. */
-export async function getPricingRules(): Promise<{ rules: ScopedPricingRule[]; version: string }> {
-  const rules = (await getActiveConfig()).pricingRules;
-  return { rules, version: pricingRulesVersion(rules) };
-}
-
 /** How many catalog products each rule actually sets the margin for. */
 export interface RuleCoverage {
   ruleId: string;
@@ -334,6 +328,8 @@ function namesNewStoreTerm(next: readonly ScopedPricingRule[], current: readonly
   return [...storeTermKeys(next)].some((k) => !known.has(k));
 }
 
+const RulesVersion = z.string().regex(/^[0-9a-f]{16}$/);
+
 /**
  * Replace the whole pricing-rule list (the margins editor saves everything at
  * once — rules are one document, and partial saves would allow half-edited
@@ -353,7 +349,8 @@ export async function savePricingRules(input: unknown, version: string): Promise
     const issue = parsed.error.issues[0];
     return { ok: false, error: `${issue?.path.join(".") ?? ""}: ${issue?.message ?? "invalid"}` };
   }
-  if (typeof version !== "string" || version.length === 0) return { ok: false, stale: true };
+  // A fingerprint is 16 hex characters (pricingRulesVersion): anything else is no list this editor loaded.
+  if (!RulesVersion.safeParse(version).success) return { ok: false, stale: true };
 
   const rules: ScopedPricingRule[] = parsed.data.map((r) => ({
     id: r.id,

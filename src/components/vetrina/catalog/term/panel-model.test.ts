@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { OperationStatus, OperationView, TermActionsState } from "@/lib/vetrina/catalog-ops";
-import { hasActions, saleState, toggleOn, visibilityState } from "./panel-model";
+import { hasActions, saleState, saleUndoBack, toggleOn, visibilityState } from "./panel-model";
 
 function op(kind: OperationView["kind"], status: OperationStatus): OperationView {
   return {
@@ -111,6 +111,22 @@ describe("saleState", () => {
       const sale = { percent: 30, endsOn: null, operation: op("sale", status) };
       expect(saleState({ onSale: 0 }, { ...none, sale }).kind).toBe("busy");
     }
+  });
+});
+
+describe("saleUndoBack", () => {
+  it("says what «Annulla» brings back: the prices from before, the earlier discount, or the earlier end", () => {
+    const done = op("sale", "done");
+    const on = (sale: Record<string, unknown>) => {
+      const state = saleState({ onSale: 0 }, { ...none, sale: { percent: 30, endsOn: "2026-10-31", operation: done, ...sale } });
+      if (state.kind !== "on") throw new Error("not on sale");
+      return saleUndoBack(state);
+    };
+    expect(on({})).toEqual({ kind: "plain" });
+    expect(on({ replaces: 20, replacesEndsOn: null })).toEqual({ kind: "percent", percent: 20 });
+    // The same −30%, only the end moved: its undo puts the earlier end back, not "−30%" again.
+    expect(on({ replaces: 30, replacesEndsOn: "2026-10-15" })).toEqual({ kind: "end", endsOn: "2026-10-15" });
+    expect(on({ replaces: 30, replacesEndsOn: null })).toEqual({ kind: "end", endsOn: null });
   });
 });
 

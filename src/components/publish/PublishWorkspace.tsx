@@ -14,6 +14,7 @@ import { hasMixedSources, type PublishCounts, type PublishSourceLens } from "@/l
 import { mergeQuery, type QueryParams } from "@/lib/qs";
 import { FIRST_BATCH, nextBatchSize, nextPace } from "@/lib/publish-batching";
 import { CardImage } from "@/components/catalog/CardImage";
+import { ProductLink } from "@/components/catalog/CatalogDrawerHost";
 import { RepairPanel } from "./RepairPanel";
 import { MediaQueuePanel } from "./MediaQueuePanel";
 import type { MediaQueueState } from "@/server/woo/media";
@@ -625,7 +626,11 @@ export function PublishWorkspace({
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium">{c.title || c.sku}</div>
                   <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-faint">
-                    <span className="font-mono">{c.sku}</span>
+                    {/* Its drawer: lock sizes before publishing (the Publisher honours locks), re-sync it. A link
+                        inside the row's label: a click on it opens the drawer and leaves the tick alone. */}
+                    <ProductLink sku={c.sku} className="font-mono underline-offset-2 hover:text-accent hover:underline" title={t.product.openHint}>
+                      {c.sku}
+                    </ProductLink>
                     {c.brand && <span>· {c.brand}</span>}
                     {c.category && (
                       <span>

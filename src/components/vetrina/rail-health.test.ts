@@ -16,7 +16,7 @@ function card(id: number, extra: Partial<ProductCard> = {}): ProductCard {
     price: 100,
     priceMax: null,
     onSale: false,
-    image: "",
+    image: "https://shop.example/thumb.jpg",
     permalink: "",
     editLink: "",
     created: null,
@@ -58,6 +58,12 @@ describe("railHealth: the rail card's «esauriti / nascosti» line", () => {
     ];
     // Shows 3: Product 4 is past the section's size; Product 2 is gone.
     expect(railHealth({ limit: 3, products }, it_)).toBe("1 nascosto dal negozio");
+  });
+
+  it("counts a product shown without a photo", () => {
+    const products = [card(1, { image: "" }), card(2), card(3, { image: "", stockStatus: "outofstock" })];
+    expect(railHealth({ limit: 8, products }, it_)).toBe("1 esaurito · 2 senza foto");
+    expect(railHealth({ limit: 8, products }, homeEn.rail)).toBe("1 sold out · 2 without a photo");
   });
 
   it("«solo nel catalogo» or «solo nella ricerca» is not hidden from the shop", () => {

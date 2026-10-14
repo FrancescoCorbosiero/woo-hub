@@ -27,12 +27,12 @@ export function storePrice(cents: number): string {
   return (cents / 100).toFixed(2);
 }
 
-// As the catalog's lists write a price (components/vetrina/format.ts): a preview reads the same.
-const EURO = new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" });
-
-/** "129,00 €", "102,99 €", "1.299,00 €": as the catalog's lists write it. */
-export function euro(cents: number): string {
-  return EURO.format(cents / 100);
+/**
+ * "129,00 €", "1.299,00 €" — "€129.00" for an English reader: in the
+ * reader's language, as the catalog's lists write it (components/vetrina/format.ts).
+ */
+export function euro(cents: number, w: Words = words()): string {
+  return w.money(cents / 100);
 }
 
 /**
@@ -100,8 +100,28 @@ export interface LiveSize {
 export type SaleSkip = "noPrice" | "notLower" | "same" | "noSale";
 
 export type SizePlan =
-  | { variationId: number | null; write: true; before: SaleState; after: SaleState }
+  | {
+      variationId: number | null;
+      write: true;
+      before: SaleState;
+      after: SaleState;
+      /** The size's regular price as read, in cents: what its sale prices (before and after) belong to. */
+      regular: number | null;
+    }
   | { variationId: number | null; write: false; reason: SaleSkip };
+
+/**
+ * A sale item as filed: the values before, plus the regular price they
+ * belong to ("200.00"; null for none) — so an undo never puts a sale price
+ * back over a regular price that moved since (saleUndoVerdict). Items filed
+ * before it was kept have none, and are taken at their word.
+ */
+export type FiledSale = SaleState & { regular?: string | null };
+
+/** What a sale size files before its write. */
+export function filedBefore(plan: Extract<SizePlan, { write: true }>): FiledSale {
+  return { ...plan.before, regular: plan.regular == null ? null : storePrice(plan.regular) };
+}
 
 export interface SaleSpec {
   percent: number;
@@ -124,7 +144,7 @@ export function planSale(sizes: readonly LiveSize[], spec: SaleSpec): SizePlan[]
     if (sale <= 0 || sale >= size.regular) return { variationId, write: false, reason: "notLower" };
     const after: SaleState = { price: storePrice(sale), from: null, to: spec.endsOn ? saleEnd(spec.endsOn) : null };
     if (sameSale(size.sale, after)) return { variationId, write: false, reason: "same" };
-    return { variationId, write: true, before: size.sale, after };
+    return { variationId, write: true, before: size.sale, after, regular: size.regular };
   });
 }
 
@@ -133,7 +153,7 @@ export function planUnsale(sizes: readonly LiveSize[]): SizePlan[] {
   return sizes.map((size): SizePlan =>
     priceCents(size.sale.price) == null
       ? { variationId: size.variationId, write: false, reason: "noSale" }
-      : { variationId: size.variationId, write: true, before: size.sale, after: NO_SALE },
+      : { variationId: size.variationId, write: true, before: size.sale, after: NO_SALE, regular: size.regular },
   );
 }
 
@@ -154,10 +174,18 @@ function priceWords(list: (number | null)[], w: Words): string {
   const known = list.filter((c): c is number => c != null);
   if (known.length === 0) return w.state.noPrice;
   const low = Math.min(...known);
-  return new Set(known).size > 1 ? w.state.from(euro(low)) : euro(low);
+  return new Set(known).size > 1 ? w.state.from(euro(low, w)) : euro(low, w);
 }
 
-/** A product's prices before and after, in words: "129,00 €" → "102,99 €" (the lowest, "da" when sizes differ). */
+/** A sale's last day in words: "fino al 31 ottobre", "senza fine". */
+const endWords = (sale: SaleState, w: Words) => (sale.to ? w.state.until(sale.to.slice(0, 10)) : w.state.noEnd);
+
+/**
+ * A product's prices before and after, in words: "129,00 €" → "102,99 €"
+ * (the lowest, "da" when sizes differ). Where only a sale's end moves (the
+ * same discount, another last day), the end goes with each side: the row
+ * would otherwise read as if nothing changed.
+ */
 export function salePriceWords(
   sizes: readonly LiveSize[],
   plans: readonly SizePlan[],
@@ -167,7 +195,10 @@ export function salePriceWords(
     const plan = plans[i];
     return plan?.write ? shelf(size.regular, plan.after) : shelf(size.regular, size.sale);
   });
-  return { before: priceWords(sizes.map((s) => shelf(s.regular, s.sale)), w), after: priceWords(after, w) };
+  const out = { before: priceWords(sizes.map((s) => shelf(s.regular, s.sale)), w), after: priceWords(after, w) };
+  const moved = plans.find((p): p is Extract<SizePlan, { write: true }> => p.write && day(p.before.to) !== day(p.after.to));
+  if (out.before !== out.after || !moved || priceCents(moved.after.price) == null) return out;
+  return { before: `${out.before} · ${endWords(moved.before, w)}`, after: `${out.after} · ${endWords(moved.after, w)}` };
 }
 
 /**
@@ -188,11 +219,18 @@ export function raisesPrice(sizes: readonly LiveSize[], plans: readonly SizePlan
  * Visibility, tags, categories
  * ---------------------------------------------------------------- */
 
-/** The visibility "Nascondi" or "Mostra" writes, or null when the product needs nothing. */
-export function visibilityAfter(kind: "hide" | "show", current: string): string | null {
+const SHOWN = new Set(["visible", "catalog", "search"]);
+
+/**
+ * The visibility "Nascondi" or "Mostra" writes, or null when the product
+ * needs nothing. `was`: for "Mostra", what the product was before its hide
+ * — put back as it was ("only in search" stays so) rather than visible.
+ */
+export function visibilityAfter(kind: "hide" | "show", current: string, was?: string): string | null {
   if (kind === "hide") return current === "hidden" ? null : "hidden";
   // "Mostra" brings back what is hidden; "only in search" or "only in the catalog" was someone's choice.
-  return current === "hidden" ? "visible" : null;
+  if (current !== "hidden") return null;
+  return was && SHOWN.has(was) ? was : "visible";
 }
 
 /** A product's whole list of tags or categories after adding or removing one; null when it changes nothing. */
@@ -252,6 +290,20 @@ export function undoVerdict<T>(live: T, before: T, after: T, same: (a: T, b: T) 
 }
 
 /**
+ * Undo for a sale size: as undoVerdict — and a sale price goes back only
+ * over the regular price it belongs to. Once a sale is taken off, the
+ * engine prices the size again; put back over a new regular price, the old
+ * sale price would announce another discount than the one the owner set
+ * (or none at all, above it — and a sale price above the regular one still
+ * holds the size's regular price for good). Such a size is left as it is.
+ */
+export function saleUndoVerdict(live: LiveSize, before: FiledSale, after: SaleState): UndoVerdict {
+  const verdict = undoVerdict(live.sale, before, after, sameSale);
+  if (verdict !== "restore" || priceCents(before.price) == null || before.regular === undefined) return verdict;
+  return priceCents(before.regular) === live.regular ? "restore" : "changed";
+}
+
+/**
  * Undo for a list of tags or categories. What the action wrote is a change —
  * these added, those removed — and that change is what must still be there:
  * a tag or category someone (or an automatic category) added since stays,
@@ -282,12 +334,14 @@ export interface OperationFacts {
   createdAt: Date;
   finishedAt: Date | null;
   undoneAt: Date | null;
+  /** A whole term's hide closed for good: it stopped hiding anything, or a newer hide took over. */
+  endedAt?: Date | null;
   termKey: string | null;
 }
 
-/** It still holds: under way, done, or stopped part-way after changing something — and not undone. */
-export function stands(op: Pick<OperationFacts, "status" | "changed" | "undoneAt">): boolean {
-  if (op.undoneAt) return false;
+/** It still holds: under way, done, or stopped part-way after changing something — and neither undone nor closed. */
+export function stands(op: Pick<OperationFacts, "status" | "changed" | "undoneAt" | "endedAt">): boolean {
+  if (op.undoneAt || op.endedAt) return false;
   return op.status === "running" || op.status === "done" || op.status === "undoing" || (op.status === "failed" && op.changed > 0);
 }
 
@@ -296,10 +350,11 @@ export function stands(op: Pick<OperationFacts, "status" | "changed" | "undoneAt
  * still stands. The term's screen reads its hide and its sale from these
  * rows (standingHide, standingSale) — a hide's items are what "Mostra" puts
  * back, and an older sale under a newer one, or a sale's end, decide what
- * the screen says — and there are only a handful per term. repo.ts's
- * trimOperations says the same in SQL.
+ * the screen says. A hide closed (endedAt) no longer stands; a sale or an
+ * end of sale behind a newer end the screen can no longer reach is dropped
+ * all the same (repo.ts's trimOperations, which says this in SQL).
  */
-export function keptForTerm(op: Pick<OperationFacts, "kind" | "status" | "changed" | "undoneAt" | "termKey">): boolean {
+export function keptForTerm(op: Pick<OperationFacts, "kind" | "status" | "changed" | "undoneAt" | "endedAt" | "termKey">): boolean {
   // A margin is filed under its term too (its screen follows it while it
   // runs), but what stands on the term is the pricing rule in the config,
   // not this row: it goes after 30 days like any other.
@@ -351,7 +406,7 @@ const DAY_MS = 86_400_000;
 export function undoable(op: OperationFacts, now: number, undoDays: number): boolean {
   if (op.undoneAt) return false;
   if (!(op.status === "done" || (op.status === "failed" && op.changed > 0))) return false;
-  if (op.kind === "hide" && op.termKey) return true;
+  if (op.kind === "hide" && op.termKey && !op.endedAt) return true;
   return now - (op.finishedAt ?? op.createdAt).getTime() <= undoDays * DAY_MS;
 }
 
@@ -372,6 +427,8 @@ export interface LabelNames {
   tag?: string;
   category?: string;
   section?: string;
+  /** A term's sale at the percent it already had: only its end moves. */
+  endsOnly?: boolean;
 }
 
 /** An action's label as the log keeps it: what it is, and the names it needs. */
@@ -385,6 +442,7 @@ export function labelParams(input: OperationInput, names: LabelNames): Operation
         ...base,
         term: names.term ?? null,
         ...(input.kind === "sale" ? { percent: input.percent } : {}),
+        ...(input.kind === "sale" && names.endsOnly ? { endsOnly: { endsOn: input.endsOn } } : {}),
       };
     case "tag":
       return { ...base, tag: names.tag ?? input.tag.name };
@@ -412,7 +470,7 @@ export function labelText(p: OperationLabelParams, w: Words = words()): string {
     case "show":
       return w.label.show(p.count);
     case "sale":
-      return w.label.sale(p.percent ?? 0, what);
+      return p.endsOnly ? w.label.saleEnds(p.percent ?? 0, what, p.endsOnly.endsOn) : w.label.sale(p.percent ?? 0, what);
     case "unsale":
       return w.label.unsale(what);
     case "tag":

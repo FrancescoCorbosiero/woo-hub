@@ -27,7 +27,8 @@ function heldOf(actions: TermActionsState): Held {
  * - allHidden: every product hidden, some one by one, by no hide of the term: turning it on shows those (not the held ones);
  * - held: every product hidden, all of them by other terms' hides: nothing to turn on here;
  * - hiding: the term's hide is running (or waiting its turn);
- * - hidden: the term's hide stands: turning it on undoes exactly it;
+ * - hidden: the term's hide stands: turning it on undoes exactly it. `addedSince`: products that
+ *   joined the term after it and still show (hidden with it at the next check, or from the panel);
  * - showing: that undo is running.
  */
 export type VisibilityState =
@@ -36,7 +37,7 @@ export type VisibilityState =
   | { kind: "allHidden"; hidden: number; held: Held }
   | { kind: "held"; held: Held }
   | { kind: "hiding"; view: OperationView }
-  | { kind: "hidden"; view: OperationView }
+  | { kind: "hidden"; view: OperationView; addedSince: number }
   | { kind: "showing"; view: OperationView };
 
 export function visibilityState(
@@ -53,7 +54,7 @@ export function visibilityState(
   if (hide) {
     if (hide.status === "running") return { kind: "hiding", view: hide };
     if (hide.status === "undoing") return { kind: "showing", view: hide };
-    return { kind: "hidden", view: hide };
+    return { kind: "hidden", view: hide, addedSince: actions.counts?.addedSince ?? 0 };
   }
   // Hidden one by one: what no other term's hide holds. Only those are this term's to show.
   const held = heldOf(actions);
@@ -97,6 +98,8 @@ export type SaleState =
       rounding?: SaleRounding;
       /** The percent of the term's earlier sale this one replaced: undoing it brings that one back. */
       replaces?: number | null;
+      /** That earlier sale's last day (null: none) — what its undo brings back when only the end moved. */
+      replacesEndsOn?: string | null;
     };
 
 export function saleState(counts: { onSale: number }, actions: TermActionsState | undefined): SaleState {
@@ -113,7 +116,21 @@ export function saleState(counts: { onSale: number }, actions: TermActionsState 
     view: sale.operation,
     ...(sale.rounding ? { rounding: sale.rounding } : {}),
     ...(sale.replaces != null ? { replaces: sale.replaces } : {}),
+    ...(sale.replacesEndsOn !== undefined ? { replacesEndsOn: sale.replacesEndsOn } : {}),
   };
+}
+
+/**
+ * What "Annulla" on the term's sale brings back: nothing (the prices from
+ * before it), an earlier discount, or — when only the end moved — the
+ * earlier last day.
+ */
+export function saleUndoBack(
+  state: Extract<SaleState, { kind: "on" }>,
+): { kind: "plain" } | { kind: "percent"; percent: number } | { kind: "end"; endsOn: string | null } {
+  if (state.replaces == null) return { kind: "plain" };
+  if (state.replaces === state.percent && state.replacesEndsOn !== undefined) return { kind: "end", endsOn: state.replacesEndsOn };
+  return { kind: "percent", percent: state.replaces };
 }
 
 /** The panel's actions show when there is something to act on, or an action stands on the term. */

@@ -94,11 +94,6 @@ export function stripSecrets(cfg: AppConfig): AppConfig {
   };
 }
 
-/** Delete all stored config rows so the next read re-seeds from defaults.ts. */
-export async function clearConfig(): Promise<void> {
-  await db.delete(configTable);
-}
-
 /**
  * Every change to the stored config, one at a time: read the config as it is
  * NOW, let `change` derive the next one from it, write that — all under one

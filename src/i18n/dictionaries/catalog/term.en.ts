@@ -23,6 +23,7 @@ export const termEn: typeof termIt = {
 
   panel: {
     automatic: (rule: string) => `Automatic: ${rule}`,
+    automaticSample: "tagged “saldi” and in stock",
     makeHint: "Products come and go on their own, by a rule: for example every product tagged “sale”.",
     inHomepage: (section: string) => `On the homepage: ${section}`,
     notInHomepage: "Not on the homepage",
@@ -37,14 +38,20 @@ export const termEn: typeof termIt = {
     allHiddenOneByOne: "All hidden one by one: turn it on to show them.",
     heldBy: (count: number, terms: readonly string[]) =>
       `${count === 1 ? "1 stays" : `${n(count)} stay`} hidden by ${quoted(terms)}`,
-    hiding: (done: number, total: number) => `Hiding them… ${n(done)}/${n(total)}`,
+    hiding: (done: number, total: number) => `${total === 1 ? "Hiding it" : "Hiding them"}… ${n(done)}/${n(total)}`,
     waiting: "Waiting: it starts as soon as the action before it ends.",
-    hiddenSince: (when: string) => `Hidden by you · ${when}. Turn it on and they go back as they were.`,
+    hiddenSince: (when: string, count = 2) =>
+      count === 1
+        ? `Hidden by you · ${when}. Turn it on and it goes back as it was.`
+        : `Hidden by you · ${when}. Turn it on and they go back as they were.`,
     hiddenPartly: (changed: number, total: number) =>
       `Partly hidden: ${n(changed)} of ${n(total)}. Turn it on and they go back as they were.`,
-    showing: "Putting them back as they were…",
-    showingAll: (done: number, total: number) => `Showing them again… ${n(done)}/${n(total)}`,
+    showing: (count = 2) => (count === 1 ? "Putting it back as it was…" : "Putting them back as they were…"),
+    showingAll: (done: number, total: number) => `${total === 1 ? "Showing it" : "Showing them"} again… ${n(done)}/${n(total)}`,
     showHidden: (count: number) => (count === 1 ? "Show the hidden one" : `Show the ${n(count)} hidden`),
+    hideAdded: (count: number) => (count === 1 ? "Hide the one added since too" : `Hide the ${n(count)} added since too`),
+    hideAddedHint: "Added later: they hide by themselves within a few minutes, or right away from here.",
+    hidingAdded: "Hiding them…",
     hiddenOf: (count: number, name: string) =>
       `${count === 1 ? "1 hidden product" : `${n(count)} hidden products`} of “${name}”`,
 
@@ -63,6 +70,7 @@ export const termEn: typeof termIt = {
     saleStopHint: "Ending it puts all its products back to full price.",
     saleUndo: "Undo this sale",
     saleUndoBack: (percent: number) => `Undo the change: back to −${percent}%`,
+    saleUndoBackEnd: (day: string | null) => (day ? `Undo the change: until ${day} again` : "Undo the change: no end again"),
     cancel: "Cancel",
     stateFailed: "Couldn't read whether it is hidden or on sale.",
     retry: "Try again",
@@ -137,7 +145,7 @@ export const termEn: typeof termIt = {
   views: {
     soldout: { title: "Sold out", hint: "No size available: they can't be bought on the site." },
     onsale: { title: "On sale", hint: "Products with a discounted price right now." },
-    hidden: { title: "Hidden", hint: "Hidden by the shop: they show neither in the site's lists nor in its search." },
+    hidden: { title: "Hidden", hint: "Hidden from the shop: they show neither in the site's lists nor in its search." },
     nophoto: { title: "No photo", hint: "They show with an empty image on the site: add a photo from WordPress." },
     nocategory: { title: "No category", hint: "They can't be found on the site by browsing the categories." },
     unpublished: { title: "Not published", hint: "Drafts, products in review and private ones: not visible on the site." },

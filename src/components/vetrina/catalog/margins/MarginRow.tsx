@@ -84,12 +84,16 @@ export function MarginRow({
         />
       );
     }
-    // Most terms have products the Hub prices: the row it will most likely have, as a ghost, so nothing jumps.
+    // Most terms have products the Hub prices: the row it will most likely have, as a ghost of the same shape
+    // (a link, with its chevron), so nothing jumps when it lands.
     if (term.count === 0) return null;
     return (
       <ListItem
+        link
+        linkComponent="div"
+        contentClassName="w-full text-start"
         media={<Icon own={false} />}
-        title={<Ghost className="motion-safe:animate-pulse">{m.row.standard(m.value.bands)}</Ghost>}
+        title={<Ghost className="motion-safe:animate-pulse">{m.row.standard}</Ghost>}
         text={<Ghost className="motion-safe:animate-pulse">{m.row.loading}</Ghost>}
       />
     );
@@ -109,8 +113,8 @@ export function MarginRow({
         }}
         contentClassName="w-full text-start"
         media={<Icon own={state.own != null} />}
-        title={<span className="line-clamp-2">{rowTitle(state, term.taxonomy, m)}</span>}
-        text={running ? runningText(running, m) : rowText(state, m)}
+        title={<span className="line-clamp-1">{rowTitle(state, m)}</span>}
+        text={running ? runningText(running, m) : rowText(state, term.taxonomy, m)}
       />
       <MarginSheet open={open} term={ref} state={state} onClose={() => setOpen(false)} onStarted={() => void swr.mutate()} />
     </>
