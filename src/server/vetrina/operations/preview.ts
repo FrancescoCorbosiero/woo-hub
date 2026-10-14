@@ -12,6 +12,7 @@ import { VetrinaError } from "@/server/vetrina/source";
 import type { OperationLabelParams } from "@/server/db/schema";
 import { mapLimit, parseTermKey, resolveTarget, rowsInOrder, termName } from "./context";
 import { readSizes } from "./live";
+import { assessMargin } from "./margin";
 import {
   bump,
   labelParams,
@@ -382,8 +383,13 @@ async function assessPin(ctx: Ctx, input: Extract<OperationInput, { kind: "pin" 
  * Entry
  * ---------------------------------------------------------------- */
 
-/** Resolve the target and assess the action over it. `live`: read a sale's sample from the store. */
+/**
+ * Resolve the target and assess the action over it. `live`: read a sale's
+ * sample from the store, price a margin's products. A margin has no target:
+ * it is its whole term's (margin.ts).
+ */
 export async function assess(input: OperationInput, opts: { live: boolean }): Promise<Assessment> {
+  if (input.kind === "margin") return assessMargin(input, opts);
   const target = await resolveTarget(input.target);
   const { rows, missing } = await rowsInOrder(target.ids);
   const ctx: Ctx = { ids: target.ids, rows, missing, trees: target.trees, live: opts.live, w: words() };

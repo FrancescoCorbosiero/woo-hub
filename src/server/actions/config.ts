@@ -7,6 +7,11 @@ import type { SourceProduct, SourceVariant } from "@core/core-spine";
 import { computePrice } from "@core/core-spine";
 import { listProductScopeAxes } from "@/server/catalog/repo";
 import { clearConfig, getActiveConfig, saveActiveConfig } from "@/server/config/repo";
+import { activeFeedSkus, GS_FEED } from "@/server/feeds/repo";
+import { getOverrides } from "@/server/overrides/repo";
+import { skusPinnedTo } from "@/server/overrides/model";
+import { withStoreTerms } from "@/server/pricing/store-terms";
+import { skuKey } from "@/lib/skus";
 import { pricingSummary, type PricingSummary } from "@/server/config/summary";
 
 /**
@@ -97,6 +102,11 @@ const ScopeSchema = z.object({
   sizeType: z.string().max(32).optional(),
   sizeMin: z.number().min(0).max(100).optional(),
   sizeMax: z.number().min(0).max(100).optional(),
+  // The shop's own category or brand (WooCommerce term ids) — a margin set
+  // from the Vetrina, or on the Margins tab. The name is a label only.
+  storeCategory: z.number().int().positive().optional(),
+  storeBrand: z.number().int().positive().optional(),
+  storeTermName: z.string().max(200).optional(),
 });
 
 const BandSchema = z.object({
@@ -143,6 +153,13 @@ function cleanScope(scope: z.infer<typeof ScopeSchema>): ScopedPricingRule["scop
   if (scope.sizeType?.trim()) out.sizeType = scope.sizeType.trim();
   if (scope.sizeMin != null) out.sizeMin = scope.sizeMin;
   if (scope.sizeMax != null) out.sizeMax = scope.sizeMax;
+  // Kept through every save: dropping them would turn a category's margin
+  // into a rule on the whole shop.
+  if (scope.storeCategory != null) out.storeCategory = scope.storeCategory;
+  if (scope.storeBrand != null) out.storeBrand = scope.storeBrand;
+  if ((out.storeCategory != null || out.storeBrand != null) && scope.storeTermName?.trim()) {
+    out.storeTermName = scope.storeTermName.trim();
+  }
   return out;
 }
 
@@ -190,6 +207,10 @@ function sampleProductFor(rule: ScopedPricingRule): SourceProduct {
     ...(s.source ? { source: s.source } : {}),
     ...(s.category ? { category: s.category } : {}),
     ...(s.secondaryCategory ? { secondaryCategory: s.secondaryCategory } : {}),
+    // Filed under the rule's own store term (its depth does not matter: no
+    // other store term is on the sample to compete with it).
+    ...(s.storeCategory != null ? { storeCategories: [{ id: s.storeCategory, depth: 0 }] } : {}),
+    ...(s.storeBrand != null ? { storeBrands: [{ id: s.storeBrand, depth: 0 }] } : {}),
     variants: [],
   };
 }
@@ -222,6 +243,29 @@ function ruleExamples(
 }
 
 /**
+ * The catalog's products, each with the source that really prices it. A row
+ * KicksDB registered keeps "kicksdb" even when the supplier feed owns the
+ * product (src/server/feeds/owner.ts): counted as such, a rule the engine
+ * never applies to it — a store category's margin, which feed prices never
+ * take — would claim it. Feed coverage minus the products pinned back to
+ * KicksDB, as the sync decides; best-effort, like the read it refines.
+ */
+async function pricedByOwner(market: string): Promise<Awaited<ReturnType<typeof listProductScopeAxes>>> {
+  const [axes, feed, overrides] = await Promise.all([
+    listProductScopeAxes(market),
+    activeFeedSkus(GS_FEED),
+    getOverrides().catch(() => null),
+  ]);
+  if (feed.size === 0) return axes;
+  const feedSkus = new Set([...feed].map(skuKey));
+  const pinned = new Set((overrides ? skusPinnedTo(overrides, "kicksdb") : []).map(skuKey));
+  return axes.map((p) => {
+    const key = skuKey(p.sku);
+    return feedSkus.has(key) && !pinned.has(key) && p.source !== GS_FEED ? { ...p, source: GS_FEED } : p;
+  });
+}
+
+/**
  * Answer "is this rule doing anything?" against the real catalog. A rule that
  * covers 0 products is either shadowed by a more specific one or scoped to
  * something no product matches — and until now both looked exactly like a
@@ -237,7 +281,7 @@ export async function pricingRuleCoverage(
   const parsed = rulesInput != null ? RulesSchema.safeParse(rulesInput) : null;
   const rules = (parsed?.success ? (parsed.data as ScopedPricingRule[]) : cfg.pricingRules) ?? [];
 
-  const axes = await listProductScopeAxes(cfg.source.market);
+  const axes = await withStoreTerms(await pricedByOwner(cfg.source.market), rules);
   const counts = new Map<string, number>();
   for (const p of axes) {
     const id = winningMarkupRuleId(p, rules);

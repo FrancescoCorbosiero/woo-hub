@@ -758,8 +758,9 @@ export const it = {
   },
   margins: {
     title: "Margini",
-    desc: "Le regole di prezzo, dalla più generale alla più specifica. Il MARGINE lo decide una regola sola: la più specifica che ne indica uno: il suo ricarico sostituisce per intero quello generale (fasce comprese). Tutto il resto — arrotondamento, IVA, margine minimo, reti di sicurezza — si eredita dalle regole più generali. Esempi: il listino dinamico a fasce per tutto il resto, «Yeezy › Foam RNNR» al 45%, «Jordan» +3 € fissi.",
+    desc: "Le regole di prezzo, dalla più generale alla più specifica. Il MARGINE lo decide una regola sola: la più specifica che ne indica uno: il suo ricarico sostituisce per intero quello generale (fasce comprese). Tutto il resto — arrotondamento, IVA, margine minimo, reti di sicurezza — si eredita dalle regole più generali. Esempi: il listino dinamico a fasce per tutto il resto, «Yeezy › Foam RNNR» al 45%, «Jordan» +3 € fissi. Un margine su una categoria o un brand del NEGOZIO (dalla Vetrina, o da «Margine per categoria o brand del negozio») batte ogni regola di brand, famiglia, nome o sorgente, e perde solo contro una regola su un singolo SKU.",
     addRule: "Aggiungi regola",
+    addStoreRule: "Margine per categoria o brand del negozio",
     save: "Salva regole",
     saving: "Salvataggio…",
     saved: "Regole salvate ✓",
@@ -770,7 +771,7 @@ export const it = {
     gsRule: "Listino GoldenSneakers — passthrough",
     customRule: (n: number) => `Regola ${n}`,
     scopeTitle: "Si applica a",
-    scopeHint: "Campo vuoto = qualsiasi. Vince sempre la regola che descrive meno prodotti: SKU › sotto-famiglia e nome › famiglia › brand › sorgente.",
+    scopeHint: "Campo vuoto = qualsiasi. Vince sempre la regola più specifica: SKU › categoria o brand del negozio › sotto-famiglia e nome › famiglia › brand › sorgente.",
     scopeSource: "Sorgente",
     scopeSourceAny: "Qualsiasi",
     scopeAny: "Qualsiasi",
@@ -794,6 +795,35 @@ export const it = {
         : min != null
           ? `taglie da ${min} in su`
           : `taglie fino a ${max}`,
+    sumStoreCategory: (name: string | null, id: number) =>
+      `${name ? `categoria del negozio «${name}»` : `categoria del negozio n. ${id}`} con le sue sotto-categorie`,
+    sumStoreBrand: (name: string | null, id: number) =>
+      `${name ? `brand del negozio «${name}»` : `brand del negozio n. ${id}`} con i suoi sotto-brand`,
+    sumKicksOnly: "solo i prodotti col prezzo da KicksDB",
+    // The shop's own taxonomies — the Vetrina's "Ricarico" on a category or a brand.
+    storeCategoryRule: (name: string | null, id: number) =>
+      name ? `Categoria del negozio «${name}»` : `Categoria del negozio n. ${id}`,
+    storeBrandRule: (name: string | null, id: number) =>
+      name ? `Brand del negozio «${name}»` : `Brand del negozio n. ${id}`,
+    storeCategoryField: "Categoria del negozio",
+    storeBrandField: "Brand del negozio",
+    storeTermChange: "Cambia",
+    storeTermHint: (taxonomy: "category" | "brand") =>
+      `${taxonomy === "category" ? "Vale anche per le sue sotto-categorie" : "Vale anche per i suoi sotto-brand"}. Batte le regole di brand, famiglia, nome e sorgente; perde solo contro una regola su un singolo SKU. Se un prodotto è in due categorie o brand con una regola, vince il più interno (una sotto-categoria batte la sua categoria); a pari livello, l'ultima regola della lista. I prodotti col prezzo di GoldenSneakers e quelli solo del negozio non cambiano.`,
+    storePickTitle: "Scegli una categoria o un brand del negozio",
+    storePickCategories: "Categorie",
+    storePickBrands: "Brand",
+    storePickSearch: "Cerca…",
+    storePickLoading: "Leggo categorie e brand del negozio…",
+    storePickFailed: "Non riesco a leggere categorie e brand del negozio.",
+    storePickRetry: "Riprova",
+    storePickNoTerms: "Il negozio non ha ancora categorie o brand letti.",
+    storePickNoMatch: "Nessuna corrispondenza",
+    storePickMore: (n: number) => `…e altri ${n}: continua a scrivere`,
+    storePickRuled: "ha già una regola",
+    storePickProducts: (n: number) => (n === 1 ? "1 prodotto" : `${n} prodotti`),
+    storePickDemo: "Negozio dimostrativo della Vetrina",
+    storePickCancel: "Annulla",
     scopeBrand: "Brand",
     scopeCategory: "Famiglia",
     scopeSecondaryCategory: "Sotto-famiglia",
@@ -838,6 +868,8 @@ export const it = {
       n === 1 ? "Decide il margine di 1 prodotto" : `Decide il margine di ${n} prodotti`,
     coverageNone:
       "Non si applica a nessun prodotto — o non corrisponde a nulla, o una regola più specifica la scavalca",
+    coverageNoneStore:
+      "Non si applica a nessun prodotto — la categoria o il brand è vuoto, i suoi prodotti hanno il prezzo del fornitore, oppure una regola su un singolo SKU o su una sotto-categoria lo scavalca",
     coverageSizeScoped: "(solo sulle taglie indicate)",
     exampleLabel: "Esempio:",
   },

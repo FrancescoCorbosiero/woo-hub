@@ -299,8 +299,11 @@ export function stands(op: Pick<OperationFacts, "status" | "changed" | "undoneAt
  * the screen says — and there are only a handful per term. repo.ts's
  * trimOperations says the same in SQL.
  */
-export function keptForTerm(op: Pick<OperationFacts, "status" | "changed" | "undoneAt" | "termKey">): boolean {
-  return op.termKey != null && stands(op);
+export function keptForTerm(op: Pick<OperationFacts, "kind" | "status" | "changed" | "undoneAt" | "termKey">): boolean {
+  // A margin is filed under its term too (its screen follows it while it
+  // runs), but what stands on the term is the pricing rule in the config,
+  // not this row: it goes after 30 days like any other.
+  return op.termKey != null && op.kind !== "margin" && stands(op);
 }
 
 /** The hide that hid a whole term, while it stands ("Mostra" undoes exactly it). Rows newest first. */
@@ -394,6 +397,9 @@ export function labelParams(input: OperationInput, names: LabelNames): Operation
       return { ...base, section: names.section ?? input.sectionKey };
     case "show":
       return base;
+    case "margin":
+      // No percent: the term went back to the standard margin.
+      return { ...base, term: names.term ?? null, ...(input.percent != null ? { percent: input.percent } : {}) };
   }
 }
 
@@ -419,6 +425,8 @@ export function labelText(p: OperationLabelParams, w: Words = words()): string {
       return w.label.uncategorize(p.category ?? "", p.count);
     case "pin":
       return w.label.pin(p.count, p.section ?? "");
+    case "margin":
+      return w.label.margin(p.percent ?? null, what);
   }
 }
 

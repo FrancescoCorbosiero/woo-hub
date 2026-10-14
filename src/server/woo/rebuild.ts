@@ -22,6 +22,7 @@ import { skuKey } from "@/lib/skus";
 import { getWooClient, type WooClient } from "./client";
 import { assertSnapshotIsThisStore } from "@/server/woo/site-guard";
 import { forgetVariations, recordPriceWrites, type LedgerWrite } from "@/server/sync/ledger";
+import { withStoreTermsIn } from "@/server/pricing/store-terms";
 
 /**
  * The Rebuild executor — the sledgehammer for products too inconsistent to
@@ -106,7 +107,9 @@ export async function rebuildProducts(
   const market = config.source.market;
   const client = getWooClient();
   const overrides = await getOverrides().catch(() => null);
-  const catalogEntries = await getAnyBySkus(market, skus);
+  // With the shop's categories and brands: a margin set on one of them
+  // prices the recreated sizes as the sync would.
+  const catalogEntries = await withStoreTermsIn(await getAnyBySkus(market, skus), config.pricingRules);
   // Product-level ownership: GS-owned SKUs rebuild from the feed's variant
   // set (real stock, presented prices) instead of the KicksDB catalog.
   const gsOwned = await gsOwnedProducts(skus, market, overrides);

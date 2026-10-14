@@ -40,6 +40,7 @@ import { Eye, Percent } from "../act/icons";
 import { formatDay, formatTime, queryTarget } from "../act/model";
 import { useOperations, useOperationSettled } from "../act/operations-context";
 import { useProductSelection } from "../act/selection";
+import { MarginRow } from "../margins/MarginRow";
 import { ruleState } from "../rule-state";
 import { NewCategorySheet, type NewCategoryRequest } from "../rules/NewCategorySheet";
 import { ruleFromList } from "../rules/prefill";
@@ -554,6 +555,8 @@ function TermActionsPanel({ term }: { term: CatalogTerm }) {
             onActivity={ops.openActivity}
           />
         )}
+        {/* The margin the Hub prices the term's products with (phase 4): read on its own, shown where it can act. */}
+        <MarginRow term={term} />
       </List>
 
       <Actions opened={saleMenu} onBackdropClick={() => setSaleMenu(false)}>

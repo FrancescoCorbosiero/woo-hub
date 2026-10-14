@@ -1,5 +1,6 @@
 import { actIt } from "./act.it";
 import { homeIt } from "./home.it";
+import { marginsIt } from "./margins.it";
 import { opsIt } from "./ops.it";
 import { rulesIt } from "./rules.it";
 import { sheetIt } from "./sheet.it";
@@ -20,4 +21,5 @@ export const catalogIt = {
   act: actIt,
   rules: rulesIt,
   ops: opsIt,
+  margins: marginsIt,
 };

@@ -64,6 +64,25 @@ export interface SourceProduct {
     description?: string;
     /** Extra product shots, deduped and excluding `image` itself. */
     gallery?: string[];
+    /**
+     * The product's place in the STORE's own taxonomies — WooCommerce
+     * product_cat and product_brand: every term it is filed under AND every
+     * ancestor of those (a product in "Nike › Off-White" is in "Nike" too).
+     * No source sends them: they are read from the store index by SKU right
+     * before a price is computed (src/server/pricing/store-terms.ts), and only
+     * the margin rules scoped to a store term read them. Absent = unknown, and
+     * then no such rule matches.
+     */
+    storeCategories?: StoreTermRef[];
+    storeBrands?: StoreTermRef[];
+}
+
+/** One store term a product sits under, directly or through a sub-term. */
+export interface StoreTermRef {
+    /** The WooCommerce term id. */
+    id: number;
+    /** Levels below the top of its tree: 0 = a top-level term. A sub-term's rule outranks its parent's. */
+    depth: number;
 }
 
 /* ========================================================================== *

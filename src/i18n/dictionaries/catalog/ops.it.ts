@@ -40,6 +40,8 @@ export const opsIt = {
     categorize: (category: string, count: number) => `Categoria «${category}» a ${products(count)}`,
     uncategorize: (category: string, count: number) => `Categoria «${category}» tolta da ${products(count)}`,
     pin: (count: number, section: string) => `${agreed(count, "prodotto fissato", "prodotti fissati")} in ${section}`,
+    /** A category's or brand's margin; no percent: back to the standard one. */
+    margin: (percent: number | null, what: string) => (percent == null ? `Ricarico standard · ${what}` : `Ricarico ${percent}% · ${what}`),
   },
 
   /** Why a preview leaves products as they are, agreeing with how many ("Già nascosto · 1", "Già nascosti · 3"). */
@@ -61,6 +63,13 @@ export const opsIt = {
     /** Hidden by another whole category or brand the owner hid: its own "Mostra" brings them back. */
     held: (count: number, terms: string[]): string =>
       `${count === 1 ? "resta nascosto" : "restano nascosti"} da ${nameList(terms.map((t) => `«${t}»`))}`,
+    /** A margin's products the supplier's feed prices: its price already holds its margin, and passes through. */
+    supplier: (_count: number): string => "prezzo del fornitore (GoldenSneakers)",
+    /** Store-only: priced by hand in the shop, no Hub price to change. */
+    storeOnly: (_count: number): string => "prezzo deciso nel negozio, non dall'Hub",
+    /** A rule more specific than the term's decides them: a SKU's, a deeper category's or brand's. */
+    otherRule: (count: number): string => (count === 1 ? "ha un ricarico più specifico" : "hanno un ricarico più specifico"),
+    noQuote: (_count: number): string => "nessun prezzo di mercato",
   },
 
   /** A product's state, before → after, in a preview's sample. */
@@ -108,6 +117,14 @@ export const opsIt = {
       `${count === 1 ? "1 era nascosto" : `${n(count)} erano nascosti`} da questa sezione: ${count === 1 ? "torna" : "tornano"} a vedersi.`,
     dropped: (count: number, max: number) =>
       `${count === 1 ? "1 prodotto fissato prima esce" : `${n(count)} prodotti fissati prima escono`} dalle posizioni fisse (al massimo ${n(max)}).`,
+    /** Sizes whose price the owner locked: a margin never moves them. */
+    lockedSizes: (count: number) =>
+      count === 1 ? "1 taglia ha il prezzo bloccato: lo tiene." : `${n(count)} taglie hanno il prezzo bloccato: lo tengono.`,
+    /** Sizes on sale: the plan holds their regular price while the sale lasts. */
+    saleSizes: (count: number) =>
+      count === 1
+        ? "1 taglia è in saldo: il suo prezzo pieno cambia quando finisce il saldo."
+        : `${n(count)} taglie sono in saldo: il loro prezzo pieno cambia quando finisce il saldo.`,
   },
 
   error: {
@@ -135,6 +152,18 @@ export const opsIt = {
     stopped: (message: string) => `Interrotta da un errore: ${message}`,
     undoInterrupted: "Annullamento interrotto: il server si è riavviato. Riprova.",
     undoFailed: (message: string) => `Annullamento non riuscito: ${message}`,
+    /** The demo shop's terms are not the Hub's: a margin there would land on real prices. */
+    marginDemo: "Nella demo il ricarico non si cambia: finirebbe sui prezzi veri dell'Hub.",
+    marginSame: (term: string, percent: number) => `«${term}» ha già il ricarico al ${percent}%.`,
+    marginNone: (term: string) => `«${term}» segue già il ricarico standard.`,
+    /** The rule is saved; KicksDB did not answer for some products, so their prices wait. */
+    repriceUnanswered: (count: number) =>
+      `Ricarico salvato, ma per ${products(count)} il mercato (KicksDB) non ha risposto: il prossimo aggiornamento dei prezzi li allinea.`,
+    marginNoSnapshot: "L'Hub non ha ancora letto il negozio: aggiornalo dalla scheda Sync, poi riprova.",
+    marginChanged: (term: string) => `Il ricarico di «${term}» è cambiato dopo: cambialo di nuovo da qui.`,
+    /** The rule is saved; the prices could not all be written now. */
+    repriceFailed: (message: string) =>
+      `Ricarico salvato, ma i prezzi non si sono aggiornati tutti (${message}): il prossimo aggiornamento dei prezzi li allinea.`,
   },
 
   /** What the screens sent, checked before anything runs: the problems the owner can fix, in his words. */
@@ -148,5 +177,6 @@ export const opsIt = {
     pastDate: "La data di fine è già passata.",
     percent: "Lo sconto va da 1 a 90%.",
     tagName: "Scrivi il nome del tag.",
+    marginPercent: "Il ricarico va da 0 a 200%.",
   },
 };

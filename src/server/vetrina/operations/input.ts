@@ -1,7 +1,14 @@
 import "server-only";
 import { z } from "zod";
 import { CATALOG_SORTS, QUICK_VIEWS } from "@/lib/vetrina/catalog";
-import { MAX_OPERATION_PRODUCTS, type OperationInput, type OperationTarget, type TermKey } from "@/lib/vetrina/catalog-ops";
+import {
+  MARGIN_PERCENT_MAX,
+  MARGIN_PERCENT_MIN,
+  MAX_OPERATION_PRODUCTS,
+  type OperationInput,
+  type OperationTarget,
+  type TermKey,
+} from "@/lib/vetrina/catalog-ops";
 import { shopToday } from "./service";
 import { words, type Words } from "./words";
 
@@ -17,7 +24,7 @@ import { words, type Words } from "./words";
  * is met. Anything else is a screen's bug, and reads "Richiesta non valida".
  */
 type Problem = Exclude<keyof Words["input"], "invalid" | "operation"> | "empty" | "tooMany";
-const PROBLEMS = new Set<string>(["term", "termTarget", "date", "pastDate", "percent", "tagName", "empty", "tooMany"]);
+const PROBLEMS = new Set<string>(["term", "termTarget", "date", "pastDate", "percent", "tagName", "marginPercent", "empty", "tooMany"]);
 const problem = (key: Problem) => key;
 
 const Id = z.number().int().positive();
@@ -71,6 +78,14 @@ const EndsOn = z
 
 const Percent = z.number().int(problem("percent")).min(1, problem("percent")).max(90, problem("percent"));
 
+/** A term's margin, whole percents; null hands the term back to the standard one. */
+const MarginPercent = z
+  .number()
+  .int(problem("marginPercent"))
+  .min(MARGIN_PERCENT_MIN, problem("marginPercent"))
+  .max(MARGIN_PERCENT_MAX, problem("marginPercent"))
+  .nullable();
+
 /**
  * A whole term's action (filed under its key, so its screen shows it) acts
  * on exactly that term's products: its own query, with no search, chip or
@@ -109,6 +124,12 @@ export const OperationInputSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("categorize"), target: TargetSchema, categoryId: Id }),
   z.object({ kind: z.literal("uncategorize"), target: TargetSchema, categoryId: Id }),
   z.object({ kind: z.literal("pin"), target: TargetSchema, sectionKey: z.string().min(3).max(300) }),
+  z.object({
+    kind: z.literal("margin"),
+    taxonomy: z.enum(["category", "brand"], { message: problem("term") }),
+    termId: z.number({ message: problem("term") }).int(problem("term")).positive(problem("term")),
+    percent: MarginPercent,
+  }),
 ]);
 
 /** A problem met, in the owner's words: ours by key, zod's own as "Richiesta non valida". */

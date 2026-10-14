@@ -35,6 +35,7 @@ import { getWooClient, type WooClient, type WooRestProduct, type WooRestVariatio
 import { withTaxonomyCache } from "./taxonomy-cache";
 import { assertSnapshotIsThisStore } from "@/server/woo/site-guard";
 import { forgetVariations, recordPriceWrites, type LedgerWrite } from "@/server/sync/ledger";
+import { withStoreTermsIn } from "@/server/pricing/store-terms";
 import { publishing } from "./publishing";
 import { dropMedia, openMediaSkus, queueMedia, setMediaProduct } from "./media";
 import { isHidden } from "./media-plan";
@@ -348,7 +349,10 @@ async function publishClaimed(
   const client = withTaxonomyCache(getWooClient());
   const overrides = await getOverrides().catch(() => null);
 
-  const catalogEntries = await getAnyBySkus(market, uniqueSkus);
+  // With the shop's categories and brands where the store already files the
+  // SKU (a product completed or reimported): a margin set on one of them
+  // prices its sizes as the sync would. A new product has none yet.
+  const catalogEntries = await withStoreTermsIn(await getAnyBySkus(market, uniqueSkus), config.pricingRules);
   // SKUs whose photos are already on their way (see media.ts).
   const photosQueued = dryRun ? new Set<string>() : await openMediaSkus();
   // Product-level ownership: a GS-owned SKU publishes the FEED's variant set

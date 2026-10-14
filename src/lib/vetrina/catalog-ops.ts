@@ -58,9 +58,87 @@ export type OperationInput =
   | { kind: "categorize"; target: OperationTarget; categoryId: number }
   | { kind: "uncategorize"; target: OperationTarget; categoryId: number }
   /** First in a homepage section, in the order given; a manual category's section also takes the category. */
-  | { kind: "pin"; target: OperationTarget; sectionKey: string };
+  | { kind: "pin"; target: OperationTarget; sectionKey: string }
+  /**
+   * Added in phase 4: "Cambia il ricarico" — the margin the Hub's engine
+   * prices a whole category's or brand's products with (its sub-terms'
+   * included), as a pricing rule scoped to the store term; then those
+   * products repriced through the ordinary sync. It acts on the products the
+   * Hub prices from the market (KicksDB) only: a supplier's price
+   * (GoldenSneakers) passes through untouched, a store-only product has no
+   * Hub price. No target: a margin is the whole term's, by definition.
+   */
+  | {
+      kind: "margin";
+      taxonomy: CatalogTaxonomy;
+      termId: number;
+      /** The term's margin on the market price, MARGIN_PERCENT_MIN-MAX %; null hands the term back to the standard margin. */
+      percent: number | null;
+    };
 
 export type OperationKind = OperationInput["kind"];
+
+/** A term's margin, as the owner sets it: a percent on the market price. */
+export const MARGIN_PERCENT_MIN = 0;
+export const MARGIN_PERCENT_MAX = 200;
+
+/**
+ * A margin as a rule states it (added in phase 4): a percent on the market
+ * price, bands by price (the house default), or a fixed amount in euros.
+ * Only "percent" is set from the Vetrina; the other two come from the Hub's
+ * Margins tab and are shown as they are.
+ */
+export type MarginValue = { kind: "percent"; percent: number } | { kind: "bands" } | { kind: "fixed"; amount: number };
+
+/** A category's or brand's margin, for its screen's "Ricarico" row and the margin sheet (added in phase 4). */
+export interface TermMarginState {
+  /** The term's own margin — its rule, while enabled — or null: it follows the standard, or a term above it. */
+  own: MarginValue | null;
+  /**
+   * The margin of the nearest term above it that has one ("Nike" for "Nike ›
+   * Off-White"): what it follows without its own, and goes back to when its
+   * own is removed.
+   */
+  inherited: { term: string; value: MarginValue } | null;
+  /** The shop's standard margin (the Hub's general rule); null when it has none. */
+  standard: MarginValue | null;
+  /** The term's products the Hub prices from the market (KicksDB): all a margin here can act on. */
+  priced: number;
+  /**
+   * Of those, the ones the term's margin decides — its own, or the one it
+   * would get — where no more specific rule takes them (a SKU's, a deeper
+   * category's or brand's).
+   */
+  applies: number;
+  /** The term's products the supplier's feed prices (GoldenSneakers): never touched by a margin here. */
+  supplier: number;
+  /** The term's products the Hub does not price at all (store-only). */
+  storeOnly: number;
+}
+
+/**
+ * A margin's preview (added in phase 4), beside the shape every action
+ * shares: before → after is the engine's price under the rules in force
+ * and under the draft, for the same market prices — the margin's own effect.
+ */
+export interface MarginPreview {
+  /** The margin asked; null = back to the standard. */
+  percent: number | null;
+  /** The term's margin now. */
+  current: TermMarginState;
+  /** Products the margin decides (the button's "Applica a N prodotti"). */
+  applies: number;
+  /** Of those, by how their prices move (sizes with a locked price, or on sale, left out). */
+  up: number;
+  down: number;
+  same: number;
+  /** The average change of their prices, in percent (+8.2, −3); null when no price can be compared. */
+  averageChange: number | null;
+  /** Sizes with a locked price among them: they keep it. */
+  lockedSizes: number;
+  /** Sizes on sale among them (their product follows the sale rule): their regular price follows the margin once the sale ends. */
+  saleSizes: number;
+}
 
 /** What an action would do, before it runs — named products, not just numbers. */
 export interface OperationPreview {
@@ -80,6 +158,8 @@ export interface OperationPreview {
    * the run counts exactly.
    */
   sampled?: number;
+  /** Optional (added in phase 4): a margin's own numbers; absent when the margin cannot be applied (a refusal leads the warnings). */
+  margin?: MarginPreview;
 }
 
 export type OperationStatus = "running" | "done" | "failed" | "undoing" | "undone";

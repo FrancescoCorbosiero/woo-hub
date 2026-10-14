@@ -1,5 +1,6 @@
 import "server-only";
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql, type SQL } from "drizzle-orm";
+import type { ScopedPricingRule } from "@core/config";
 import type { OperationInput, OperationKind } from "@/lib/vetrina/catalog-ops";
 import { db } from "@/server/db/client";
 import { rowsOf } from "@/server/db/rows";
@@ -69,12 +70,17 @@ export async function listOperationRows(limit: number, since: Date | null = null
   return db.select().from(vetrinaOperations).where(from(since)).orderBy(desc(vetrinaOperations.createdAt)).limit(limit);
 }
 
-/** The actions filed under a whole term, newest first. */
+/**
+ * The actions filed under a whole term, newest first: its hides and sales,
+ * which its screen reads from the log. Its margins are left out — what
+ * stands is the pricing rule, not a row — so a margin changed often never
+ * pushes a standing hide or sale past the limit.
+ */
 export async function termOperationRows(termKey: string, since: Date | null = null, limit = 50): Promise<VetrinaOperationRow[]> {
   return db
     .select()
     .from(vetrinaOperations)
-    .where(and(eq(vetrinaOperations.termKey, termKey), from(since)))
+    .where(and(eq(vetrinaOperations.termKey, termKey), ne(vetrinaOperations.kind, "margin"), from(since)))
     .orderBy(desc(vetrinaOperations.createdAt))
     .limit(limit);
 }
@@ -195,6 +201,52 @@ export async function filedCount(operationId: string): Promise<number> {
   return row?.count ?? 0;
 }
 
+/**
+ * A margin's record (phase 4): the term's pricing rule before and after,
+ * and where it sat in the list — what its "Annulla" puts back. Filed as one
+ * item of the action, BEFORE the rule is saved, like every value an action
+ * changes: a run cut off right after the save counts as having changed
+ * something (filedCount, markInterrupted) and stays undoable.
+ *
+ * It is not a product's value: product 0, field 'margin', a field the
+ * column's per-product list does not name (the column is plain text) — so
+ * it is written and read only by these two functions, and every reader of
+ * the products' items, which picks its own field, never meets it.
+ */
+export interface MarginRecord {
+  before: ScopedPricingRule | null;
+  after: ScopedPricingRule | null;
+  /** The rule's place in the list: a removed rule goes back there. */
+  index: number;
+}
+
+export async function fileMarginRecord(operationId: string, record: MarginRecord): Promise<void> {
+  const before = JSON.stringify({ rule: record.before, index: record.index });
+  const after = JSON.stringify({ rule: record.after });
+  await db.execute(sql`
+    insert into ${vetrinaOperationItems} ("operation_id", "product_id", "variation_id", "field", "before", "after")
+    values (${operationId}, 0, null, 'margin', ${before}::jsonb, ${after}::jsonb)
+  `);
+}
+
+/** The margin's record, the last one filed; null for none (or a record that does not read as one). */
+export async function marginRecordOf(operationId: string): Promise<MarginRecord | null> {
+  const res = await db.execute(sql`
+    select "before", "after" from ${vetrinaOperationItems}
+    where "operation_id" = ${operationId} and "field" = 'margin'
+    order by "id" desc
+    limit 1
+  `);
+  const row = rowsOf<{ before: unknown; after: unknown }>(res)[0];
+  if (!row) return null;
+  const parse = (raw: unknown) => (typeof raw === "string" ? JSON.parse(raw) : raw) as Record<string, unknown> | null;
+  const before = parse(row.before);
+  const after = parse(row.after);
+  const rule = (value: unknown) => (value && typeof value === "object" ? (value as ScopedPricingRule) : null);
+  if (!before || !after || typeof before.index !== "number") return null;
+  return { before: rule(before.rule), after: rule(after.rule), index: before.index };
+}
+
 export async function listItems(operationId: string): Promise<VetrinaOperationItemRow[]> {
   return db
     .select()
@@ -239,9 +291,9 @@ export async function markInterrupted(messages: { run: string; undo: string }): 
 /**
  * Drop what is older than the log keeps — but never an action filed under a
  * whole term that still stands: plan.ts's keptForTerm(), said in SQL (a term
- * key, not undone, and not a run that failed before changing anything). Its
- * hide's items are what "Mostra" puts back; its sales, and their ends, are
- * what the term's screen reads.
+ * key, not a margin, not undone, and not a run that failed before changing
+ * anything). Its hide's items are what "Mostra" puts back; its sales, and
+ * their ends, are what the term's screen reads.
  */
 export async function trimOperations(now = Date.now()): Promise<number> {
   const before = new Date(now - KEEP_DAYS * 86_400_000);
@@ -251,7 +303,7 @@ export async function trimOperations(now = Date.now()): Promise<number> {
     .where(
       and(
         lt(op.createdAt, before),
-        sql`not (${op.termKey} is not null and ${op.undoneAt} is null and (${op.status} <> 'failed' or ${op.changed} > 0))`,
+        sql`not (${op.termKey} is not null and ${op.kind} <> 'margin' and ${op.undoneAt} is null and (${op.status} <> 'failed' or ${op.changed} > 0))`,
       ),
     )
     .returning({ id: op.id });

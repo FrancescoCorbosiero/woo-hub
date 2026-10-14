@@ -29,6 +29,7 @@ import {
   type SaleState,
   type SizePlan,
 } from "./plan";
+import { runMargin, undoMargin } from "./margin";
 import { findTag } from "./preview";
 import * as repo from "./repo";
 import { pinnable, railFill, sectionMembers } from "./sections";
@@ -353,6 +354,8 @@ const sameList = (a: readonly number[], b: readonly number[]) => a.length === b.
 /** Run an action over its target, resolved again now: a catalog query acts on what it matches when it runs. */
 export async function runOperation(ctx: RunCtx): Promise<void> {
   const input: OperationInput = ctx.op.input;
+  // A margin is a pricing rule and a reprice, not writes product by product (margin.ts).
+  if (input.kind === "margin") return runMargin(ctx, input);
   const { ids, trees } = await resolveTarget(input.target);
   ctx.tally.total = ids.length;
   await ctx.step();
@@ -557,6 +560,8 @@ async function undoSection(section: OperationSectionRecord): Promise<void> {
  * hidden, filed under that one (held).
  */
 export async function runUndo(ctx: RunCtx, items: Item[], section: OperationSectionRecord | null): Promise<OperationUndoOutcome> {
+  // A margin's undo puts its rule back and reprices (margin.ts): its record is the rule, not products' values.
+  if (ctx.op.kind === "margin") return undoMargin(ctx);
   const out: UndoTally = { restored: new Set(), kept: new Set(), failed: new Set(), held: new Set() };
   const of = (field: Item["field"]) => items.filter((i) => i.field === field);
   ctx.tally.done = 0;

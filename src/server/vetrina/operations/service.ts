@@ -8,6 +8,7 @@ import {
   type OperationView,
   type TermActionsState,
   type TermKey,
+  type TermMarginState,
 } from "@/lib/vetrina/catalog-ops";
 import type { CatalogTaxonomy } from "@/lib/vetrina/catalog";
 import type { VetrinaOperationRow } from "@/server/db/schema";
@@ -15,6 +16,7 @@ import { readCatalogTrees, readTermProducts } from "@/server/vetrina/catalog";
 import { readRail } from "@/server/vetrina/service";
 import { VetrinaError } from "@/server/vetrina/source";
 import { termKeyOf } from "./context";
+import { checkMarginUndo, loadTermMargin as readTermMargin } from "./margin";
 import { labelText, standingSales, undoable } from "./plan";
 import { assess } from "./preview";
 import * as repo from "./repo";
@@ -118,6 +120,8 @@ export async function undoOperation(id: string): Promise<OperationView> {
       throw new VetrinaError("stale", w.error.sectionChanged(row.section.title), 409);
     }
   }
+  // A margin's rule set again since (here or on the Margins tab) is the newer word.
+  if (row.kind === "margin") await checkMarginUndo(row);
   const moved = await repo.moveStatus(id, ["done", "failed"], { status: "undoing", error: null });
   if (!moved) throw new VetrinaError("invalid", w.error.undoing, 409);
   queueUndo(id, { status: row.status, done: row.done, total: row.total });
@@ -162,6 +166,11 @@ export async function loadTermActions(taxonomy: CatalogTaxonomy, id: number): Pr
       ownSale: products.onSale.filter((productId) => !termSale.has(productId)).length,
     },
   };
+}
+
+/** A category's or brand's margin, for its screen's "Ricarico" row (phase 4). */
+export async function loadTermMargin(taxonomy: CatalogTaxonomy, id: number): Promise<TermMarginState> {
+  return readTermMargin({ taxonomy, termId: id });
 }
 
 /** The homepage's product sections, for "Metti in homepage" — with, for some products, how many of them each would take. */

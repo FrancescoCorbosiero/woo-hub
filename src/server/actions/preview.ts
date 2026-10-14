@@ -28,6 +28,7 @@ import {
   mergeGsOwned,
 } from "@/server/feeds/ownership";
 import { getOverrides } from "@/server/overrides/repo";
+import { withStoreTerms } from "@/server/pricing/store-terms";
 import { assertSnapshotIsThisStore } from "@/server/woo/site-guard";
 import { activeFeedSkus, GS_FEED } from "@/server/feeds/repo";
 import { followSaleRuleFor, manualPriceFor, type StoreOverrides } from "@/server/overrides/model";
@@ -181,7 +182,13 @@ async function planChunk(
   );
   const ledgerRows: PlannedRow[] = [];
 
-  for (const product of products) {
+  // Where the shop files each product (its store categories and brands,
+  // ancestors included): what a margin set on a category or a brand prices
+  // by. Read here, where every plan is made, so the Sync tab, the scheduler
+  // and the Vetrina's reprice all price alike — and like the drawer.
+  const priced = await withStoreTerms(products, config.pricingRules);
+
+  for (const product of priced) {
     if (seen.has(skuKey(product.sku))) continue;
     seen.add(skuKey(product.sku));
     const mappings = storeIndex ? resolveFromModel(storeIndex, product) : new Map();

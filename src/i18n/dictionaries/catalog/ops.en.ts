@@ -27,6 +27,7 @@ export const opsEn: typeof opsIt = {
     categorize: (category: string, count: number) => `Category “${category}” on ${products(count)}`,
     uncategorize: (category: string, count: number) => `Category “${category}” off ${products(count)}`,
     pin: (count: number, section: string) => `${count === 1 ? "1 product pinned" : `${n(count)} products pinned`} in ${section}`,
+    margin: (percent: number | null, what: string) => (percent == null ? `Standard margin · ${what}` : `Margin ${percent}% · ${what}`),
   },
 
   untouched: {
@@ -46,6 +47,10 @@ export const opsEn: typeof opsIt = {
     overMax: (_count: number, max: number) => `past the ${n(max)} pinned`,
     held: (count: number, terms: string[]) =>
       `${count === 1 ? "stays" : "stay"} hidden by ${nameList(terms.map((t) => `“${t}”`))}`,
+    supplier: (_count: number) => "supplier's price (GoldenSneakers)",
+    storeOnly: (_count: number) => "priced in the shop, not by the Hub",
+    otherRule: (count: number) => (count === 1 ? "has a more specific margin" : "have a more specific margin"),
+    noQuote: (_count: number) => "no market price",
   },
 
   state: {
@@ -90,6 +95,12 @@ export const opsEn: typeof opsIt = {
       `${count === 1 ? "1 was hidden" : `${n(count)} were hidden`} from this section: ${count === 1 ? "it shows" : "they show"} again.`,
     dropped: (count: number, max: number) =>
       `${count === 1 ? "1 product pinned before leaves" : `${n(count)} products pinned before leave`} the pinned places (at most ${n(max)}).`,
+    lockedSizes: (count: number) =>
+      count === 1 ? "1 size has a locked price: it keeps it." : `${n(count)} sizes have a locked price: they keep it.`,
+    saleSizes: (count: number) =>
+      count === 1
+        ? "1 size is on sale: its full price changes when the sale ends."
+        : `${n(count)} sizes are on sale: their full price changes when the sale ends.`,
   },
 
   error: {
@@ -115,6 +126,15 @@ export const opsEn: typeof opsIt = {
     stopped: (message: string) => `Interrupted by an error: ${message}`,
     undoInterrupted: "Undo interrupted: the server restarted. Try again.",
     undoFailed: (message: string) => `Undo failed: ${message}`,
+    marginDemo: "The margin is not changed in the demo: it would land on the Hub's real prices.",
+    marginSame: (term: string, percent: number) => `“${term}” already has a ${percent}% margin.`,
+    marginNone: (term: string) => `“${term}” already follows the standard margin.`,
+    repriceUnanswered: (count: number) =>
+      `Margin saved, but the market (KicksDB) did not answer for ${products(count)}: the next price update aligns them.`,
+    marginNoSnapshot: "The Hub has not read the shop yet: update it from the Sync tab, then try again.",
+    marginChanged: (term: string) => `The margin of “${term}” changed since: change it again from here.`,
+    repriceFailed: (message: string) =>
+      `Margin saved, but not every price was updated (${message}): the next price update aligns them.`,
   },
 
   input: {
@@ -126,5 +146,6 @@ export const opsEn: typeof opsIt = {
     pastDate: "The end date has already passed.",
     percent: "The discount goes from 1 to 90%.",
     tagName: "Write the tag's name.",
+    marginPercent: "The margin goes from 0 to 200%.",
   },
 };

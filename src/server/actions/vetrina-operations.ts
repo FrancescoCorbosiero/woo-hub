@@ -10,6 +10,7 @@ import type {
   OperationTarget,
   OperationView,
   TermActionsState,
+  TermMarginState,
 } from "@/lib/vetrina/catalog-ops";
 import type { CatalogTaxonomy } from "@/lib/vetrina/catalog";
 import { parseOperationInput, parseTarget } from "@/server/vetrina/operations/input";
@@ -19,7 +20,8 @@ import { attempt, type VetrinaResult } from "@/server/vetrina/service";
 
 /**
  * The Vetrina catalog's actions on products — hide and show, sale and its
- * end, tags, categories, a place on the homepage — as server actions: thin,
+ * end, tags, categories, a place on the homepage, a whole term's margin
+ * (validated in server/vetrina/operations/input.ts) — as server actions: thin,
  * validated wrappers over server/vetrina/operations. Every one answers
  * { ok, data } or { ok: false, code, error }, like the rest of the Vetrina,
  * in the language the owner reads it in.
@@ -97,6 +99,22 @@ export async function loadTermActions(input: {
     const parsed = z.object({ taxonomy: z.enum(["category", "brand"]), id: z.number().int().positive() }).safeParse(input);
     if (!parsed.success) return invalid(words().input.term);
     return attempt(() => operations.loadTermActions(parsed.data.taxonomy, parsed.data.id));
+  });
+}
+
+/**
+ * A category's or brand's margin (phase 4): its own, the one it gets from
+ * a term above it, the standard, and how many of its products the Hub
+ * prices — what its screen's "Ricarico" row and the margin sheet start from.
+ */
+export async function loadTermMargin(input: {
+  taxonomy: CatalogTaxonomy;
+  id: number;
+}): Promise<VetrinaResult<TermMarginState>> {
+  return answer(async () => {
+    const parsed = z.object({ taxonomy: z.enum(["category", "brand"]), id: z.number().int().positive() }).safeParse(input);
+    if (!parsed.success) return invalid(words().input.term);
+    return attempt(() => operations.loadTermMargin(parsed.data.taxonomy, parsed.data.id));
   });
 }
 

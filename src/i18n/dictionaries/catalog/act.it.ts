@@ -225,6 +225,7 @@ export const actIt = {
       categorize: "Aggiungo alla categoria",
       uncategorize: "Tolgo dalla categoria",
       pin: "Fisso in homepage",
+      margin: "Cambio il ricarico",
     },
     undoing: "Annullo…",
     progress: (what: string, done: number, total: number) => `${what} · ${n(done)}/${n(total)}`,
