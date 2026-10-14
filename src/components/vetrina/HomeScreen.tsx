@@ -17,8 +17,13 @@ import type { FieldValues, HomeBlock, RailSummary } from "@/lib/vetrina/types";
 import type { VetrinaHome, VetrinaResult } from "@/server/vetrina/service";
 import { publishVetrinaBlock } from "@/server/actions/vetrina";
 import { ErrorState } from "./ErrorState";
+import { railHealth } from "./rail-health";
 import { FieldsSheet } from "./FieldsSheet";
+import { ActivityLink } from "./catalog/act/ActivityLink";
+import { Warning } from "./catalog/act/icons";
+import { railCatalogHref } from "./catalog/sheet/links";
 import { TabbarSpacer } from "./catalog/TabbarSpacer";
+import { Stack } from "./catalog/term/glyphs";
 import { useStandalone } from "./sheet-mount";
 import { ChevronLeft, ChevronRight, External, Funnel, Lock, Pin, Refresh } from "./icons";
 
@@ -72,9 +77,12 @@ export function HomeScreen({ result }: { result: VetrinaResult<VetrinaHome> }) {
       <HomeNavbar
         subtitle={result.ok && result.data.source === "fixture" ? v.demo : undefined}
         right={
-          <KLink onClick={() => router.refresh()} aria-label={v.refresh}>
-            <Refresh className="h-5 w-5" />
-          </KLink>
+          <>
+            <ActivityLink />
+            <KLink iconOnly onClick={() => router.refresh()} aria-label={v.refresh}>
+              <Refresh className="h-5 w-5" />
+            </KLink>
+          </>
         }
       />
 
@@ -138,7 +146,8 @@ function HomeNavbar({ subtitle, right }: { subtitle?: string; right: React.React
       centerTitle
       title={t.vetrinaCatalog.home.tabs.homepage}
       subtitle={subtitle}
-      titleClassName={`truncate ${standalone ? "max-w-[calc(100%-152px)]" : "max-w-[calc(100%-224px)]"}`}
+      // Folded, the small title stays clear of the side buttons (two on the right: the log, refresh).
+      titleClassName={`truncate ${standalone ? "max-w-[calc(100%-200px)]" : "max-w-[calc(100%-224px)]"}`}
       subtitleClassName="truncate"
       left={
         standalone ? undefined : (
@@ -166,9 +175,12 @@ export function HomeScreenSkeleton() {
     <Page>
       <HomeNavbar
         right={
-          <KLink aria-label={t.vetrina.refresh}>
-            <Preloader className="!h-5 !w-5" />
-          </KLink>
+          <>
+            <ActivityLink />
+            <KLink iconOnly aria-label={t.vetrina.refresh}>
+              <Preloader className="!h-5 !w-5" />
+            </KLink>
+          </>
         }
       />
       <div aria-hidden className="space-y-3 px-4 pb-1 pt-1 motion-safe:animate-pulse">
@@ -261,45 +273,51 @@ function RailCard({
 }) {
   const { t } = useI18n();
   const v = t.vetrina.home;
+  const r = t.vetrinaCatalog.home.rail;
   const auto = t.vetrina.auto;
   const pinned = rail.pin.length;
   const hidden = rail.exclude.length;
+  const health = railHealth(rail, r);
+  // A section showing exactly one category or brand: its screen in the catalog, one tap away.
+  const catalogHref = railCatalogHref(rail);
+  const sectionHref = rail.editable ? `/vetrina/sezione/${railKeyToParam(rail.key)}` : null;
 
-  const body = (
-    <>
-      <div className="flex items-center gap-2 px-4 pt-3.5">
-        <div className="min-w-0 flex-1">
-          {rail.eyebrow && (
-            <div className="truncate text-[12px] font-semibold uppercase tracking-wide opacity-50">{rail.eyebrow}</div>
-          )}
-          <div className="truncate text-[19px] font-bold leading-tight">{rail.title || rail.key}</div>
-          {collection && (
-            <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[13px]">
-              <span
-                className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                  !collection.enabled
-                    ? "bg-black/5 opacity-60 dark:bg-white/10"
-                    : collection.held || collection.lastError
-                      ? "bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300"
-                      : "bg-[#d4a017]/15 text-[#8a6b00] dark:text-[#e8c35a]"
-                }`}
-              >
-                <Funnel className="h-3 w-3" />
-                {!collection.enabled
-                  ? auto.paused
-                  : collection.held
-                    ? auto.held
-                    : collection.lastError
-                      ? auto.problem
-                      : auto.badge}
-              </span>
-              <span className="truncate opacity-60">{describeRule(collection, t.collections.words)}</span>
-            </div>
-          )}
+  const heading = (
+    <div className="min-w-0 flex-1">
+      {rail.eyebrow && (
+        <div className="truncate text-[12px] font-semibold uppercase tracking-wide opacity-50">{rail.eyebrow}</div>
+      )}
+      {/* Two lines before it is cut: beside the "Catalogo" chip, one line would cut most titles short. */}
+      <div className="line-clamp-2 break-words text-[19px] font-bold leading-tight">{rail.title || rail.key}</div>
+      {collection && (
+        <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[13px]">
+          <span
+            className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+              !collection.enabled
+                ? "bg-black/5 opacity-60 dark:bg-white/10"
+                : collection.held || collection.lastError
+                  ? "bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300"
+                  : "bg-[#d4a017]/15 text-[#8a6b00] dark:text-[#e8c35a]"
+            }`}
+          >
+            <Funnel className="h-3 w-3" />
+            {!collection.enabled
+              ? auto.paused
+              : collection.held
+                ? auto.held
+                : collection.lastError
+                  ? auto.problem
+                  : auto.badge}
+          </span>
+          <span className="truncate opacity-60">{describeRule(collection, t.collections.words)}</span>
         </div>
-        {rail.editable && <ChevronRight className="h-5 w-5 shrink-0 opacity-30" />}
-      </div>
+      )}
+    </div>
+  );
+  const chevron = rail.editable && <ChevronRight className="h-5 w-5 shrink-0 opacity-30" />;
 
+  const content = (
+    <>
       {rail.products.length === 0 ? (
         <p className="px-4 py-3 text-[15px] opacity-50">{v.empty}</p>
       ) : (
@@ -326,6 +344,13 @@ function RailCard({
         </div>
       )}
 
+      {health && (
+        <div className="flex items-center gap-1.5 px-4 pt-2 text-[13px] font-medium text-amber-700 dark:text-amber-400">
+          <Warning className="h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0 truncate">{r.health(health)}</span>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 pb-3.5 pt-2 text-[13px] opacity-60">
         <span>{v.inHomepage(Math.min(rail.limit, rail.products.length))}</span>
         {pinned > 0 && (
@@ -340,12 +365,64 @@ function RailCard({
     </>
   );
 
-  const card = "block overflow-hidden rounded-2xl bg-white shadow-sm active:opacity-80 dark:bg-[#1c1c1e]";
-  return rail.editable ? (
-    <Link href={`/vetrina/sezione/${railKeyToParam(rail.key)}`} className={card}>
-      {body}
-    </Link>
-  ) : (
-    <div className={card}>{body}</div>
+  const frame = "block overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-[#1c1c1e]";
+
+  if (!catalogHref) {
+    const body = (
+      <>
+        <div className="flex items-center gap-2 px-4 pt-3.5">
+          {heading}
+          {chevron}
+        </div>
+        {content}
+      </>
+    );
+    return sectionHref ? (
+      <Link href={sectionHref} className={`${frame} active:opacity-80`}>
+        {body}
+      </Link>
+    ) : (
+      <div className={frame}>{body}</div>
+    );
+  }
+
+  // With its catalog link the card is two links side by side (a link cannot
+  // hold another): the section editor's — the title, the products, the
+  // counts — and the catalog's. Pressing any part of the first dims the whole
+  // card, as before.
+  const toSection = (className: string, children: React.ReactNode, decorative = false) =>
+    sectionHref ? (
+      <Link
+        href={sectionHref}
+        className={`card-link ${className}`}
+        tabIndex={decorative ? -1 : undefined}
+        aria-hidden={decorative || undefined}
+      >
+        {children}
+      </Link>
+    ) : (
+      <div className={className}>{children}</div>
+    );
+
+  return (
+    <div className={`${frame} has-[.card-link:active]:opacity-80`}>
+      <div className="flex items-center">
+        {toSection("flex min-w-0 flex-1 items-center pe-2 ps-4 pt-3.5", heading)}
+        <Link
+          href={catalogHref}
+          aria-label={r.catalogLabel(rail.terms[0]?.name ?? rail.title)}
+          // A 44px target that takes no more room than the pill it holds.
+          className={`-mb-2.5 mt-1 flex h-11 shrink-0 items-center transition-opacity active:opacity-50 ${chevron ? "" : "pe-3"}`}
+        >
+          <span className="inline-flex h-7 items-center gap-1 rounded-full bg-black/[0.06] px-2.5 text-[13px] font-semibold dark:bg-white/10">
+            <Stack className="h-3.5 w-3.5 opacity-60" />
+            {r.catalog}
+          </span>
+        </Link>
+        {chevron && toSection("flex items-center self-stretch pe-4 ps-1.5 pt-3.5", chevron, true)}
+      </div>
+      {/* flow-root: the products' top margin stays inside the link, so the gap is tappable too. */}
+      {toSection("flow-root", content)}
+    </div>
   );
 }

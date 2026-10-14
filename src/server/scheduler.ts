@@ -523,10 +523,10 @@ async function pruneLogs(): Promise<void> {
   try {
     const { pruneRunLogs } = await import("@/server/retention");
     const pruned = await pruneRunLogs();
-    const total = pruned.syncRuns + pruned.ingestionRuns + pruned.applyRuns;
+    const total = pruned.syncRuns + pruned.ingestionRuns + pruned.applyRuns + pruned.vetrinaOperations;
     if (total > 0) {
       console.log(
-        `[scheduler] old run logs removed: ${pruned.syncRuns} sync runs, ${pruned.ingestionRuns} ingestion runs, ${pruned.applyRuns} apply records`,
+        `[scheduler] old run logs removed: ${pruned.syncRuns} sync runs, ${pruned.ingestionRuns} ingestion runs, ${pruned.applyRuns} apply records, ${pruned.vetrinaOperations} Vetrina actions`,
       );
     }
   } catch (e) {

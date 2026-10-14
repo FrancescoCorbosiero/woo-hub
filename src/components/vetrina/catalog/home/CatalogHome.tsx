@@ -10,8 +10,12 @@ import { ErrorState } from "../../ErrorState";
 import { ChevronLeft, Refresh } from "../../icons";
 import { SEGMENTED_COLORS } from "../../segmented";
 import { useStandalone } from "../../sheet-mount";
+import { ActivityLink } from "../act/ActivityLink";
+import { Plus } from "../act/icons";
+import { useOperationSettled } from "../act/operations-context";
+import { NewCategorySheet, type NewCategoryRequest } from "../rules/NewCategorySheet";
 import { TabbarSpacer } from "../TabbarSpacer";
-import { replaceAddress, SearchField } from "../term/browse";
+import { rememberTerms, replaceAddress, SearchField } from "../term/browse";
 import { searchWords } from "../term/list-model";
 import { readParams, type HomeTab, type TermOrder } from "./model";
 import { QuickViewChips } from "./QuickViewChips";
@@ -28,7 +32,8 @@ const LARGE_TITLE_PX = 52;
  * large title on every visit; typing swaps the lists for what it finds. The
  * list shown (?tab=brand), its order (?sort=count) and the search (?q=) live
  * in the address, so going back, or a link from a category's screen, opens
- * the same view.
+ * the same view. In the navbar: "Attività" (the log of the actions on
+ * products, with "Annulla") and "+" (a new automatic category).
  */
 export function CatalogHome({ result }: { result: VetrinaResult<CatalogOverview> }) {
   const { t } = useI18n();
@@ -48,6 +53,17 @@ export function CatalogHome({ result }: { result: VetrinaResult<CatalogOverview>
   const searching = query.trim() !== "";
   const pageRef = useTopOnSwap(searching);
   const overview = result.ok ? result.data : null;
+  const [newRule, setNewRule] = React.useState<NewCategoryRequest | null>(null);
+
+  // An action ended (a hide, a sale…): the counts and the quick views follow.
+  useOperationSettled(() => refresh());
+
+  // What the lists know of each term shapes its screen's skeleton, next time it opens.
+  React.useEffect(() => {
+    if (!overview) return;
+    rememberTerms(overview.categories);
+    rememberTerms(overview.brands);
+  }, [overview]);
 
   return (
     // The search bar's close button waits just past the right edge, scaled
@@ -59,21 +75,29 @@ export function CatalogHome({ result }: { result: VetrinaResult<CatalogOverview>
         centerTitle
         title={h.title}
         subtitle={overview?.demo ? t.vetrina.demo : undefined}
-        // Folded, the small title stays clear of the side buttons.
-        titleClassName={`truncate ${standalone ? "max-w-[calc(100%-152px)]" : "max-w-[calc(100%-224px)]"}`}
+        // Folded, the small title stays clear of the side buttons (two on each side, the Hub's link narrowed).
+        titleClassName={`truncate ${standalone ? "max-w-[calc(100%-224px)]" : "max-w-[calc(100%-272px)]"}`}
         subtitleClassName="truncate"
         left={
-          standalone ? undefined : (
-            <KLink href="/" component="a" className="gap-0.5">
-              <ChevronLeft className="h-5 w-5" />
-              {t.vetrina.backToHub}
+          <>
+            {!standalone && (
+              <KLink href="/" component="a" className="gap-0.5 !px-2">
+                <ChevronLeft className="h-5 w-5" />
+                {t.vetrina.backToHub}
+              </KLink>
+            )}
+            <KLink iconOnly onClick={refresh} aria-label={t.vetrina.refresh}>
+              {refreshing ? <Preloader className="!h-5 !w-5" /> : <Refresh className="h-5 w-5" />}
             </KLink>
-          )
+          </>
         }
         right={
-          <KLink onClick={refresh} aria-label={t.vetrina.refresh}>
-            {refreshing ? <Preloader className="!h-5 !w-5" /> : <Refresh className="h-5 w-5" />}
-          </KLink>
+          <>
+            <ActivityLink />
+            <KLink iconOnly onClick={() => setNewRule({})} aria-label={h.newRule} aria-haspopup="dialog">
+              <Plus className="h-6 w-6" />
+            </KLink>
+          </>
         }
         subnavbar={<SearchField value={query} onChange={setQuery} placeholder={h.search} />}
       />
@@ -94,6 +118,7 @@ export function CatalogHome({ result }: { result: VetrinaResult<CatalogOverview>
       )}
 
       <TabbarSpacer />
+      <NewCategorySheet request={newRule} onClose={() => setNewRule(null)} />
     </Page>
   );
 }

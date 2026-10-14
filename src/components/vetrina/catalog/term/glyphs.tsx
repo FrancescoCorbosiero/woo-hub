@@ -113,3 +113,13 @@ export function Draft({ className }: IconProps) {
     </svg>
   );
 }
+
+/** A tick in a circle: nothing to fix (an empty quick view). */
+export function CheckCircle({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className} {...stroke}>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="m8.5 12.3 2.4 2.4 4.6-5" />
+    </svg>
+  );
+}

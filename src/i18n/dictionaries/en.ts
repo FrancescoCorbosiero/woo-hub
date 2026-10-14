@@ -1395,6 +1395,7 @@ export const en: Dictionary = {
       publishedDemo: "Saved in the demo shop",
       discardConfirm: "Discard the unpublished changes?",
       leaveConfirm: "You have unpublished changes. Leave anyway?",
+      changedMeanwhile: "The section changed meanwhile: your changes stay, check them before publishing.",
       menu: {
         title: "Section",
         history: "History",

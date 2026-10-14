@@ -41,6 +41,18 @@ export const homeIt = {
   soldOut: (n: number) => (n === 1 ? "1 esaurito" : `${n.toLocaleString("it-IT")} esauriti`),
   hidden: (n: number) => (n === 1 ? "1 nascosto" : `${n.toLocaleString("it-IT")} nascosti`),
 
+  /** The navbar's buttons ("Attività" is t.vetrinaCatalog.act.activity.open). */
+  newRule: "Nuova categoria automatica",
+
+  /** A section's card on the homepage tab: what it shows that the shop does not sell, and its place in the catalog. */
+  rail: {
+    catalog: "Catalogo",
+    catalogLabel: (name: string) => `Apri «${name}» nel catalogo`,
+    soldOut: (n: number) => (n === 1 ? "1 esaurito" : `${n.toLocaleString("it-IT")} esauriti`),
+    hidden: (n: number) => (n === 1 ? "1 nascosto dal negozio" : `${n.toLocaleString("it-IT")} nascosti dal negozio`),
+    health: (parts: string) => `In vetrina: ${parts}`,
+  },
+
   firstRead: {
     title: "Sto leggendo il negozio…",
     body: "La prima volta ci vuole qualche secondo. La pagina si aggiorna da sola.",

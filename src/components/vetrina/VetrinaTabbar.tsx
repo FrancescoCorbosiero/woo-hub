@@ -6,12 +6,14 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { Tabbar, TabbarLink, ToolbarPane } from "konsta/react";
 import { useI18n } from "@/i18n/provider";
+import { useSelectionBarShown } from "./catalog/act/bottom-bar";
 import { House } from "./catalog/term/glyphs";
 
 /**
  * The Vetrina's two tabs, Homepage and Catalogo: Konsta's floating glass tab
  * bar, above the home indicator. It steps aside in the section editor, which
- * has its own publish bar down there.
+ * has its own publish bar down there, and while a catalog list is selecting:
+ * the selection's action bar takes its place.
  */
 
 export type VetrinaTab = "home" | "catalog";
@@ -81,6 +83,7 @@ export function VetrinaTabbar({ active }: { active: VetrinaTab | null }) {
   const tabs = t.vetrinaCatalog.home.tabs;
   const lastCatalog = useLastCatalog(active);
   const onClickCapture = useNoDoubleClick();
+  const aside = useSelectionBarShown();
   // On its own tab, a tab leads back to its first screen.
   const hrefOf = (tab: VetrinaTab) => (tab === "catalog" && active !== "catalog" ? lastCatalog : HREF[tab]);
 
@@ -108,7 +111,7 @@ export function VetrinaTabbar({ active }: { active: VetrinaTab | null }) {
 
   return (
     <AnimatePresence initial={false}>
-      {active && (
+      {active && !aside && (
         <motion.nav
           key="tabbar"
           initial={{ y: "100%" }}

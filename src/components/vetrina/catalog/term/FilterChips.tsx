@@ -49,10 +49,7 @@ export function FilterChips({
   const f = t.vetrinaCatalog.term.filters;
   const shownCount = (n: number | null) => (n == null ? null : formatCount(n, locale));
   const within = facets ? withinChips(facets.within, filter.within) : [];
-  // The row shows when a chip would narrow the list: a category whose every
-  // product is Nike (and Nike Dunk) has nothing to choose there.
-  const shown = facets ? statusCount(filter.status, facets) : 0;
-  const showWithin = filter.within != null || within.some((term) => term.count < shown);
+  const showWithin = withinRowShown(facets, filter);
 
   return (
     <div className="space-y-0.5 py-1">
@@ -99,6 +96,18 @@ export function FilterChips({
       )}
     </div>
   );
+}
+
+/**
+ * The other taxonomy's row shows when a chip would narrow the list: a
+ * category whose every product is Nike (and Nike Dunk) has nothing to
+ * choose there. A chosen one always shows, to be let go.
+ */
+export function withinRowShown(facets: CatalogPage["facets"] | null, filter: ListFilter): boolean {
+  if (filter.within != null) return true;
+  if (!facets) return false;
+  const shown = statusCount(filter.status, facets);
+  return facets.within.some((term) => term.count < shown);
 }
 
 /** A row of chips that scrolls sideways, edge to edge, with the page's side margin. */

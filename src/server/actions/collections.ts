@@ -69,6 +69,11 @@ export async function loadCollectionForTerm(input: { termId: number }): Promise<
   return attempt(() => service.loadForTerm(parsed.data.termId));
 }
 
+/** The rule editor opened for a new automatic category: the store's categories, tags, brands and attributes. */
+export async function loadCollectionOptions(): Promise<CollectionsResult<TermEditor>> {
+  return attempt(() => service.loadCollectionOptions());
+}
+
 /** Opening the editor: bring the store index up to date in the background. */
 export async function freshenCollections(): Promise<CollectionsResult<null>> {
   return attempt(async () => {

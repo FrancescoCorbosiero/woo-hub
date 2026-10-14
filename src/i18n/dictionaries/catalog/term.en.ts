@@ -3,6 +3,14 @@ import type { termIt } from "./term.it";
 /** A count as the owner reads it: "1,234". */
 const n = (count: number) => count.toLocaleString("en-GB");
 
+/** "“Adidas”", "“Adidas” and “Nike”", "“Adidas”, “Nike” and 2 more". */
+function quoted(names: readonly string[], shown = 2): string {
+  const list = names.slice(0, shown).map((name) => `“${name}”`);
+  const more = names.length - list.length;
+  if (more > 0) return `${list.join(", ")} and ${more === 1 ? "one more" : `${n(more)} more`}`;
+  return list.length <= 1 ? list.join("") : `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`;
+}
+
 export const termEn: typeof termIt = {
   catalog: "Catalog",
   back: "Back",
@@ -22,6 +30,49 @@ export const termEn: typeof termIt = {
     hidden: (count: number) => `${n(count)} hidden`,
     onSale: (count: number) => `${n(count)} on sale`,
     allGood: "Everything in stock and visible",
+
+    visible: "Visible in the shop",
+    visibleHint: "Turn it off and its products disappear from the shop; their links keep working.",
+    hiddenOneByOne: (count: number) => `${n(count)} hidden one by one`,
+    allHiddenOneByOne: "All hidden one by one: turn it on to show them.",
+    heldBy: (count: number, terms: readonly string[]) =>
+      `${count === 1 ? "1 stays" : `${n(count)} stay`} hidden by ${quoted(terms)}`,
+    hiding: (done: number, total: number) => `Hiding them… ${n(done)}/${n(total)}`,
+    waiting: "Waiting: it starts as soon as the action before it ends.",
+    hiddenSince: (when: string) => `Hidden by you · ${when}. Turn it on and they go back as they were.`,
+    hiddenPartly: (changed: number, total: number) =>
+      `Partly hidden: ${n(changed)} of ${n(total)}. Turn it on and they go back as they were.`,
+    showing: "Putting them back as they were…",
+    showingAll: (done: number, total: number) => `Showing them again… ${n(done)}/${n(total)}`,
+    showHidden: (count: number) => (count === 1 ? "Show the hidden one" : `Show the ${n(count)} hidden`),
+    hiddenOf: (count: number, name: string) =>
+      `${count === 1 ? "1 hidden product" : `${n(count)} hidden products`} of “${name}”`,
+
+    sale: "Sale",
+    saleStart: "Put on sale",
+    saleHint: "A discount on all its products, with or without an end date.",
+    saleOthers: (count: number) => (count === 1 ? "1 already on sale on its own" : `${n(count)} already on sale on their own`),
+    saleOn: (percent: number) => `Sale −${percent}%`,
+    saleUntil: (day: string) => `Until ${day}`,
+    saleNoEnd: "No end date: it stays until you end it",
+    saleRunning: (done: number, total: number) => `Applying it… ${n(done)}/${n(total)}`,
+    saleUndoing: "Ending it…",
+    saleMenu: (percent: number, name: string) => `Sale −${percent}% on “${name}”`,
+    saleChange: "Change the discount",
+    saleStop: "End the sale",
+    saleStopHint: "Ending it puts all its products back to full price.",
+    saleUndo: "Undo this sale",
+    saleUndoBack: (percent: number) => `Undo the change: back to −${percent}%`,
+    cancel: "Cancel",
+    stateFailed: "Couldn't read whether it is hidden or on sale.",
+    retry: "Try again",
+  },
+
+  menu: {
+    open: "More actions",
+    saveRule: "Save as an automatic category",
+    activity: "Activity",
+    cancel: "Cancel",
   },
 
   children: { category: "Subcategories", brand: "Brand lines" },
@@ -90,6 +141,15 @@ export const termEn: typeof termIt = {
     nophoto: { title: "No photo", hint: "They show with an empty image on the site: add a photo from WordPress." },
     nocategory: { title: "No category", hint: "They can't be found on the site by browsing the categories." },
     unpublished: { title: "Not published", hint: "Drafts, products in review and private ones: not visible on the site." },
+  },
+
+  viewsEmpty: {
+    soldout: { title: "Nothing sold out", text: "Everything in the shop can be bought." },
+    onsale: { title: "Nothing on sale", text: "For a sale, pick the products from a category or a brand." },
+    hidden: { title: "Nothing hidden", text: "Everything shows in the shop." },
+    nophoto: { title: "Every product has a photo", text: "No empty images in the shop." },
+    nocategory: { title: "Every product has a category", text: "They can all be found by browsing the shop." },
+    unpublished: { title: "Nothing to publish", text: "No drafts or pending products: everything is online." },
   },
 
   errors: {

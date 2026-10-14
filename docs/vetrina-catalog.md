@@ -1,10 +1,12 @@
 # Vetrina — the catalog (design + spec, v1)
 
-Status: **phases 1 and 2 done** (this branch): the Hub's Catalog tab is gone,
+Status: **phases 1–3 done** (this branch): the Hub's Catalog tab is gone,
 the store index stays fresh with what a catalog lists, every live price write
 reads the store first, and the Vetrina has its Catalogo tab — browsing by
 category and brand, search, quick views, the product sheet's place in the
-shop. Phases 3–4 are not started. See [Phases](#7-phases).
+shop — and acts on one product or many (hide and show, sales, tags,
+categories, homepage pins), each with a preview and "Annulla". Phase 4
+(margins) is next. See [Phases](#7-phases).
 
 The Vetrina gets a second tab, **Catalogo**, next to the homepage editor: the
 shop by **category and brand** — the store's own `product_cat` and
@@ -165,7 +167,11 @@ creates an automatic category.
 **A category or a brand**: a header that is its control panel — "Visibile nel
 negozio" (the hide toggle), its rule, its homepage section, its sale, its
 order — then its products, with chips to filter (in stock, sold out, hidden, on
-sale, sub-categories, the brands inside it) and a sort. "Seleziona" (or a long
+sale, sub-categories, the brands inside it) and a sort. Products hidden one by
+one get "Mostra i N nascosti"; those another hidden category or brand holds
+come back only with that one's switch, and the panel names it. A new discount
+on a term on sale replaces the term's own: only products on a sale of their
+own are warned about. "Seleziona" (or a long
 press) turns the rows into a selection with an action bar; "Seleziona tutti"
 takes everything the filter matches, not only the rows loaded.
 
@@ -177,6 +183,28 @@ Categoria + / − (manual categories only: an automatic one is decided by its
 rule), Metti in homepage (pin into a section). Each one: a preview naming the
 products, a background run with progress, a log with the previous values,
 "Annulla".
+
+As built (phase 3, `src/components/vetrina/catalog/act/`):
+
+- **Selection**: "Seleziona" on any list, or a long press on a row. While
+  selecting, an action bar takes the tab bar's place: Saldo, Nascondi /
+  Mostra, Tag, Categoria, Homepage. "Tutti (N)" takes everything the screen's
+  search and chips match — a query, resolved again when the action runs — not
+  only the rows loaded.
+- **Sheets**: one per action, each asking the server for a preview first
+  (who changes, before → after, who is left as is and why, what to know)
+  and only then offering the button.
+- **Progress and undo**: a pill above the tab bar while an action runs; a
+  toast with "Annulla" when it ends; **Attività** (from a screen's ⋯ menu)
+  lists the recent actions with their own "Annulla".
+- **A term's panel**: "Visibile nel negozio" hides the whole category or
+  brand and switching it back on undoes exactly that hide; "Metti in saldo"
+  starts a sale filed under the term, then reads "Saldo −20% · fino a
+  domenica" with "Cambia lo sconto" and "Togli il saldo".
+- **The product sheet**: its visibility, its categories (add, remove), its
+  sale, "Metti in homepage".
+- **New automatic category** from the catalog's "+", or from a term's ⋯ menu
+  with the screen's filters as its rule.
 
 ## 5. Homepage ↔ catalog
 
@@ -207,15 +235,33 @@ products, a background run with progress, a log with the previous values,
   `status=any`, which leaves the bin out, so a product trashed or deleted in
   WordPress keeps its last state in the index (and in the catalog's counts and
   quick views) until the daily full read drops it.
-- **Thumbnails**: never the full-size photo on mobile data. The plan for phase
-  2: the storefront's own `woocommerce_thumbnail` through the existing
-  `wc-gh/v1/products` cards (one request per page of rows, as the section
-  editor does), the index's photo as the fallback.
-- **Writes**: WooCommerce's batch endpoints, in a background job (one at a
-  time, progress, survives closing the app), each product read again before
-  it is written, the index and the snapshot patched from the store's answer,
-  every product's previous values in a log — which is what "Annulla" replays.
-  Prices go through the engine's path ([§3.2](#32-one-way-in-for-every-price-write)).
+- **Thumbnails**: never the full-size photo on mobile data: the storefront's
+  own `woocommerce_thumbnail` through the existing `wc-gh/v1/products` cards
+  (one request per page of rows, as the section editor does).
+- **Writes** (`src/server/vetrina/operations/`): WooCommerce's batch
+  endpoints, in a background runner — one action at a time, in order, in the
+  server process; it outlives the request, writes its progress as it goes,
+  and an action found running after a restart is marked interrupted (what it
+  changed can still be undone). Each product is read again before it is
+  written; the index and the snapshot are patched from the store's answer.
+  Tag and category writes run in the automatic categories' own queue, so
+  they never race a rule's decision, and ask the rules to look again after.
+- **The log**: `vetrina_operations` (the action, its input, label, progress,
+  status) and `vetrina_operation_items` (per product, or per size for a
+  sale: the field, the value before, the value written), each item filed
+  **before** its write. "Annulla" (within 7 days) writes the value before
+  back only where the store still shows what the action wrote; a value
+  changed since is left alone and counted. Undoing a term's hide keeps hidden
+  what another standing hide still covers. A homepage pin is undone only
+  while the section is as the pin left it. Rows are kept 30 days, except an
+  action that still stands on a whole term (its hide, its sale); the
+  scheduler's daily retention pass (`src/server/retention.ts`) cuts the rest.
+- **Sales on the store**: `sale_price` with `date_on_sale_from` cleared and
+  `date_on_sale_to` at the end of the last day, shop time
+  (`YYYY-MM-DDT23:59:59`), or none; ending a sale writes them empty. Sizes
+  of a variable product through `products/{id}/variations/batch`, a product
+  sold as one item through `products/batch`. The regular price is never
+  written.
 
 ## 7. Phases
 
@@ -223,7 +269,7 @@ products, a background run with progress, a log with the previous values,
 |---|---|---|
 | 1 · Foundations | The Hub's Catalog tab removed (drawer on every page); the store index fresh whatever the rules, with photo, visibility, order and sales; every live price write reads the store first | **Done** |
 | 2 · Browse | The tab bar; Catalogo; a category's and a brand's screen; search; quick views; the product sheet extended; homepage ↔ catalog links | **Done** |
-| 3 · Act | Selection and bulk actions; the operations log and "Annulla"; new automatic category, filter → category; Saldo and Togli saldo (§3.4); hide and show a whole category or brand | — |
+| 3 · Act | Selection and bulk actions; the operations log and "Annulla"; new automatic category, filter → category; Saldo and Togli saldo (§3.4); hide and show a whole category or brand | **Done** |
 | 4 · Margins | A margin rule per store category or brand, previewed, applied by the engine | — |
 
 ## 8. Open questions

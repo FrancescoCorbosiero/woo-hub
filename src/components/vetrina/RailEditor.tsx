@@ -124,6 +124,10 @@ const stateOf = (rail: RailDetail): SectionDraft => ({
 const trimmed = (fields: Record<string, string>) =>
   Object.fromEntries(Object.entries(fields).map(([field, value]) => [field, value.trim()]));
 
+/** The draft holds changes not published yet: the order, the section's texts or its size. */
+const edited = (saved: SectionDraft, draft: SectionDraft) =>
+  !sameState(saved, draft) || changedFields(saved.fields, draft.fields).length > 0 || saved.limit !== draft.limit;
+
 function Editor({ railKey, initial, options }: { railKey: string; initial: VetrinaRail; options: EditorOptions }) {
   const { t } = useI18n();
   const router = useRouter();
@@ -137,7 +141,7 @@ function Editor({ railKey, initial, options }: { railKey: string; initial: Vetri
   // The order, plus the section's texts and size: one draft, one publish.
   const fieldsChanged = changedFields(saved.fields, draft.fields);
   const resized = saved.limit !== draft.limit;
-  const dirty = !sameState(saved, draft) || fieldsChanged.length > 0 || resized;
+  const dirty = edited(saved, draft);
   const orderChanges = countChanges(saved, draft);
   const changes = { ...orderChanges, total: orderChanges.total + fieldsChanged.length + (resized ? 1 : 0) };
 
@@ -157,6 +161,12 @@ function Editor({ railKey, initial, options }: { railKey: string; initial: Vetri
   const [reasons, setReasons] = React.useState(
     () => new Map<number, HiddenReason>(initial.rail.hidden.map((h) => [h.id, h.reason])),
   );
+
+  // The draft as it is now, for an answer that arrives after the customer changed it.
+  const latestDraft = React.useRef(draft);
+  React.useEffect(() => {
+    latestDraft.current = draft;
+  }, [draft]);
 
   const absorb = React.useCallback((more: ProductCard[], moreLocks: Record<string, number>) => {
     setCards((prev) => {
@@ -180,10 +190,14 @@ function Editor({ railKey, initial, options }: { railKey: string; initial: Vetri
 
   /**
    * The category's members moved (its rule changed, a product's tags did):
-   * read the rail again. The draft stays — pins and hides are the
-   * customer's — but every automatic order cached so far is stale.
+   * read the rail again, and every automatic order cached so far is stale.
+   * A draft with nothing unpublished becomes the fresh rail; one with the
+   * customer's own changes keeps them — they are his — and he hears that
+   * the section changed under them, to look before publishing.
    */
   const reloadMembers = React.useCallback(async () => {
+    // The rail the draft was made over, as it was when asked: what "unedited" is measured against.
+    const before = saved;
     const fresh = await loadVetrinaRail({ key: railKey, fallback: draft.fallback });
     if (!fresh.ok) {
       toast.error(t.vetrina.errors[fresh.code] ?? fresh.error);
@@ -191,7 +205,10 @@ function Editor({ railKey, initial, options }: { railKey: string; initial: Vetri
     }
     setVisibleByFallback({ [fresh.data.rail.previewFallback]: fresh.data.rail.visible });
     adoptRail(fresh.data);
-  }, [railKey, draft.fallback, adoptRail, t]);
+    // The draft as it is now: the customer may have changed it while the rail was read.
+    if (!edited(before, latestDraft.current)) setDraft(stateOf(fresh.data.rail));
+    else toast(v.changedMeanwhile);
+  }, [railKey, draft.fallback, saved, adoptRail, t, v]);
 
   // A fallback we have no automatic order for yet: ask the site (nothing is saved).
   React.useEffect(() => {

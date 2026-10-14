@@ -440,6 +440,35 @@ export async function patchSnapshotProduct(
   });
 }
 
+/**
+ * Change many products of the snapshot at once, found by store id — those
+ * without a SKU too: read, changed and written back in ONE pass under the
+ * write lock, as patchSnapshotProduct does for one. Reading them first and
+ * writing them later lost whatever landed in between (a pull's swap, a
+ * publish batch). Returns how many it changed; 0 when none is in the
+ * snapshot, or there is none.
+ */
+export async function patchSnapshotProducts(
+  storeProductIds: readonly number[],
+  change: (product: StoreProductModel) => void,
+): Promise<number> {
+  const ids = [...new Set(storeProductIds.filter((id) => Number.isInteger(id) && id > 0))];
+  if (ids.length === 0) return 0;
+  const wanted = sql`${productId} in (select jsonb_array_elements_text(${JSON.stringify(ids)}::jsonb)::bigint)`;
+  return withSnapshotWriteLock(async (tx) => {
+    const res = await tx.execute(sql`
+      select p as product
+      from ${storeSnapshot} s, jsonb_array_elements(s.data->'products') as p
+      where s.id = ${SINGLETON} and ${wanted}
+    `);
+    const products = rowsOf<{ product: StoreProductModel }>(res).map((r) => r.product);
+    if (products.length === 0) return 0;
+    for (const product of products) change(product);
+    await rewriteProducts(tx, sql`not (${wanted})`, products);
+    return products.length;
+  });
+}
+
 /** Drop products from the snapshot by store id (e.g. a duplicate just trashed). */
 export async function removeSnapshotProducts(storeProductIds: number[]): Promise<void> {
   if (storeProductIds.length === 0) return;

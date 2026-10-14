@@ -4,6 +4,7 @@ import { Link as KLink, List, ListItem, Navbar, Page, Preloader, Searchbar } fro
 import { useI18n } from "@/i18n/provider";
 import { ChevronLeft } from "../../icons";
 import { useStandalone } from "../../sheet-mount";
+import { Clock, Plus } from "../act/icons";
 import { TabbarSpacer } from "../TabbarSpacer";
 
 /**
@@ -24,18 +25,30 @@ export function CatalogHomeSkeleton() {
         transparent
         centerTitle
         title={h.title}
+        titleClassName={`truncate ${standalone ? "max-w-[calc(100%-224px)]" : "max-w-[calc(100%-272px)]"}`}
+        // The same buttons in the same places; they wait for the real screen.
         left={
-          standalone ? undefined : (
-            <KLink href="/" component="a" className="gap-0.5">
-              <ChevronLeft className="h-5 w-5" />
-              {t.vetrina.backToHub}
+          <>
+            {!standalone && (
+              <KLink href="/" component="a" className="gap-0.5 !px-2">
+                <ChevronLeft className="h-5 w-5" />
+                {t.vetrina.backToHub}
+              </KLink>
+            )}
+            <KLink iconOnly aria-label={t.vetrina.refresh}>
+              <Preloader className="!h-5 !w-5" />
             </KLink>
-          )
+          </>
         }
         right={
-          <KLink aria-label={t.vetrina.refresh}>
-            <Preloader className="!h-5 !w-5" />
-          </KLink>
+          <span aria-hidden className="flex h-full items-center opacity-40">
+            <KLink iconOnly component="span">
+              <Clock className="h-[22px] w-[22px]" />
+            </KLink>
+            <KLink iconOnly component="span">
+              <Plus className="h-6 w-6" />
+            </KLink>
+          </span>
         }
         subnavbar={
           <Searchbar

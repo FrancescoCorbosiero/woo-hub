@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { List, ListItem, NavbarBackLink, Searchbar } from "konsta/react";
 import { useI18n } from "@/i18n/provider";
-import type { CatalogPage, CatalogSort } from "@/lib/vetrina/catalog";
+import type { CatalogPage, CatalogSort, CatalogTaxonomy, CatalogTerm } from "@/lib/vetrina/catalog";
 import type { VetrinaResult } from "@/server/vetrina/service";
 import { tabOf } from "../../VetrinaTabbar";
 import { useBack } from "../../use-back";
@@ -197,4 +197,57 @@ export function SearchEverywhere({ q }: { q: string }) {
       />
     </List>
   );
+}
+
+/* ---------------------------------------------------------------- *
+ * What a term's screen looks like, for its skeleton
+ * ---------------------------------------------------------------- */
+
+/**
+ * The parts of a term's screen above its list that come and go: the skeleton
+ * shown while the server reads it draws the same ones, so nothing jumps when
+ * the screen arrives. Learnt from the catalog's home (every term) and from
+ * the screen itself (exactly, the other taxonomy's chips included).
+ */
+export interface TermShape {
+  /** A category whose rule is set (one or two lines), not "Rendi automatica" with its hint. */
+  automatic: boolean;
+  /** Rows of homepage sections: "Non è in homepage" counts as one. */
+  sections: number;
+  /** It has products: the counts row, and the panel's actions (Visibile nel negozio, Saldo). */
+  counted: boolean;
+  /** The sub-terms' chips. */
+  children: boolean;
+  /** The other taxonomy's chips (shown when they narrow the list). */
+  within: boolean;
+}
+
+const DEFAULT_SHAPE: TermShape = { automatic: false, sections: 1, counted: true, children: false, within: true };
+
+// In-memory only, per visit of the app: it is a guess at a layout, nothing to keep.
+const shapes = new Map<string, TermShape>();
+
+/** The shape the catalog's home can tell of a term (the chips' row it cannot: kept from a visit). */
+export function shapeOf(term: CatalogTerm): Omit<TermShape, "within"> {
+  return {
+    automatic: term.automatic != null,
+    sections: Math.max(1, term.sections.length),
+    counted: term.count > 0,
+    children: term.children.length > 0,
+  };
+}
+
+export function rememberShape(taxonomy: CatalogTaxonomy, id: number, shape: Partial<TermShape>): void {
+  const key = `${taxonomy}:${id}`;
+  shapes.set(key, { ...DEFAULT_SHAPE, ...shapes.get(key), ...shape });
+}
+
+/** Every term the catalog's home lists. */
+export function rememberTerms(terms: readonly CatalogTerm[]): void {
+  for (const term of terms) rememberShape(term.taxonomy, term.id, shapeOf(term));
+}
+
+/** What is known of a term's screen, or the most common shape. */
+export function rememberedShape(taxonomy: CatalogTaxonomy, id: number | null): TermShape {
+  return (id != null && shapes.get(`${taxonomy}:${id}`)) || DEFAULT_SHAPE;
 }

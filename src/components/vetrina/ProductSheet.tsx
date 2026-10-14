@@ -2,16 +2,20 @@
 
 import * as React from "react";
 import { Sheet } from "react-modal-sheet";
-import { Button, Preloader } from "konsta/react";
+import { Button, List, ListItem, Preloader } from "konsta/react";
 import { toast } from "sonner";
 import { useI18n } from "@/i18n/provider";
 import type { DrawerData } from "@/components/catalog/drawer-data";
+import type { OperationView } from "@/lib/vetrina/catalog-ops";
 import type { ProductCard } from "@/lib/vetrina/types";
 import { loadProductPrices, publishProductPrices } from "@/server/actions/vetrina-prices";
 import { setProductManualPrices } from "@/server/actions/overrides";
 import { updateStoreVariation } from "@/server/actions/store-edit";
 import { repriceStoreEdits } from "@/server/actions/store-edits";
+import { useLastShown } from "./catalog/act/parts";
+import { ROW, ROW_INNER, ROWS, SHEET_CARD, SHEET_LIST, SHEET_LIST_COLORS } from "./catalog/sheet/look";
 import { PlacementSection } from "./catalog/sheet/PlacementSection";
+import { cardShows } from "./catalog/sheet/placement-model";
 import { formatCardPrice, formatEuro, parsePrice } from "./format";
 import { External, Lock } from "./icons";
 import { useSheetMount, useStandalone } from "./sheet-mount";
@@ -28,8 +32,10 @@ const toInput = (n: number | null | undefined) => (n == null ? "" : n.toFixed(2)
  *
  * Below the prices, the product's tags: what the automatic categories read,
  * so changing them here moves the product in or out of those sections. Then
- * its place in the shop: visibility, categories, brands and homepage
- * sections, each a way to that screen.
+ * its place in the shop — visibility, categories, brands, homepage sections,
+ * sale — each a way to that screen, and each an action on this one product
+ * (hide, a category, the homepage, a sale), run like the catalog's own and
+ * undone the same way. Last, the links out: the site, WordPress, the Hub.
  */
 export function ProductSheet({
   card,
@@ -43,9 +49,17 @@ export function ProductSheet({
   card: ProductCard | null;
   onClose: () => void;
   onLocksChanged: (sku: string, count: number) => void;
-  /** Prices reached the site: the list re-reads this product's card. */
+  /**
+   * What the product's card shows changed on the site — its prices, or (from
+   * "Nel negozio") its sale or its visibility: the list re-reads this card.
+   */
   onPricesChanged: (id: number) => void;
-  /** Its tags moved it in or out of an automatic category: the section reloads. */
+  /**
+   * The product may have moved in or out of what the screen shows: its tags
+   * moved it in or out of an automatic category, or an action from "Nel
+   * negozio" ended (hidden, a category, the homepage, a sale) or was undone.
+   * The section or the list reloads.
+   */
   onTagsChanged?: () => void;
   /** Asked before a link in the sheet leaves the screen; false stays (the section editor's unpublished changes). */
   confirmLeave?: () => boolean;
@@ -55,6 +69,8 @@ export function ProductSheet({
   const mountPoint = useSheetMount();
   const standalone = useStandalone();
   const p = t.vetrina.product;
+  // While the sheet slides away it keeps showing the product it was opened on.
+  const shown = useLastShown(card);
   const [data, setData] = React.useState<DrawerData | null | undefined>(undefined);
   const [error, setError] = React.useState<string | null>(null);
   const [edits, setEdits] = React.useState<Record<string, string>>({});
@@ -62,10 +78,14 @@ export function ProductSheet({
   // Tags that moved the product change its categories: its place is read again.
   const [moved, setMoved] = React.useState(0);
 
+  // The product last asked for: an answer for one opened before is dropped.
+  const asked = React.useRef("");
   const load = React.useCallback(async (sku: string) => {
+    asked.current = sku;
     setData(undefined);
     setError(null);
     const res = await loadProductPrices({ sku });
+    if (asked.current !== sku) return;
     if (!res.ok) {
       setError(res.error);
       setData(null);
@@ -186,6 +206,20 @@ export function ProductSheet({
     }
   }
 
+  /**
+   * An action from "Nel negozio" ended (or its "Annulla" did): the screen
+   * behind re-reads what it shows of the product. The sizes above stay as
+   * they are: a sale writes sale prices, never the prices shown there, and
+   * reading them again would drop what the owner is typing.
+   */
+  const acted = (view: OperationView) => {
+    if (!shown) return;
+    if (cardShows(view.kind)) onPricesChanged(shown.id);
+    onTagsChanged?.();
+  };
+
+  const hubLink = shown?.sku && !demo && !standalone ? `/?product=${encodeURIComponent(shown.sku)}` : null;
+
   const ruleLabel = (d: DrawerData) => {
     const r = d.appliedRule;
     if (!r) return null;
@@ -204,51 +238,53 @@ export function ProductSheet({
       <Sheet.Container className="!bg-[#f2f2f7] dark:!bg-[#1c1c1e]">
         <Sheet.Header />
         <Sheet.Content>
-          {card && (
+          {shown && (
             <div className="px-4 pb-[calc(env(safe-area-inset-bottom)+24px)]">
               <div className="flex items-center gap-3">
                 {/* A catalog row opened before its store card arrived has no photo yet: an empty tile, not src="". */}
                 {/* eslint-disable-next-line @next/next/no-img-element -- the shop's own thumbnail sizes */}
                 <img
-                  src={card.image || undefined}
+                  src={shown.image || undefined}
                   alt=""
                   className="h-20 w-20 shrink-0 rounded-2xl bg-white object-contain dark:bg-white/10"
                 />
                 <div className="min-w-0 flex-1">
-                  <h2 className="line-clamp-2 text-[18px] font-bold leading-snug">{card.name}</h2>
-                  <div className="mt-0.5 font-mono text-[12px] opacity-50">{card.sku}</div>
+                  <h2 className="line-clamp-2 text-[18px] font-bold leading-snug">{shown.name}</h2>
+                  <div className="mt-0.5 font-mono text-[12px] opacity-50">{shown.sku}</div>
                   <div className="mt-1 text-[14px]">
                     <span className="opacity-60">{p.priceOnSite}:</span>{" "}
-                    <span className="font-semibold tabular-nums">{formatCardPrice(card)}</span>
+                    <span className="font-semibold tabular-nums">{formatCardPrice(shown)}</span>
                   </div>
                 </div>
               </div>
 
               <div className="mt-5">
                 {demo ? (
-                  <p className="rounded-2xl bg-white p-4 text-[15px] opacity-70 dark:bg-black/40">{t.vetrina.demo}</p>
-                ) : !card.sku ? (
-                  <p className="rounded-2xl bg-white p-4 text-[15px] dark:bg-black/40">{p.notInHub}</p>
+                  <p className={`${SHEET_CARD} p-4 text-[15px] text-black/70 dark:text-white/70`}>{t.vetrina.demo}</p>
+                ) : !shown.sku ? (
+                  <p className={`${SHEET_CARD} p-4 text-[15px]`}>{p.notInHub}</p>
                 ) : data === undefined ? (
                   <div className="grid place-items-center gap-2 py-8 text-[14px] opacity-60">
                     <Preloader />
                     {p.loading}
                   </div>
                 ) : data === null ? (
-                  <p className="rounded-2xl bg-white p-4 text-[15px] dark:bg-black/40">{error ?? p.notInHub}</p>
+                  <p className={`${SHEET_CARD} p-4 text-[15px]`}>{error ?? p.notInHub}</p>
                 ) : data.store ? (
                   <>
                     <p className="mb-2 px-1 text-[13px] opacity-60">{p.storeOnly}</p>
-                    <ul className="overflow-hidden rounded-2xl bg-white dark:bg-black/40">
+                    <ul className={`${SHEET_CARD} ${ROWS}`}>
                       {data.store.variants.map((v) => (
-                        <li key={v.variationId} className="flex items-center gap-3 border-b border-black/5 px-4 py-2.5 last:border-0 dark:border-white/10">
-                          <span className="w-16 text-[17px] font-semibold">{v.sizeLabel}</span>
-                          <span className="flex-1 text-[13px] opacity-50">{v.stock != null ? `stock ${v.stock}` : ""}</span>
-                          <PriceInput
-                            value={edits[String(v.variationId)] ?? ""}
-                            placeholder={toInput(v.price)}
-                            onChange={(text) => setEdits((e) => ({ ...e, [String(v.variationId)]: text }))}
-                          />
+                        <li key={v.variationId} className={ROW}>
+                          <div className={`${ROW_INNER} flex items-center gap-3 py-2.5`}>
+                            <span className="w-16 text-[17px] font-semibold">{v.sizeLabel}</span>
+                            <span className="flex-1 text-[13px] opacity-50">{v.stock != null ? `stock ${v.stock}` : ""}</span>
+                            <PriceInput
+                              value={edits[String(v.variationId)] ?? ""}
+                              placeholder={toInput(v.price)}
+                              onChange={(text) => setEdits((e) => ({ ...e, [String(v.variationId)]: text }))}
+                            />
+                          </div>
                         </li>
                       ))}
                     </ul>
@@ -265,8 +301,9 @@ export function ProductSheet({
                     </div>
                     <div className="mb-1 flex items-center justify-between px-1">
                       <span className="text-[13px] font-semibold uppercase tracking-wide opacity-50">{p.sizes}</span>
-                      <span className="flex gap-1">
-                        <Button small clear inline onClick={() =>
+                      {/* 44px to the finger, drawn as small as the heading beside them. */}
+                      <span className="-my-2 flex gap-1">
+                        <Button small clear inline className="!h-11" onClick={() =>
                           setEdits((e) => {
                             const next = { ...e };
                             for (const v of data.variants) {
@@ -277,62 +314,64 @@ export function ProductSheet({
                         }>
                           {p.lockAll}
                         </Button>
-                        <Button small clear inline onClick={() =>
+                        <Button small clear inline className="!h-11" onClick={() =>
                           setEdits((e) => Object.fromEntries(Object.keys(e).map((k) => [k, ""])))
                         }>
                           {p.unlockAll}
                         </Button>
                       </span>
                     </div>
-                    <ul className="overflow-hidden rounded-2xl bg-white dark:bg-black/40">
+                    <ul className={`${SHEET_CARD} ${ROWS}`}>
                       {data.variants.map((v) => {
                         const text = v.euSize ? edits[v.euSize] ?? "" : "";
                         const typed = text.trim() === "" ? null : parsePrice(text);
                         const below = typed != null && v.ask != null && typed < v.ask;
                         return (
-                          <li key={v.id} className="flex items-center gap-3 border-b border-black/5 px-4 py-2.5 last:border-0 dark:border-white/10">
-                            <span className="w-14 shrink-0 text-[17px] font-semibold">{v.euSize ?? v.sizeLabel}</span>
-                            <span className="min-w-0 flex-1 text-[12px] leading-tight">
-                              <span className="block opacity-50">
-                                {p.market} {formatEuro(v.ask)}
-                              </span>
-                              <span className="block opacity-50">
-                                {p.computed} {formatEuro(v.proposed)}
-                              </span>
-                              {below && <span className="block text-amber-700 dark:text-amber-400">{p.belowMarket(formatEuro(v.ask))}</span>}
-                              {v.storeEdit && v.euSize && (
-                                <span className="mt-0.5 block text-amber-700 dark:text-amber-400">
-                                  <span className="font-semibold">{p.storeEdit(formatEuro(v.storeEdit.storePrice))}</span>
-                                  <span className="mt-0.5 flex gap-3">
-                                    <button
-                                      type="button"
-                                      className="font-semibold text-primary"
-                                      onClick={() => setEdits((e) => ({ ...e, [v.euSize!]: toInput(v.storeEdit!.storePrice) }))}
-                                    >
-                                      {p.storeEditKeep}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="font-semibold text-primary disabled:opacity-40"
-                                      disabled={saving}
-                                      onClick={() => void restoreHubPrice(data, v.storeEdit!.variationId)}
-                                    >
-                                      {p.storeEditReprice}
-                                    </button>
-                                  </span>
+                          <li key={v.id} className={ROW}>
+                            <div className={`${ROW_INNER} flex items-center gap-3 py-2.5`}>
+                              <span className="w-14 shrink-0 text-[17px] font-semibold">{v.euSize ?? v.sizeLabel}</span>
+                              <span className="min-w-0 flex-1 text-[12px] leading-tight">
+                                <span className="block opacity-50">
+                                  {p.market} {formatEuro(v.ask)}
                                 </span>
-                              )}
-                            </span>
-                            {v.euSize ? (
-                              <>
-                                <PriceInput
-                                  value={text}
-                                  placeholder={toInput(v.proposed)}
-                                  onChange={(next) => setEdits((e) => ({ ...e, [v.euSize!]: next }))}
-                                />
-                                <Lock className={`h-4 w-4 shrink-0 ${text.trim() ? "opacity-80" : "opacity-15"}`} />
-                              </>
-                            ) : null}
+                                <span className="block opacity-50">
+                                  {p.computed} {formatEuro(v.proposed)}
+                                </span>
+                                {below && <span className="block text-amber-700 dark:text-amber-400">{p.belowMarket(formatEuro(v.ask))}</span>}
+                                {v.storeEdit && v.euSize && (
+                                  <span className="mt-0.5 block text-amber-700 dark:text-amber-400">
+                                    <span className="font-semibold">{p.storeEdit(formatEuro(v.storeEdit.storePrice))}</span>
+                                    <span className="mt-0.5 flex gap-3">
+                                      <button
+                                        type="button"
+                                        className="relative font-semibold text-primary before:absolute before:-inset-x-1.5 before:-inset-y-3.5"
+                                        onClick={() => setEdits((e) => ({ ...e, [v.euSize!]: toInput(v.storeEdit!.storePrice) }))}
+                                      >
+                                        {p.storeEditKeep}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="relative font-semibold text-primary before:absolute before:-inset-x-1.5 before:-inset-y-3.5 disabled:opacity-40"
+                                        disabled={saving}
+                                        onClick={() => void restoreHubPrice(data, v.storeEdit!.variationId)}
+                                      >
+                                        {p.storeEditReprice}
+                                      </button>
+                                    </span>
+                                  </span>
+                                )}
+                              </span>
+                              {v.euSize ? (
+                                <>
+                                  <PriceInput
+                                    value={text}
+                                    placeholder={toInput(v.proposed)}
+                                    onChange={(next) => setEdits((e) => ({ ...e, [v.euSize!]: next }))}
+                                  />
+                                  <Lock className={`h-4 w-4 shrink-0 ${text.trim() ? "opacity-80" : "opacity-15"}`} />
+                                </>
+                              ) : null}
+                            </div>
                           </li>
                         );
                       })}
@@ -346,12 +385,12 @@ export function ProductSheet({
                 )}
               </div>
 
-              {!card.missing && (
+              {!shown.missing && (
                 <>
                   <div className="mt-5">
                     <TagsSection
-                      key={card.id}
-                      productId={card.id}
+                      key={shown.id}
+                      productId={shown.id}
                       onChanged={() => {
                         setMoved((n) => n + 1);
                         onTagsChanged?.();
@@ -360,41 +399,66 @@ export function ProductSheet({
                   </div>
                   <div className="mt-5">
                     <PlacementSection
-                      key={card.id}
-                      productId={card.id}
+                      key={shown.id}
+                      productId={shown.id}
+                      name={shown.name}
+                      stockStatus={shown.stockStatus}
+                      onSale={shown.onSale}
+                      price={shown.price != null ? formatCardPrice(shown) : undefined}
                       refreshKey={moved}
                       onLeave={onClose}
                       confirmLeave={confirmLeave}
+                      onActed={acted}
                     />
                   </div>
                 </>
               )}
 
-              <div className="mt-5 flex flex-col gap-2 text-[15px]">
-                {card.permalink && (
-                  <a href={card.permalink} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-primary">
-                    {p.openSite}
-                    <External className="h-4 w-4" />
-                  </a>
-                )}
-                {card.editLink && (
-                  <a href={card.editLink} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-primary">
-                    {p.editWp}
-                    <External className="h-4 w-4" />
-                  </a>
-                )}
-                {card.sku && !demo && !standalone && (
-                  <a href={`/?product=${encodeURIComponent(card.sku)}`} className="text-primary">
-                    {p.openHub}
-                  </a>
-                )}
-              </div>
+              {(shown.permalink || shown.editLink || hubLink) && (
+                // Grouped rows, as iOS lists its links: each a full-width, 44px-plus target.
+                <div className="mt-5">
+                  <List strong inset dividers colors={SHEET_LIST_COLORS} className={SHEET_LIST}>
+                    {shown.permalink && <OutLink href={shown.permalink} title={p.openSite} />}
+                    {shown.editLink && <OutLink href={shown.editLink} title={p.editWp} />}
+                    {hubLink && (
+                      <ListItem
+                        link
+                        href={hubLink}
+                        title={p.openHub}
+                        titleFontSizeIos="text-[16px]"
+                        titleFontSizeMaterial="text-[16px]"
+                        // It leaves the Vetrina in this tab: the section editor's unpublished changes are asked about first.
+                        onClick={(e: React.MouseEvent) => {
+                          if (confirmLeave && !confirmLeave()) e.preventDefault();
+                        }}
+                      />
+                    )}
+                  </List>
+                </div>
+              )}
             </div>
           )}
         </Sheet.Content>
       </Sheet.Container>
       <Sheet.Backdrop onTap={onClose} />
     </Sheet>
+  );
+}
+
+/** A link out of the app (the site, WordPress): a row with the arrow that says it leaves. */
+function OutLink({ href, title }: { href: string; title: string }) {
+  return (
+    <ListItem
+      link
+      href={href}
+      target="_blank"
+      linkProps={{ rel: "noreferrer" }}
+      chevron={false}
+      title={title}
+      after={<External className="h-[18px] w-[18px]" />}
+      titleFontSizeIos="text-[16px]"
+      titleFontSizeMaterial="text-[16px]"
+    />
   );
 }
 

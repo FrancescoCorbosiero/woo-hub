@@ -150,6 +150,28 @@ function exclusive<T>(kind: RunKind, fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
+/**
+ * Run `fn` in this queue, after everything queued before it: the Vetrina's
+ * actions write products' tags and categories through here, so such a write
+ * never lands between a decision's live read and its own write — the one
+ * race that would put back categories from a stale reading.
+ *
+ * Only the place in line: none of the queue's own status. A Vetrina write
+ * is not an automatic-categories run — its failure is the Vetrina's to
+ * report (its action's row), its success must not wipe the last real
+ * error, and the Collections screen must not read the queue as busy with
+ * one of its runs.
+ */
+export function queueProductWrite<T>(fn: () => Promise<T>): Promise<T> {
+  const s = state();
+  const run = s.chain.then(fn);
+  s.chain = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
 /* ---------------------------------------------------------------- *
  * Reading the store
  * ---------------------------------------------------------------- */

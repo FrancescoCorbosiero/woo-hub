@@ -37,6 +37,16 @@ export const homeEn: typeof homeIt = {
   soldOut: (n: number) => `${n.toLocaleString("en-GB")} sold out`,
   hidden: (n: number) => `${n.toLocaleString("en-GB")} hidden`,
 
+  newRule: "New automatic category",
+
+  rail: {
+    catalog: "Catalog",
+    catalogLabel: (name: string) => `Open “${name}” in the catalog`,
+    soldOut: (n: number) => `${n.toLocaleString("en-GB")} sold out`,
+    hidden: (n: number) => `${n.toLocaleString("en-GB")} hidden from the shop`,
+    health: (parts: string) => `On show: ${parts}`,
+  },
+
   firstRead: {
     title: "Reading the shop…",
     body: "The first time takes a few seconds. The page updates by itself.",

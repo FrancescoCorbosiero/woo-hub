@@ -415,6 +415,21 @@ export function selectPage(facts: readonly IndexFacts[], query: CatalogQuery, tr
   };
 }
 
+/**
+ * Every product a query matches, in its order, with no page cut — what an
+ * action on "all of them" acts on: the same filters, chips and sort as the
+ * list the owner is looking at.
+ */
+export function matchingIds(facts: readonly IndexFacts[], query: CatalogQuery, trees: CatalogTrees): number[] {
+  const byBase = baseFilter(query, trees);
+  const byStatus = statusFilter(query);
+  const byWithin = withinFilter(query, trees);
+  return facts
+    .filter((f) => byBase(f) && byStatus(f) && byWithin(f))
+    .sort(compareFacts(query.sort ?? "shop"))
+    .map((f) => f.id);
+}
+
 /* ---------------------------------------------------------------- *
  * The homepage's sections
  * ---------------------------------------------------------------- */
@@ -539,6 +554,17 @@ interface CatalogContext extends CatalogTrees {
 
 /** Everything around the index an answer needs, read side by side. */
 async function loadContext(): Promise<CatalogContext> {
+  const [trees, collections, presence] = await Promise.all([
+    readCatalogTrees(),
+    // Best-effort, like the homepage's: a Hub without the table still browses.
+    collectionsByTerm().catch(() => ({})),
+    homepagePresence(),
+  ]);
+  return { ...trees, collections, presence, demo: demoMode() };
+}
+
+/** The store's categories and brands as trees: names, parents, sub-terms. */
+export async function readCatalogTrees(): Promise<CatalogTrees> {
   if (!storeReady()) {
     throw new VetrinaError(
       "not_configured",
@@ -546,15 +572,63 @@ async function loadContext(): Promise<CatalogContext> {
     );
   }
   const client = await storeClient();
-  const [categories, brands, collections, presence] = await Promise.all([
+  const [categories, brands] = await Promise.all([
     client.listCategories(),
     // A shop without brands — or whose brands cannot be read — still has its categories.
     client.listBrands().catch(() => []),
-    // Best-effort, like the homepage's: a Hub without the table still browses.
-    collectionsByTerm().catch(() => ({})),
-    homepagePresence(),
   ]);
-  return { category: termTree(categories), brand: termTree(brands), collections, presence, demo: demoMode() };
+  return { category: termTree(categories), brand: termTree(brands) };
+}
+
+/**
+ * A term's products as its screen counts them, sub-terms included, and
+ * which of them are hidden and which on sale: read with the term's actions,
+ * so its panel decides from one moment of the index.
+ */
+export async function readTermProducts(
+  taxonomy: CatalogTaxonomy,
+  id: number,
+): Promise<{ count: number; hidden: number[]; onSale: number[] }> {
+  const [facts, trees] = await Promise.all([readIndexFacts(), readCatalogTrees()]);
+  const term = withDescendants(id, trees[taxonomy].children);
+  const own = facts.filter((f) => holdsAny(f, taxonomy, term));
+  return {
+    count: own.length,
+    hidden: own.filter((f) => !isListed(f.visibility)).map((f) => f.id),
+    onSale: own.filter((f) => f.onSale).map((f) => f.id),
+  };
+}
+
+/**
+ * The products of each of these terms now (sub-terms included, as its
+ * screen lists them), read from one look at the index: which products a
+ * whole term's hide still holds.
+ */
+export async function readTermMembers(
+  terms: readonly { taxonomy: CatalogTaxonomy; id: number }[],
+): Promise<Map<string, Set<number>>> {
+  const out = new Map<string, Set<number>>();
+  if (terms.length === 0) return out;
+  const [facts, trees] = await Promise.all([readIndexFacts(), readCatalogTrees()]);
+  for (const term of terms) {
+    const ids = matchingIds(facts, { taxonomy: term.taxonomy, termId: term.id }, trees);
+    out.set(termKey(term.taxonomy, term.id), new Set(ids));
+  }
+  return out;
+}
+
+/**
+ * The products a catalog query matches now, for an action on all of them:
+ * the first `cap` ids in the list's order, and how many matched in all — the
+ * caller refuses a target larger than it acts on.
+ */
+export async function resolveQueryTarget(
+  query: CatalogQuery,
+  cap: number,
+): Promise<{ ids: number[]; total: number; trees: CatalogTrees }> {
+  const [facts, trees] = await Promise.all([readIndexFacts(), readCatalogTrees()]);
+  const ids = matchingIds(facts, query, trees);
+  return { ids: ids.slice(0, cap), total: ids.length, trees };
 }
 
 /** Locked sizes per SKU: best-effort, like the homepage's padlocks. */

@@ -16,6 +16,8 @@ export function useProductCards(ids: readonly number[]): {
   cards: ReadonlyMap<number, ProductCard>;
   /** Read one card again (its prices changed). */
   refresh: (id: number) => void;
+  /** Read these cards again (an action changed their prices), a batch per request. */
+  refreshMany: (ids: readonly number[]) => void;
 } {
   const [cards, setCards] = React.useState<ReadonlyMap<number, ProductCard>>(() => new Map());
   const requested = React.useRef(new Set<number>());
@@ -51,6 +53,12 @@ export function useProductCards(ids: readonly number[]): {
   }, [missing, fetchCards]);
 
   const refresh = React.useCallback((id: number) => fetchCards([id]), [fetchCards]);
+  const refreshMany = React.useCallback(
+    (again: readonly number[]) => {
+      for (let i = 0; i < again.length; i += CATALOG_PAGE_MAX) fetchCards(again.slice(i, i + CATALOG_PAGE_MAX));
+    },
+    [fetchCards],
+  );
 
-  return { cards, refresh };
+  return { cards, refresh, refreshMany };
 }

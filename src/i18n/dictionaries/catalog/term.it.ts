@@ -1,3 +1,5 @@
+import type { QuickView } from "@/lib/vetrina/catalog";
+
 /**
  * The Vetrina catalog's strings: a category's or a brand's screen, the quick
  * views and the product list they share. Italian is the source of truth (see
@@ -5,6 +7,14 @@
  */
 /** A count as the owner reads it: "1.234". */
 const n = (count: number) => count.toLocaleString("it-IT");
+
+/** "«Adidas»", "«Adidas» e «Nike»", "«Adidas», «Nike» e altri 2". */
+function quoted(names: readonly string[], shown = 2): string {
+  const list = names.slice(0, shown).map((name) => `«${name}»`);
+  const more = names.length - list.length;
+  if (more > 0) return `${list.join(", ")} e ${more === 1 ? "un altro" : `altri ${n(more)}`}`;
+  return list.length <= 1 ? list.join("") : `${list.slice(0, -1).join(", ")} e ${list[list.length - 1]}`;
+}
 
 export const termIt = {
   catalog: "Catalogo",
@@ -26,6 +36,55 @@ export const termIt = {
     hidden: (count: number) => (count === 1 ? "1 nascosto" : `${n(count)} nascosti`),
     onSale: (count: number) => `${n(count)} in saldo`,
     allGood: "Tutto disponibile e visibile",
+
+    // "Visibile nel negozio": the whole term's products, hidden or shown again in one go.
+    visible: "Visibile nel negozio",
+    visibleHint: "Spegnilo e i suoi prodotti spariscono dal negozio; i loro link restano.",
+    hiddenOneByOne: (count: number) => (count === 1 ? "1 nascosto uno per uno" : `${n(count)} nascosti uno per uno`),
+    allHiddenOneByOne: "Tutti nascosti uno per uno: riaccendilo per mostrarli.",
+    /** Hidden by another category or brand the owner hid: that one's switch brings them back. */
+    heldBy: (count: number, terms: readonly string[]) =>
+      `${count === 1 ? "1 resta nascosto" : `${n(count)} restano nascosti`} da ${quoted(terms)}`,
+    hiding: (done: number, total: number) => `Li nascondo… ${n(done)}/${n(total)}`,
+    waiting: "In attesa: parte appena finisce l'azione prima.",
+    hiddenSince: (when: string) => `Nascosti da te · ${when}. Riaccendilo e tornano com'erano.`,
+    hiddenPartly: (changed: number, total: number) =>
+      `Nascosti in parte: ${n(changed)} su ${n(total)}. Riaccendilo e tornano com'erano.`,
+    showing: "Li rimetto com'erano…",
+    showingAll: (done: number, total: number) => `Li rimetto in vista… ${n(done)}/${n(total)}`,
+    showHidden: (count: number) => (count === 1 ? "Mostra l'unico nascosto" : `Mostra i ${n(count)} nascosti`),
+    hiddenOf: (count: number, name: string) =>
+      `${count === 1 ? "1 prodotto nascosto" : `${n(count)} prodotti nascosti`} di «${name}»`,
+
+    // "Saldo": a sale on the whole term.
+    sale: "Saldo",
+    saleStart: "Metti in saldo",
+    saleHint: "Uno sconto su tutti i suoi prodotti, con o senza data di fine.",
+    saleOthers: (count: number) => (count === 1 ? "1 già in saldo per conto suo" : `${n(count)} già in saldo per conto loro`),
+    saleOn: (percent: number) => `Saldo −${percent}%`,
+    saleUntil: (day: string) => `Fino a ${day}`,
+    saleNoEnd: "Senza data di fine: resta finché non lo togli",
+    saleRunning: (done: number, total: number) => `Lo applico… ${n(done)}/${n(total)}`,
+    saleUndoing: "Lo tolgo…",
+    saleMenu: (percent: number, name: string) => `Saldo −${percent}% su «${name}»`,
+    saleChange: "Cambia lo sconto",
+    saleStop: "Togli il saldo",
+    saleStopHint: "Togliendolo, tutti i suoi prodotti tornano a prezzo pieno.",
+    /** Undo the term's latest sale: its prices go back to what they were before it. */
+    saleUndo: "Annulla questo saldo",
+    /** …which replaced an earlier sale of the term: that one comes back. */
+    saleUndoBack: (percent: number) => `Annulla il cambio: torna a −${percent}%`,
+    cancel: "Annulla",
+    stateFailed: "Non riesco a leggere se è nascosta o in saldo.",
+    retry: "Riprova",
+  },
+
+  /** The "⋯" in the navbar. */
+  menu: {
+    open: "Altre azioni",
+    saveRule: "Salva come categoria automatica",
+    activity: "Attività",
+    cancel: "Annulla",
   },
 
   children: { category: "Sottocategorie", brand: "Linee del brand" },
@@ -95,6 +154,16 @@ export const termIt = {
     nocategory: { title: "Senza categoria", hint: "Sul sito non si trovano sfogliando le categorie." },
     unpublished: { title: "Non pubblicati", hint: "Bozze, prodotti in revisione e privati: sul sito non si vedono." },
   },
+
+  /** A quick view with nothing in it, said as the good news it mostly is. */
+  viewsEmpty: {
+    soldout: { title: "Nessun prodotto esaurito", text: "Tutto quello che è nel negozio si può comprare." },
+    onsale: { title: "Nessun prodotto in saldo", text: "Per un saldo, scegli i prodotti da una categoria o da un brand." },
+    hidden: { title: "Nessun prodotto nascosto", text: "Nel negozio si vede tutto." },
+    nophoto: { title: "Tutti i prodotti hanno una foto", text: "Nel negozio nessuna immagine vuota." },
+    nocategory: { title: "Tutti i prodotti hanno una categoria", text: "Si trovano tutti sfogliando il negozio." },
+    unpublished: { title: "Nessun prodotto da pubblicare", text: "Niente bozze né prodotti in attesa: è tutto online." },
+  } satisfies Record<QuickView, { title: string; text: string }>,
 
   errors: {
     category: "Questa categoria non c'è più nel negozio.",

@@ -1,0 +1,162 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { OperationInput, OperationView } from "@/lib/vetrina/catalog-ops";
+
+/**
+ * The catalog's actions on the Vetrina's demo shop (VETRINA_SOURCE=fixture),
+ * end to end — the demo store, the demo homepage, the real index and log —
+ * as the walkthrough uses them. Opt-in, like every *.db.test.ts: they need a
+ * THROWAWAY Postgres with the migrations applied, and they empty
+ * vetrina_operations, store_index and smart_collections.
+ */
+const url = process.env.DATABASE_URL ?? "";
+const enabled = process.env.RUN_DB_TESTS === "1" && /@(localhost|127\.0\.0\.1)[:/]/.test(url);
+
+vi.mock("@/lib/env", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/env")>();
+  return { env: { ...real.env, VETRINA_SOURCE: "fixture" } };
+});
+vi.mock("@/server/collections/runner", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/server/collections/runner")>();
+  return { ...real, requestCheck: () => undefined };
+});
+
+const load = async () => ({
+  ...(await import("@/server/db/client")),
+  ...(await import("@/server/db/schema")),
+  ...(await import("@/server/collections/repo")),
+  ...(await import("@/server/collections/runner")),
+  ...(await import("@/server/vetrina/catalog")),
+  ...(await import("@/server/vetrina/fixture-source")),
+  ...(await import("@/server/vetrina/fixture-data")),
+  ...(await import("./service")),
+  ...(await import("./runner")),
+});
+
+async function run(input: OperationInput): Promise<OperationView> {
+  const { startOperation, idle, loadOperation } = await load();
+  const started = await startOperation(input);
+  await idle();
+  return loadOperation(started.id);
+}
+
+async function undo(id: string): Promise<OperationView> {
+  const { undoOperation, idle, loadOperation } = await load();
+  await undoOperation(id);
+  await idle();
+  return loadOperation(id);
+}
+
+describe.skipIf(!enabled)("the catalog's actions on the demo shop", () => {
+  beforeEach(async () => {
+    const { db, vetrinaOperations, storeIndex, smartCollections, forgetHomepagePresence, runFull } = await load();
+    await db.delete(vetrinaOperations);
+    await db.delete(storeIndex);
+    await db.delete(smartCollections);
+    const g = globalThis as Record<string, unknown>;
+    for (const key of ["__vetrinaDemo", "__vetrinaDemoTerms", "__vetrinaOperations", "__storeHubCollections"]) delete g[key];
+    forgetHomepagePresence();
+    // The index, read from the demo shop as the catalog's first opening does.
+    await runFull();
+  });
+
+  it("hides a whole category — its homepage section empties — and «Mostra» brings it back", async () => {
+    const { demoShop, fixtureSource, DEMO_TERM_IDS, loadTermActions } = await load();
+    const outlet = DEMO_TERM_IDS["saldi-sneakers-outlet"];
+    const members = demoShop().products.filter((p) => p.categories.includes("saldi-sneakers-outlet"));
+    expect((await fixtureSource().rail("category:saldi-sneakers-outlet#0")).items.length).toBeGreaterThan(0);
+
+    const op = await run({ kind: "hide", target: { kind: "query", query: { taxonomy: "category", termId: outlet } }, termKey: `category:${outlet}` });
+    expect(op).toMatchObject({ status: "done", changed: members.length, label: `${members.length} prodotti nascosti · Saldi outlet` });
+    expect(members.every((p) => p.visibility === "hidden")).toBe(true);
+    expect((await fixtureSource().rail("category:saldi-sneakers-outlet#0")).items).toEqual([]);
+    expect((await loadTermActions("category", outlet)).hiddenBy?.id).toBe(op.id);
+
+    await undo(op.id);
+    expect(members.every((p) => p.visibility === "visible")).toBe(true);
+    expect((await fixtureSource().rail("category:saldi-sneakers-outlet#0")).items.length).toBeGreaterThan(0);
+  });
+
+  it("puts a product on sale — its card shows the sale price — and «Annulla» puts the price back", async () => {
+    const { demoShop, fixtureSource, readIndexRowsById } = await load();
+    const p = demoShop().products.find((x) => !x.onSale)!;
+    const regular = p.price;
+    const op = await run({ kind: "sale", target: { kind: "ids", ids: [p.id] }, percent: 20, rounding: "charm", endsOn: null });
+    expect(op).toMatchObject({ status: "done", changed: 1 });
+    const [card] = await fixtureSource().products([p.id]);
+    expect(card.onSale).toBe(true);
+    expect(card.price).toBeLessThan(regular);
+    expect(String(card.price)).toMatch(/\.99$/);
+    expect(p.regularPrice).toBe(regular);
+    expect((await readIndexRowsById([p.id]))[0]).toMatchObject({ onSale: true, price: card.price });
+
+    await undo(op.id);
+    const [back] = await fixtureSource().products([p.id]);
+    expect(back).toMatchObject({ onSale: false, price: regular });
+  });
+
+  it("ends a demo sale and puts it back", async () => {
+    const { demoShop } = await load();
+    const p = demoShop().products.find((x) => x.onSale)!;
+    const sale = p.price;
+    const op = await run({ kind: "unsale", target: { kind: "ids", ids: [p.id] } });
+    expect(op.changed).toBe(1);
+    expect(p).toMatchObject({ onSale: false, price: p.regularPrice, salePrice: null });
+    await undo(op.id);
+    expect(p).toMatchObject({ onSale: true, price: sale });
+  });
+
+  it("pins a product into a section of a category it was not in, then takes it all back", async () => {
+    const { demoShop, fixtureSource } = await load();
+    const p = demoShop().products.find((x) => x.inStock && !x.categories.includes("new-nuove-release"))!;
+    const op = await run({ kind: "pin", target: { kind: "ids", ids: [p.id] }, sectionKey: "category:new-nuove-release#0" });
+    expect(op).toMatchObject({ status: "done", changed: 1, label: "1 prodotto fissato in NUOVI ARRIVI" });
+    expect(p.categories).toContain("new-nuove-release");
+    const rail = await fixtureSource().rail("category:new-nuove-release#0");
+    expect(rail.items[0].id).toBe(p.id);
+    expect(rail.pin).toEqual([p.id]);
+
+    await undo(op.id);
+    expect(p.categories).not.toContain("new-nuove-release");
+    expect((await fixtureSource().rail("category:new-nuove-release#0")).pin).toEqual([]);
+  });
+
+  it("starts again with the demo shop: a restart's index and log forget what was done to the one before", async () => {
+    const { demoShop, runFull, readIndexRowsById, listOperations, loadOperation } = await load();
+    const p = demoShop().products.find((x) => x.inStock)!;
+    const op = await run({ kind: "hide", target: { kind: "ids", ids: [p.id] } });
+    expect((await readIndexRowsById([p.id]))[0].visibility).toBe("hidden");
+
+    // A restart, a minute later: the demo shop, and the actions' queue, are made again.
+    vi.useFakeTimers({ now: Date.now() + 60_000, toFake: ["Date"] });
+    try {
+      const g = globalThis as Record<string, unknown>;
+      for (const key of ["__vetrinaDemo", "__vetrinaDemoTerms", "__vetrinaOperations"]) delete g[key];
+      expect(demoShop().byId.get(p.id)!.visibility).toBe("visible");
+      await runFull();
+      expect((await readIndexRowsById([p.id]))[0].visibility).toBe("visible");
+      expect(await listOperations(10)).toEqual([]);
+      await expect(loadOperation(op.id)).rejects.toThrow("Questa azione non c'è più nel registro.");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("ends a demo sale after its last day, as WooCommerce's scheduled sales do", async () => {
+    const { demoShop } = await load();
+    const p = demoShop().products.find((x) => !x.onSale)!;
+    const op = await run({ kind: "sale", target: { kind: "ids", ids: [p.id] }, percent: 30, rounding: "exact", endsOn: null });
+    expect(op.changed).toBe(1);
+    expect(p.onSale).toBe(true);
+    p.saleTo = "2020-01-31T23:59:59";
+    demoShop();
+    expect(p).toMatchObject({ onSale: false, salePrice: null, saleTo: null, price: p.regularPrice });
+  });
+
+  it("tags demo products", async () => {
+    const { demoShop } = await load();
+    const [a, b] = demoShop().products.filter((x) => !x.tags.includes("estate"));
+    const op = await run({ kind: "tag", target: { kind: "ids", ids: [a.id, b.id] }, tag: { id: 302, name: "estate" } });
+    expect(op).toMatchObject({ status: "done", changed: 2, label: "Tag «estate» a 2 prodotti" });
+    expect(a.tags).toContain("estate");
+  });
+});

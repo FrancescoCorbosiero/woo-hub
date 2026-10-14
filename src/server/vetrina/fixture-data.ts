@@ -13,8 +13,17 @@ export interface DemoProduct {
   brand: string; // brand term slug
   categories: string[]; // product_cat slugs
   tags: string[]; // product_tag slugs
+  /** The shelf price: the sale price while on sale, else the regular one. */
   price: number;
+  /** The regular price (never written by the Vetrina's actions). */
+  regularPrice: number;
+  /** The sale price, null when none: the demo's products are sold as one item, without sizes. */
+  salePrice: number | null;
+  /** The sale's last moment (WooCommerce's date_on_sale_to, shop time), null for none. */
+  saleTo: string | null;
   onSale: boolean;
+  /** WooCommerce's catalog_visibility: "visible", "catalog", "search" or "hidden". */
+  visibility: string;
   created: string; // ISO
   /** When the product last changed (epoch ms): the automatic categories ask for what changed. */
   modified: number;
@@ -138,6 +147,10 @@ export function demoProducts(): DemoProduct[] {
       const label = `${model.name.split(" ").slice(-2).join(" ")} · ${colorway}`;
       const tags = DEMO_TAGS.filter(() => later() < 0.22).map((t) => t.slug);
       const created = now - Math.floor(random() * 120) * 86_400_000;
+      const price = Math.round(model.price + (random() - 0.3) * 60) + 0.99;
+      // The outlet's products are on sale: about 20% off a regular price
+      // above the shelf one, as a real sale is.
+      const onSale = categories.includes("saldi-sneakers-outlet");
       out.push({
         id,
         sku: `${model.brand.slice(0, 3).toUpperCase()}${String(id).slice(-3)}-${v + 1}`,
@@ -145,8 +158,12 @@ export function demoProducts(): DemoProduct[] {
         brand: model.brand,
         categories,
         tags,
-        price: Math.round(model.price + (random() - 0.3) * 60) + 0.99,
-        onSale: categories.includes("saldi-sneakers-outlet"),
+        price,
+        regularPrice: onSale ? Math.round((price + 0.01) / 0.8) - 0.01 : price,
+        salePrice: onSale ? price : null,
+        saleTo: null,
+        onSale,
+        visibility: "visible",
         created: new Date(created).toISOString(),
         modified: created,
         menuOrder: id % 5 === 0 ? 0 : 1 + Math.floor(random() * 60),

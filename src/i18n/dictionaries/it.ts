@@ -386,7 +386,7 @@ export const it = {
     wpEditHint: (hub: string) =>
       `Cambiato sul negozio dopo l'ultima scrittura dell'Hub (${hub}): la sincronizzazione non lo sovrascrive finché non decidi.`,
     wpEditKeep: "Tieni",
-    wpEditKeepHint: "Blocca questo prezzo: da ora il Hub scrive questo",
+    wpEditKeepHint: "Blocca questo prezzo: da ora l'Hub scrive questo",
     wpEditReprice: "Prezzo dell'Hub",
     wpEditRepriceHint: "Ridà la taglia alle regole e scrive subito il prezzo dell'Hub",
     sourceTitle: "Chi decide i prezzi di questo prodotto",
@@ -556,12 +556,12 @@ export const it = {
     storeEdits: {
       title: "Prezzi cambiati su WordPress",
       count: (n: number) => (n === 1 ? "1 prezzo tenuto" : `${n} prezzi tenuti`),
-      desc: "Qualcuno li ha cambiati sul negozio dopo l'ultima scrittura dell'Hub — da wp-admin, o un altro plugin. La sincronizzazione non li sovrascrive, nemmeno quella automatica: decidi tu. «Tieni» blocca il prezzo del negozio con un lucchetto, così da ora il Hub scrive quello. «Usa il prezzo dell'Hub» lo ridà alle regole e lo scrive subito.",
+      desc: "Qualcuno li ha cambiati sul negozio dopo l'ultima scrittura dell'Hub — da wp-admin, o un altro plugin. La sincronizzazione non li sovrascrive, nemmeno quella automatica: decidi tu. «Tieni» blocca il prezzo del negozio con un lucchetto, così da ora l'Hub scrive quello. «Usa il prezzo dell'Hub» lo ridà alle regole e lo scrive subito.",
       store: (price: string) => `Negozio ${price}`,
       hub: (price: string) => `Hub ${price}`,
       since: (when: string) => `dal ${when}`,
       keep: "Tieni",
-      keepHint: "Blocca questo prezzo: da ora il Hub scrive questo",
+      keepHint: "Blocca questo prezzo: da ora l'Hub scrive questo",
       reprice: "Usa il prezzo dell'Hub",
       repriceHint: "Ridà la taglia alle regole e scrive subito il prezzo dell'Hub",
       keepAll: (n: number) => `Tieni tutti (${n})`,
@@ -1435,6 +1435,8 @@ export const it = {
       publishedDemo: "Salvato nel negozio demo",
       discardConfirm: "Annullare le modifiche non ancora pubblicate?",
       leaveConfirm: "Hai modifiche non pubblicate. Uscire lo stesso?",
+      /** The section's products moved (a rule, a tag) while the owner had changes not yet published: they stay. */
+      changedMeanwhile: "La sezione è cambiata nel frattempo: le tue modifiche restano, controllale prima di pubblicare.",
       menu: {
         title: "Sezione",
         history: "Cronologia",
@@ -1571,7 +1573,7 @@ export const it = {
       sheetNew: (name: string) => `«${name}» automatica`,
       sheetEdit: (name: string) => `Regola di «${name}»`,
       intro:
-        "Decidi quali prodotti entrano nella categoria: il Hub li mette e li toglie da solo, anche quando cambi i tag da WordPress.",
+        "Decidi quali prodotti entrano nella categoria: l'Hub li mette e li toglie da solo, anche quando cambi i tag da WordPress.",
       on: "Attiva",
       off: "In pausa",
       save: "Salva e applica",
