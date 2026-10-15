@@ -61,6 +61,23 @@ describe("toIndexRow", () => {
     expect(row.price).toBeNull();
     expect(row.onSale).toBe(false);
     expect(row.dateCreated).toBeNull();
+    expect(row).toMatchObject({ image: "", visibility: "", menuOrder: 0, totalSales: 0 });
+  });
+
+  it("keeps what the Vetrina's catalog lists: the first photo, the visibility, the shop's order, the sales", () => {
+    const row = toIndexRow({
+      id: 42,
+      images: [{ src: "" }, { src: "https://shop/wp-content/uploads/dunk.jpg" }, { src: "https://shop/side.jpg" }],
+      catalog_visibility: "hidden",
+      menu_order: 30,
+      total_sales: "17", // WooCommerce sends it as a string
+    });
+    expect(row).toMatchObject({
+      image: "https://shop/wp-content/uploads/dunk.jpg",
+      visibility: "hidden",
+      menuOrder: 30,
+      totalSales: 17,
+    });
   });
 });
 

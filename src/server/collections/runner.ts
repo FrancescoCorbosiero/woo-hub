@@ -16,7 +16,8 @@ import { storeClient, storeReady } from "./store";
 
 /**
  * The automatic categories' runs: keep the store index fresh, decide every
- * product against every rule, write what changes.
+ * product against every rule, write what changes. The index is kept fresh
+ * whatever the rules: the Vetrina's catalog lists the shop from it.
  *
  * - The CHECK (every few minutes, from the scheduler): ask the store what
  *   changed since the newest change the index holds — usually nothing, one
@@ -81,6 +82,14 @@ interface State extends RunnerStatus {
   confirm: Set<string>;
   /** Products the store refused, and when: the automatic runs leave them be for a while. */
   refused: Map<number, number>;
+  /**
+   * When the last read of the store that went through began (epoch ms): the
+   * next check starts no later than that. The index's newest change alone is
+   * not the check's to go by: the Vetrina's actions write rows into the index
+   * between checks, and starting from those skipped a WordPress edit made
+   * before them.
+   */
+  readFrom?: number;
 }
 
 const g = globalThis as { __storeHubCollections?: State };
@@ -149,6 +158,28 @@ function exclusive<T>(kind: RunKind, fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
+/**
+ * Run `fn` in this queue, after everything queued before it: the Vetrina's
+ * actions write products' tags and categories through here, so such a write
+ * never lands between a decision's live read and its own write — the one
+ * race that would put back categories from a stale reading.
+ *
+ * Only the place in line: none of the queue's own status. A Vetrina write
+ * is not an automatic-categories run — its failure is the Vetrina's to
+ * report (its action's row), its success must not wipe the last real
+ * error, and the Collections screen must not read the queue as busy with
+ * one of its runs.
+ */
+export function queueProductWrite<T>(fn: () => Promise<T>): Promise<T> {
+  const s = state();
+  const run = s.chain.then(fn);
+  s.chain = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
 /* ---------------------------------------------------------------- *
  * Reading the store
  * ---------------------------------------------------------------- */
@@ -161,6 +192,7 @@ function exclusive<T>(kind: RunKind, fn: () => Promise<T>): Promise<T> {
 async function readAll(woo: WooClient): Promise<number> {
   const s = state();
   const startedAt = new Date();
+  const begun = Date.now();
   const seen = new Set<number>();
   let complete = false;
   for (let page = 1; page <= MAX_FULL_PAGES; page++) {
@@ -190,6 +222,7 @@ async function readAll(woo: WooClient): Promise<number> {
   if (complete) {
     const gone = await repo.deleteUnseen(startedAt);
     if (gone > 0) console.log(`[collections] ${gone} product(s) gone from the store, dropped from the index`);
+    s.readFrom = begun;
   }
   s.lastFullAt = Date.now();
   return seen.size;
@@ -217,7 +250,9 @@ async function readChanges(woo: WooClient): Promise<number> {
   const info = await repo.indexInfo();
   if (s.lastFullAt == null || info.products === 0 || !info.newestModified) return readAll(woo);
   if (s.incremental === false) return 0;
-  const since = new Date(Math.min(info.newestModified.getTime(), Date.now()) - OVERLAP_MS);
+  const begun = Date.now();
+  // From the newest change the index holds, or the start of the last read that went through, whichever is older.
+  const since = new Date(Math.min(info.newestModified.getTime(), s.readFrom ?? Infinity, begun) - OVERLAP_MS);
   const seen = new Set<number>();
   for (let page = 1; page <= MAX_CHECK_PAGES; page++) {
     const { products } = await woo.getProductIndexPage({ page, perPage: PER_PAGE, modifiedAfter: since });
@@ -242,7 +277,11 @@ async function readChanges(woo: WooClient): Promise<number> {
       console.log(`[collections] more than ${seen.size} products changed: reading the whole store`);
       return readAll(woo);
     }
-    if (verdict !== "continue") break;
+    if (verdict !== "continue") {
+      // Read to the end: what changed before this check began is in the index now.
+      if (verdict === "complete") s.readFrom = begun;
+      break;
+    }
   }
   return seen.size;
 }
@@ -427,12 +466,12 @@ export interface RunOptions {
 }
 
 /**
- * The scheduler's frequent check. Null when there is nothing to do: the store
- * is not configured, or no category is automatic — then not a single request
- * reaches the store.
+ * The scheduler's frequent check. Null when the store is not configured. The
+ * index is read whether or not a category is automatic — one light request,
+ * usually — and the decision writes nothing while none is.
  */
 export async function runCheck(opts: RunOptions = {}): Promise<{ read: number; moved: number } | null> {
-  if ((!opts.client && !storeReady()) || !(await anyEnabled())) return null;
+  if (!opts.client && !storeReady()) return null;
   return exclusive("check", async () => {
     const woo = opts.client ?? (await storeClient());
     const read = await readChanges(woo);
@@ -444,7 +483,7 @@ export async function runCheck(opts: RunOptions = {}): Promise<{ read: number; m
 
 /** The daily pass: the whole store again, then the decision, then the log's tail trimmed. */
 export async function runFull(opts: RunOptions = {}): Promise<{ read: number; moved: number } | null> {
-  if ((!opts.client && !storeReady()) || !(await anyEnabled())) return null;
+  if (!opts.client && !storeReady()) return null;
   return exclusive("full", async () => {
     const woo = opts.client ?? (await storeClient());
     const read = await readAll(woo);
@@ -474,7 +513,7 @@ const background = (run: Promise<unknown>) => void run.catch(() => undefined);
 /** From the Hub: read every product again (the editor's previews need the index), then decide. */
 export function requestFullRead(): void {
   const s = state();
-  if (!storeReady() || s.queued.includes("full")) return;
+  if (!storeReady() || s.running === "full" || s.queued.includes("full")) return;
   background(
     exclusive("full", async () => {
       const woo = await storeClient();
@@ -545,14 +584,17 @@ const PRODUCT_WAIT_MS = 15_000;
  * the store) — and decide that product at once, so the categories that read
  * those tags follow while the person is still looking.
  *
- * The tags are written outside the run queue: a product save that carries
- * only tags never touches categories, so it cannot race a decision. The
- * decision itself queues like any other.
+ * With `base` (the tags the product sheet loaded), what is written is the
+ * sheet's CHANGE — the tags it added and removed — applied to the product's
+ * tags read now, in this queue: the Vetrina's bulk "Tag +/−" (and its undo)
+ * writes tags too, from the background, and a whole list from a sheet opened
+ * before it would drop the tag it added. Without, the list as given. The
+ * decision then queues like any other.
  */
 export async function setProductTags(
   productId: number,
   wanted: { id?: number; name: string }[],
-  opts: RunOptions = {},
+  opts: RunOptions & { base?: readonly number[] } = {},
 ): Promise<TagEdit> {
   const woo = opts.client ?? (await storeClient());
   const ids: number[] = [];
@@ -570,7 +612,20 @@ export async function setProductTags(
     if (!created) throw new Error(`the store did not accept the tag «${name}»`);
     ids.push(created.id);
   }
-  const [answer] = await woo.batchUpdateProducts([{ id: productId, tags: [...new Set(ids)].map((id) => ({ id })) }]);
+  const answer = await queueProductWrite(async () => {
+    let next = [...new Set(ids)];
+    if (opts.base) {
+      const [live] = (await woo.getProductIndexPage({ page: 1, perPage: 1, include: [productId] })).products;
+      if (!live) throw new Error("the product is no longer on the store");
+      const had = new Set(opts.base);
+      const want = new Set(next);
+      const removed = new Set(opts.base.filter((id) => !want.has(id)));
+      const kept = (live.tags ?? []).map((t) => t.id).filter((id) => !removed.has(id));
+      next = [...new Set([...kept, ...next.filter((id) => !had.has(id))])];
+    }
+    const [res] = await woo.batchUpdateProducts([{ id: productId, tags: next.map((id) => ({ id })) }]);
+    return res;
+  });
   if (!answer?.product) throw new Error(answer?.error ?? "the store did not answer");
   const row = toIndexRow(answer.product);
   await repo.upsertIndexRows([row]);

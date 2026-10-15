@@ -73,15 +73,14 @@ export async function refreshCatalogProduct(
 }
 
 const DrawerSchema = z.object({
-  market: z.string().trim().min(1).max(8),
+  /** Omitted: the configured market. */
+  market: z.string().trim().min(1).max(8).optional(),
   sku: z.string().trim().min(1).max(80),
 });
 
 /**
- * The product drawer's data, fetched by the drawer itself. Opening a product
- * used to be a navigation: the whole catalog page — grid, counts, sidebar —
- * re-rendered on the server just to add the drawer, again on close, and again
- * after every lock or price edit. Now only this runs.
+ * The product drawer's data, fetched by the drawer itself — on any Hub page,
+ * so opening a product never re-renders the page behind it.
  */
 export async function loadCatalogDrawer(
   input: z.infer<typeof DrawerSchema>,
@@ -90,9 +89,11 @@ export async function loadCatalogDrawer(
   if (!parsed.success) return { ok: false, error: "invalid input" };
   try {
     const config = await getActiveConfig();
-    const { market, sku } = parsed.data;
+    const { market = config.source.market, sku } = parsed.data;
     return { ok: true, data: await loadDrawerData(market.toUpperCase(), sku, config) };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    // The drawer says it in plain words; the detail is for the server log.
+    console.error(`[drawer] ${parsed.data.sku}: ${e instanceof Error ? e.stack ?? e.message : String(e)}`);
+    return { ok: false, error: "load_failed" };
   }
 }

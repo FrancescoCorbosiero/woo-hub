@@ -1,0 +1,657 @@
+import "server-only";
+import { and, eq, inArray, sql } from "drizzle-orm";
+import type { AppConfig, ProductScopeAxes } from "@core/config";
+import { declaresMarkup, isStoreTermScope, MAX_PRICING_RULES, winningMarkupRuleId } from "@core/config";
+import type { SourceProduct } from "@core/core-spine";
+import type { MarginPreview, OperationInput, OperationPreview, TermMarginState } from "@/lib/vetrina/catalog-ops";
+import { skuKey } from "@/lib/skus";
+import { getAnyBySkus } from "@/server/catalog/repo";
+import { requestCheck } from "@/server/collections/runner";
+import { demoMode } from "@/server/collections/store";
+import { getActiveConfig, updateActiveConfig } from "@/server/config/repo";
+import { db } from "@/server/db/client";
+import { rowsOf } from "@/server/db/rows";
+import { catalogProducts, storeIndex, type OperationUndoOutcome, type VetrinaOperationRow } from "@/server/db/schema";
+import { activeFeedSkus, GS_FEED } from "@/server/feeds/repo";
+import { followSaleRuleFor, manualPriceFor, skusPinnedTo, type StoreOverrides } from "@/server/overrides/model";
+import { getOverrides } from "@/server/overrides/repo";
+import {
+  expandStoreTerms,
+  forgetStoreTerms,
+  skusUnderStoreTerm,
+  storeTermsKnown,
+  withListedTerms,
+  withStoreTerms,
+} from "@/server/pricing/store-terms";
+import { ledgerForProducts, type LedgerEntry } from "@/server/sync/ledger";
+import { resolveFromModel, sourceEuSize } from "@/server/store-json/match";
+import { getSnapshotInfo, getSnapshotProductsBySkus } from "@/server/store-json/repo";
+import { runPriceSync } from "@/server/sync/price-sync";
+import { ancestorIds, readCatalogTrees, type CatalogTrees } from "@/server/vetrina/catalog";
+import { VetrinaError } from "@/server/vetrina/source";
+import { chunks, termKeyOf } from "./context";
+import { messageOf } from "./live";
+import {
+  assessMarginSubject,
+  findTermMarginRule,
+  marginMove,
+  marginPriceWords,
+  sameRule,
+  summarizeMargin,
+  termMarginOf,
+  undoTermMargin,
+  withTermMargin,
+  type MarginOutcome,
+  type MarginSubject,
+  type MarginTerm,
+} from "./margin-plan";
+import { bump, labelParams, reasonCounts, type Reason } from "./plan";
+import type { Assessment } from "./preview";
+import * as repo from "./repo";
+import type { RunCtx } from "./writes";
+import { words, type Words } from "./words";
+
+/**
+ * "Cambia il ricarico" (docs/vetrina-catalog.md §3.4): a category's or a
+ * brand's margin, as a pricing rule scoped to the store term
+ * (RuleScope.storeCategory / storeBrand) in the Hub's own rule list — then
+ * the term's products repriced by the ordinary sync, which reads the store
+ * before writing (runPriceSync with the live check): a lock, a sale price,
+ * a price changed on WordPress stand exactly as against every other sync
+ * (§3.2). The engine keeps the margin on every sync after.
+ *
+ * It acts on the products the Hub prices from the market (KicksDB) only: a
+ * supplier's price (GoldenSneakers) already holds the supplier's margin and
+ * passes through, and a store-only product has no Hub price at all — the
+ * engine never lets a store-term rule match either (core/config.ts), and
+ * the preview says how many it leaves.
+ *
+ * The preview computes each product's prices with the engine itself, under
+ * the rules in force and under the draft, for the same market prices; the
+ * apply saves the rule (filing the one it replaced, for "Annulla") and walks
+ * the term's products through the sync a slice at a time, so the progress
+ * pill moves.
+ */
+
+/** Products a preview names. */
+const SAMPLE = 20;
+/** Products whose catalog entries (every size's market prices) a preview holds at once. */
+const READ_CHUNK = 200;
+/**
+ * Products whose store sizes a preview reads at once: each read unrolls the
+ * whole snapshot in SQL whatever it asks for, so as few reads as memory
+ * allows — a term's sizes are a few megabytes at most.
+ */
+const SNAPSHOT_CHUNK = 2000;
+/** SKUs per reprice step: the sync plans them in one step, and the pill moves after each. */
+const REPRICE_CHUNK = 100;
+
+type Input = Extract<OperationInput, { kind: "margin" }>;
+type Owner = "market" | "supplier" | "store";
+
+const termOf = (input: Pick<Input, "taxonomy" | "termId">): MarginTerm => ({
+  taxonomy: input.taxonomy,
+  id: input.termId,
+});
+const storeScope = (term: MarginTerm) => (term.taxonomy === "category" ? { storeCategory: term.id } : { storeBrand: term.id });
+
+interface TermFacts {
+  name: string;
+  /** "Saldi › Nike": the label the rule keeps, as the Hub's Margins tab saves it. */
+  path: string;
+  ancestors: { id: number; name: string }[];
+}
+
+/** The term's name now, and its ancestors' (the nearest first); refused when the store no longer has it. */
+function termFacts(trees: CatalogTrees, term: MarginTerm, w: Words): TermFacts {
+  const tree = trees[term.taxonomy];
+  const name = tree.terms.get(term.id)?.name;
+  if (!name) throw new VetrinaError("not_found", w.error.termGone, 404);
+  const ancestors = ancestorIds(term.id, tree.parents)
+    .reverse()
+    .map((id) => ({ id, name: tree.terms.get(id)?.name ?? `#${id}` }));
+  const path = [...ancestors.map((a) => a.name).reverse(), name].join(" › ");
+  return { name, path, ancestors };
+}
+
+/* ---------------------------------------------------------------- *
+ * Who prices the term's products
+ * ---------------------------------------------------------------- */
+
+interface TermProducts {
+  /** The term's SKUs the Hub prices from the market: all a margin here acts on. */
+  market: string[];
+  supplier: number;
+  storeOnly: number;
+  /** The catalog's light row of each market SKU: what the rule a product falls under is decided on. */
+  axes: Map<string, ProductScopeAxes>;
+  overrides: StoreOverrides | null;
+}
+
+/** The catalog's identity columns for these SKUs (canonical, as the catalog keys them) — no jsonb. */
+async function catalogAxes(market: string, skus: readonly string[]): Promise<Map<string, ProductScopeAxes>> {
+  const out = new Map<string, ProductScopeAxes>();
+  for (const part of chunks(skus, 1000)) {
+    const rows = await db
+      .select({
+        sku: catalogProducts.sku,
+        title: catalogProducts.title,
+        brand: catalogProducts.brand,
+        source: catalogProducts.source,
+        category: catalogProducts.category,
+        secondaryCategory: catalogProducts.secondaryCategory,
+        model: catalogProducts.model,
+      })
+      .from(catalogProducts)
+      .where(and(eq(catalogProducts.market, market), inArray(catalogProducts.sku, [...part])));
+    for (const r of rows) out.set(r.sku, r);
+  }
+  return out;
+}
+
+/**
+ * The term's products — its sub-terms' included, as the store index files
+ * them — by who prices them, as the sync and the Margins tab's coverage
+ * decide it: the supplier's feed owns what it lists (unless a product was
+ * handed back to KicksDB); a SKU the catalog does not hold from a source is
+ * store-only; the rest the Hub prices from the market.
+ */
+/** Who prices each of these SKUs (canonical), and their catalog rows: the supplier's feed, the market, or nobody (store-only). */
+async function ownersOf(
+  market: string,
+  skus: readonly string[],
+): Promise<{ owner: (sku: string) => Owner; rows: Map<string, ProductScopeAxes>; overrides: StoreOverrides | null }> {
+  const [rows, feed, overrides] = await Promise.all([catalogAxes(market, skus), activeFeedSkus(GS_FEED), getOverrides().catch(() => null)]);
+  const feedSkus = new Set([...feed].map(skuKey));
+  const pinned = new Set((overrides ? skusPinnedTo(overrides, "kicksdb") : []).map(skuKey));
+  const owner = (sku: string): Owner => {
+    if (feedSkus.has(sku) && !pinned.has(sku)) return "supplier";
+    const row = rows.get(sku);
+    if (!row || row.source === "woo") return "store";
+    return ((row.source ?? "").trim().toLowerCase() || "kicksdb") === "kicksdb" ? "market" : "supplier";
+  };
+  return { owner, rows, overrides };
+}
+
+async function termProducts(term: MarginTerm, market: string): Promise<TermProducts> {
+  const skus = [...new Set((await skusUnderStoreTerm(storeScope(term))).map(skuKey))];
+  const { owner, rows, overrides } = await ownersOf(market, skus);
+  const out: TermProducts = {
+    market: [],
+    supplier: 0,
+    storeOnly: 0,
+    axes: new Map(),
+    overrides,
+  };
+  for (const sku of skus) {
+    const who = owner(sku);
+    if (who === "supplier") out.supplier += 1;
+    else if (who === "store") out.storeOnly += 1;
+    else {
+      out.market.push(sku);
+      out.axes.set(sku, rows.get(sku)!);
+    }
+  }
+  return out;
+}
+
+/** A product's place in the store's terms (own ids, as the index files them), before and after a move. */
+export interface TermMove {
+  sku: string;
+  before: { categories: readonly number[]; brands: readonly number[] };
+  after: { categories: readonly number[]; brands: readonly number[] };
+}
+
+/**
+ * Of these products moved between categories, the market-priced ones whose
+ * margin changes with the move: a margin set on a category or a brand prices
+ * its products (phase 4), so a product put into "Outlet" takes Outlet's — or
+ * leaves Nike's. Judged as the sync will: the rule that wins for the product
+ * before and after. The categorize preview says how many; the move reprices
+ * them once it lands (writes.ts). None while no rule is scoped to a store term.
+ */
+export async function marginChanges(moves: readonly TermMove[]): Promise<string[]> {
+  if (moves.length === 0) return [];
+  const config = await getActiveConfig();
+  if (!config.pricingRules.some((r) => r.enabled && isStoreTermScope(r.scope))) return [];
+  const skus = [...new Set(moves.map((m) => skuKey(m.sku)).filter(Boolean))];
+  const [{ owner, rows }, trees] = await Promise.all([ownersOf(config.source.market, skus), readCatalogTrees()]);
+  const placed = (axes: ProductScopeAxes, own: TermMove["before"]): ProductScopeAxes => ({
+    ...axes,
+    storeCategories: expandStoreTerms(own.categories, trees.category.parents),
+    storeBrands: expandStoreTerms(own.brands, trees.brand.parents),
+  });
+  const out: string[] = [];
+  for (const move of moves) {
+    const sku = skuKey(move.sku);
+    const axes = rows.get(sku);
+    if (!axes || owner(sku) !== "market") continue;
+    const was = winningMarkupRuleId(placed(axes, move.before), config.pricingRules);
+    const now = winningMarkupRuleId(placed(axes, move.after), config.pricingRules);
+    if (was !== now) out.push(sku);
+  }
+  return out;
+}
+
+/**
+ * Reprice the products a move between categories put under another margin,
+ * through the ordinary sync (the live check included), a slice at a time —
+ * the engine stays the only writer of their prices. Best-effort: the move
+ * happened, and the next sync prices them anyway. Never on the demo shop.
+ */
+export async function repriceMoved(moves: readonly TermMove[]): Promise<void> {
+  if (demoMode()) return;
+  try {
+    // The index learnt the move from the store's answer: the store terms are read again with it.
+    forgetStoreTerms();
+    const skus = await marginChanges(moves);
+    for (const part of chunks(skus, REPRICE_CHUNK)) await runPriceSync({ skus: part, liveCheck: true });
+  } catch (e) {
+    console.warn(`[vetrina-ops] products moved to another margin not repriced now (the next sync does it): ${messageOf(e)}`);
+  }
+}
+
+/**
+ * Of the term's market products, those its margin decides — the margin it
+ * has, or the one it would get (the same rule, set) — where no more
+ * specific rule takes them; judged per product, as the Margins tab counts.
+ * And of those, how many another of the Hub's rules prices without the
+ * term's own margin — a catalog brand's, a family's, the other taxonomy's
+ * store term's — rather than the standard or a term above it: where "now"
+ * and "back" really are.
+ */
+async function appliesTo(
+  products: TermProducts,
+  config: AppConfig,
+  term: MarginTerm,
+  facts: TermFacts,
+): Promise<{ applies: number; hubRules: number }> {
+  if (products.market.length === 0) return { applies: 0, hubRules: 0 };
+  // Any percent: who a rule prices does not depend on its margin.
+  const change = withTermMargin(config.pricingRules, term, facts.path, 0);
+  const without = withTermMargin(config.pricingRules, term, facts.path, null).rules;
+  // The index's own terms — the demo shop's too: the count is of the products this screen lists, and on
+  // the demo the pricing's view of them is blind (it mirrors another shop), which counted none.
+  const axes = await withListedTerms([...products.axes.values()], change.rules);
+  const byId = new Map(config.pricingRules.map((r) => [r.id, r]));
+  const ancestors = new Set(facts.ancestors.map((a) => a.id));
+  const key = term.taxonomy === "category" ? "storeCategory" : "storeBrand";
+  let applies = 0;
+  let hubRules = 0;
+  for (const a of axes) {
+    if (winningMarkupRuleId(a, change.rules) !== change.after!.id) continue;
+    applies += 1;
+    const rule = byId.get(winningMarkupRuleId(a, without) ?? "");
+    const standard = rule != null && Object.keys(rule.scope).length === 0;
+    const inherited = rule != null && rule.scope[key] != null && ancestors.has(rule.scope[key]!);
+    if (rule && !standard && !inherited) hubRules += 1;
+  }
+  return { applies, hubRules };
+}
+
+async function marginState(
+  config: AppConfig,
+  term: MarginTerm,
+  facts: TermFacts,
+  products: TermProducts,
+  applies: number | null,
+): Promise<TermMarginState> {
+  const counted = await appliesTo(products, config, term, facts);
+  return {
+    ...termMarginOf(config.pricingRules, term, facts.ancestors),
+    priced: products.market.length,
+    applies: applies ?? counted.applies,
+    hubRules: counted.hubRules,
+    supplier: products.supplier,
+    storeOnly: products.storeOnly,
+  };
+}
+
+/** A category's or brand's margin, for its screen's "Ricarico" row. */
+export async function loadTermMargin(input: Pick<Input, "taxonomy" | "termId">): Promise<TermMarginState> {
+  const w = words();
+  const term = termOf(input);
+  const [trees, config] = await Promise.all([readCatalogTrees(), getActiveConfig()]);
+  const facts = termFacts(trees, term, w);
+  return marginState(config, term, facts, await termProducts(term, config.source.market), null);
+}
+
+/* ---------------------------------------------------------------- *
+ * Preview
+ * ---------------------------------------------------------------- */
+
+/** Why it cannot be applied, in the owner's words; null when it can. */
+async function refusalOf(input: Input, config: AppConfig, facts: Pick<TermFacts, "name" | "path">, w: Words): Promise<string | null> {
+  const { name } = facts;
+  // The demo shop's terms are not the Hub's: a rule on one of their ids
+  // would land on the real shop's products filed under the same id.
+  if (demoMode()) return w.error.marginDemo;
+  const own = findTermMarginRule(config.pricingRules, termOf(input))?.rule ?? null;
+  // A rule kept for its nets (a rounding set on the Margins tab) but stating no margin is not one to take away.
+  if (input.percent == null && !(own && declaresMarkup(own))) return w.error.marginNone(name);
+  if (input.percent != null && own?.enabled && own.markupPercent === input.percent && own.markupBands == null && own.markupFixed == null) {
+    return w.error.marginSame(name, input.percent);
+  }
+  // One cap for the rule list, the Margins tab's too: a new rule past it would leave that tab unable to save.
+  if (input.percent != null && !own && config.pricingRules.length >= MAX_PRICING_RULES) return w.error.marginFull(MAX_PRICING_RULES);
+  // The sync writes to the variations it matched in the snapshot: without one, nothing can be repriced.
+  if ((await getSnapshotInfo()) == null) return w.error.marginNoSnapshot;
+  // Without the store's categories and brands the reprice would hold the
+  // term's products (the sync never writes a price computed without them),
+  // and the preview could not say what moves: later, not half-done.
+  const draft = withTermMargin(config.pricingRules, termOf(input), facts.path, input.percent).rules;
+  if (!(await storeTermsKnown([...config.pricingRules, ...draft]))) return w.error.marginTermsUnknown;
+  return null;
+}
+
+/**
+ * The sizes the shop sells of a product (all of the source's when the
+ * snapshot does not hold it), with their locks and — where the product
+ * follows the sale rule — the sizes on sale, whose regular price the plan holds.
+ */
+function subjectOf(
+  product: SourceProduct,
+  store: Awaited<ReturnType<typeof getSnapshotProductsBySkus>>,
+  ledger: ReadonlyMap<number, LedgerEntry>,
+  overrides: StoreOverrides | null,
+): MarginSubject {
+  const sold = store.has(skuKey(product.sku)) ? resolveFromModel(store, product) : null;
+  const followsSales = overrides ? followSaleRuleFor(overrides, product.sku) : true;
+  return {
+    product,
+    sizes: product.variants
+      .filter((v) => sold == null || sold.has(v.stockxVariantId))
+      .map((variant) => {
+        const eu = sourceEuSize(variant);
+        const m = sold?.get(variant.stockxVariantId);
+        return {
+          variant,
+          locked: overrides != null && eu != null && manualPriceFor(overrides, product.sku, eu) != null,
+          onSale: followsSales && m?.saleActive === true,
+          // What the store shows, and what the Hub last wrote there: the
+          // plan's guards are judged against these (see assessMarginSubject).
+          store: m ? { price: m.currentPrice, hubPrice: ledger.get(m.storeVariationId)?.price ?? null } : undefined,
+        };
+      }),
+  };
+}
+
+/** The shop's names and ids of these SKUs, from the store index: what the preview's sample shows. */
+async function indexNames(skus: readonly string[]): Promise<Map<string, { id: number; name: string }>> {
+  const out = new Map<string, { id: number; name: string }>();
+  if (skus.length === 0) return out;
+  const res = await db.execute(sql`
+    select ${storeIndex.productId} as "id", ${storeIndex.name} as "name", upper(trim(${storeIndex.sku})) as "key"
+    from ${storeIndex}
+    where upper(trim(${storeIndex.sku})) in (select jsonb_array_elements_text(${JSON.stringify(skus)}::jsonb))
+  `);
+  for (const r of rowsOf<{ id: number; name: string; key: string }>(res)) if (!out.has(r.key)) out.set(r.key, r);
+  return out;
+}
+
+/**
+ * What the margin would do (`live`), or — for an action starting — only
+ * what its label, its refusals and its progress need, without pricing the
+ * term's products again.
+ */
+export async function assessMargin(input: Input, opts: { live: boolean }): Promise<Assessment> {
+  const w = words();
+  const term = termOf(input);
+  const termKey = termKeyOf(term.taxonomy, term.id);
+  // The store terms as cached (a minute at most): a categorize action that
+  // moved a product into the term drops the cache itself (collections/repo.ts).
+  const [trees, config] = await Promise.all([readCatalogTrees(), getActiveConfig()]);
+  const facts = termFacts(trees, term, w);
+  const refusal = await refusalOf(input, config, facts, w);
+  const products = await termProducts(term, config.source.market);
+  const label = labelParams(input, {
+    count: products.market.length,
+    term: facts.name,
+  });
+  // The rule saved first, then each product: never zero steps, so a margin
+  // on a term the Hub prices nothing of can still be removed.
+  const total = products.market.length + 1;
+
+  const untouched = new Map<Reason, number>();
+  bump(untouched, w.untouched.supplier, products.supplier);
+  bump(untouched, w.untouched.storeOnly, products.storeOnly);
+  if (!opts.live || refusal) {
+    const preview: OperationPreview = {
+      kind: "margin",
+      changes: 0,
+      untouched: reasonCounts(untouched),
+      sample: [],
+      warnings: refusal ? [refusal] : [],
+    };
+    return { preview, label, termKey, total, refusal };
+  }
+
+  const change = withTermMargin(config.pricingRules, term, facts.path, input.percent);
+  const draft: AppConfig = { ...config, pricingRules: change.rules };
+  const ids = {
+    current: change.before?.enabled ? change.before.id : null,
+    draft: change.after?.id ?? null,
+  };
+  // Every store-term rule of either list reads the products' terms.
+  const termRules = [...config.pricingRules, ...change.rules];
+  const outcomes: MarginOutcome[] = [];
+  const moved: {
+    sku: string;
+    outcome: Extract<MarginOutcome, { kind: "covered" }>;
+    change: number;
+  }[] = [];
+  for (const slice of chunks(products.market, SNAPSHOT_CHUNK)) {
+    const store = await getSnapshotProductsBySkus(slice);
+    // What the Hub last wrote to each size: a price changed on WordPress since stays (best-effort, as the plan reads it).
+    const ledger = await ledgerForProducts([...store.values()].map((p) => p.id)).catch(() => new Map<number, LedgerEntry>());
+    for (const part of chunks(slice, READ_CHUNK)) {
+      const catalog = await getAnyBySkus(config.source.market, part);
+      const priced = await withStoreTerms([...catalog.values()], termRules);
+      for (const product of priced) {
+        const outcome = assessMarginSubject(subjectOf(product, store, ledger, products.overrides), config, draft, ids);
+        outcomes.push(outcome);
+        if (outcome.kind === "covered" && marginMove(outcome) !== "same") {
+          const before = outcome.before.reduce((s, p) => s + p, 0);
+          const after = outcome.after.reduce((s, p) => s + p, 0);
+          moved.push({
+            sku: skuKey(product.sku),
+            outcome,
+            change: before > 0 ? Math.abs(after / before - 1) : 0,
+          });
+        }
+      }
+    }
+  }
+  const summary = summarizeMargin(outcomes);
+  bump(untouched, w.untouched.otherRule, summary.otherRule);
+  bump(untouched, w.untouched.noQuote, summary.noQuote);
+
+  // The products the margin moves most, first: where it bites is what the owner weighs.
+  const shown = moved.sort((a, b) => b.change - a.change).slice(0, SAMPLE);
+  const names = await indexNames(shown.map((m) => m.sku));
+  const sample = shown.map((m, i) => ({
+    id: names.get(m.sku)?.id ?? -(i + 1),
+    name: names.get(m.sku)?.name || m.sku,
+    ...marginPriceWords(m.outcome, w),
+  }));
+
+  const warnings = [
+    summary.lockedSizes > 0 ? w.warning.lockedSizes(summary.lockedSizes) : null,
+    summary.saleSizes > 0 ? w.warning.saleSizes(summary.saleSizes) : null,
+    summary.belowMinSizes > 0 ? w.warning.belowMinSizes(summary.belowMinSizes) : null,
+    summary.overMaxSizes > 0 ? w.warning.overMaxSizes(summary.overMaxSizes) : null,
+    summary.editedSizes > 0 ? w.warning.editedSizes(summary.editedSizes) : null,
+  ].filter((text): text is string => text != null);
+  const margin: MarginPreview = {
+    percent: input.percent,
+    current: await marginState(config, term, facts, products, summary.applies),
+    applies: summary.applies,
+    up: summary.up,
+    down: summary.down,
+    same: summary.same,
+    averageChange: summary.averageChange,
+    lockedSizes: summary.lockedSizes,
+    saleSizes: summary.saleSizes,
+  };
+  return {
+    preview: {
+      kind: "margin",
+      changes: summary.up + summary.down,
+      untouched: reasonCounts(untouched),
+      sample,
+      warnings,
+      margin,
+    },
+    label,
+    termKey,
+    total,
+    refusal: null,
+  };
+}
+
+/* ---------------------------------------------------------------- *
+ * Apply and undo
+ * ---------------------------------------------------------------- */
+
+/** What a reprice did: products whose prices it wrote, sizes the store refused, products the market did not answer for. */
+interface Repriced {
+  written: number;
+  refused: number;
+  unanswered: number;
+}
+
+/**
+ * The term's market products through the ordinary sync, a slice at a time:
+ * plan with the rules as saved now, read each product again, write, record
+ * (runPriceSync with the live check, docs §3.2). A slice that cannot be
+ * planned or written stops the run: the rule stands, and the next sync
+ * aligns the prices. Products KicksDB did not answer for (an outage the
+ * sync rides out when the supplier's feed is in play) are counted, not
+ * written: the next sync prices them.
+ */
+async function repriceTerm(ctx: RunCtx, term: MarginTerm, market: string): Promise<Repriced> {
+  const w = words();
+  const { market: skus } = await termProducts(term, market);
+  ctx.tally.total = skus.length + 1;
+  ctx.tally.done = 1;
+  await ctx.step();
+  const out: Repriced = { written: 0, refused: 0, unanswered: 0 };
+  try {
+    for (const part of chunks(skus, REPRICE_CHUNK)) {
+      let synced: Awaited<ReturnType<typeof runPriceSync>>;
+      try {
+        synced = await runPriceSync({ skus: part, liveCheck: true });
+      } catch (e) {
+        throw new VetrinaError("failed", w.error.repriceFailed(messageOf(e)));
+      }
+      const { outcome, report } = synced;
+      if (outcome && outcome.updated > 0) out.written += outcome.products;
+      out.refused += outcome?.failedTotal ?? 0;
+      out.unanswered += report.stats?.unanswered ?? 0;
+      ctx.tally.done += part.length;
+      await ctx.step();
+    }
+  } finally {
+    // The index learns the new prices, and the automatic categories whose
+    // rule reads a price look again — after a run stopped half-way too.
+    if (out.written > 0) requestCheck();
+  }
+  return out;
+}
+
+/**
+ * "Applica": the term's rule set (or removed), the one it replaces filed
+ * first — before the save, like every value an action changes, so a run
+ * cut off right after it stays undoable — then the reprice.
+ */
+export async function runMargin(ctx: RunCtx, input: Input): Promise<void> {
+  const w = words();
+  if (demoMode()) throw new VetrinaError("invalid", w.error.marginDemo, 400);
+  const term = termOf(input);
+  const { path } = termFacts(await readCatalogTrees(), term, w);
+  // A product moved into the term a moment ago is repriced with it.
+  forgetStoreTerms();
+  // Without the store's terms the reprice would hold every product it is
+  // for: refused, before anything is saved (read outside the config's lock —
+  // it may ask the store).
+  const read = await getActiveConfig();
+  const draft = withTermMargin(read.pricingRules, term, path, input.percent).rules;
+  if (!(await storeTermsKnown([...read.pricingRules, ...draft]))) {
+    throw new VetrinaError("invalid", w.error.marginTermsUnknown, 400);
+  }
+  // Into the rule list as it is NOW, under the config's lock: a Margins-tab
+  // save or another term's margin landing meanwhile is kept, never
+  // overwritten by an older copy (config/repo.ts updateActiveConfig).
+  let ruleChanged = false;
+  const config = await updateActiveConfig(async (current) => {
+    const change = withTermMargin(current.pricingRules, term, path, input.percent);
+    if (sameRule(change.before, change.after)) return null;
+    // Checked again on the list as it is now: the cap.
+    if (change.before == null && change.rules.length > MAX_PRICING_RULES) {
+      throw new VetrinaError("invalid", w.error.marginFull(MAX_PRICING_RULES), 400);
+    }
+    ruleChanged = true;
+    await repo.fileMarginRecord(ctx.op.id, change);
+    return { ...current, pricingRules: change.rules };
+  });
+  // The rule is a change of its own: "Annulla" is offered even when no price had to move.
+  if (ruleChanged) ctx.tally.changed = 1;
+  const { written, refused, unanswered } = await repriceTerm(ctx, term, config.source.market);
+  ctx.tally.changed = Math.max(ctx.tally.changed, written);
+  ctx.tally.failed = refused;
+  // Saved, but prices the owner expects to see moved did not: said, rather
+  // than a "done" over prices that have not changed. It stays undoable.
+  if (unanswered > 0) throw new VetrinaError("failed", w.error.repriceUnanswered(unanswered));
+}
+
+/** The term's name for an undo: the store's now, else the one the label kept (a term deleted since still has its rule taken back). */
+async function undoName(op: VetrinaOperationRow, term: MarginTerm): Promise<string> {
+  try {
+    return termFacts(await readCatalogTrees(), term, words()).name;
+  } catch {
+    return op.labelParams?.term || `#${term.id}`;
+  }
+}
+
+/**
+ * Refused before an undo is queued, as a homepage pin's undo is when its
+ * section changed since: the term's rule is no longer what the action left
+ * — someone set it again, here or on the Hub's Margins tab — and that newer
+ * word stands.
+ */
+export async function checkMarginUndo(op: VetrinaOperationRow): Promise<void> {
+  if (op.input.kind !== "margin") return;
+  const record = await repo.marginRecordOf(op.id);
+  if (!record) return;
+  const term = termOf(op.input);
+  const config = await getActiveConfig();
+  if (undoTermMargin(config.pricingRules, term, record).verdict === "changed") {
+    throw new VetrinaError("stale", words().error.marginChanged(await undoName(op, term)), 409);
+  }
+}
+
+/**
+ * "Annulla": the rule from before put back (or the new one removed) — only
+ * while the term's rule is still what the action left — then the reprice
+ * again. Products whose prices it wrote back count as restored. Products
+ * the market did not answer for are left to the next sync: the rule is
+ * back either way, which is what the undo is about.
+ */
+export async function undoMargin(ctx: RunCtx): Promise<OperationUndoOutcome> {
+  const input = ctx.op.input;
+  if (input.kind !== "margin") return { restored: 0, kept: 0, failed: 0 };
+  const term = termOf(input);
+  const record = await repo.marginRecordOf(ctx.op.id);
+  forgetStoreTerms();
+  // Checked and put back under the config's lock, against the list as it is now.
+  let changed = false;
+  const config = await updateActiveConfig((current) => {
+    if (!record) return null;
+    const undo = undoTermMargin(current.pricingRules, term, record);
+    changed = undo.verdict === "changed";
+    return undo.verdict === "restore" ? { ...current, pricingRules: undo.rules } : null;
+  });
+  if (changed) throw new VetrinaError("stale", words().error.marginChanged(await undoName(ctx.op, term)), 409);
+  const { written, refused } = await repriceTerm(ctx, term, config.source.market);
+  return { restored: written, kept: 0, failed: refused };
+}

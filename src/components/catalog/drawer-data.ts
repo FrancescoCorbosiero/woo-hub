@@ -1,6 +1,6 @@
 import "server-only";
 import type { AppConfig, MarginKind, ScopedPricingRule } from "@core/config";
-import { marginKindOf, resolveEffectiveRule, scopeSpecificity } from "@core/config";
+import { compareScopePrecedence, marginKindOf, resolveEffectiveRule } from "@core/config";
 import { computePrice, medianTierAsk } from "@core/core-spine";
 import { getCatalogEntry } from "@/server/catalog/repo";
 import { getOverrides } from "@/server/overrides/repo";
@@ -23,6 +23,7 @@ import {
 } from "@/server/store-json/match";
 import { skuKey } from "@/lib/skus";
 import { openStoreEditsForSku } from "@/server/sync/ledger";
+import { withStoreTermsChecked } from "@/server/pricing/store-terms";
 
 /** One drawer row: a size variant with its ask, computed price and override state. */
 export interface DrawerVariant {
@@ -69,6 +70,11 @@ export interface AppliedRule {
   isGeneral: boolean;
   /** Sizes of this product are priced by different rules (a size-scoped rule). */
   mixed: boolean;
+  /**
+   * The rule is a margin on one of the shop's own categories or brands (set
+   * from the Vetrina): which one, by id, and its name when the rule was saved.
+   */
+  storeTerm: { taxonomy: "category" | "brand"; id: number; name: string | null } | null;
 }
 
 export interface DrawerData {
@@ -98,6 +104,12 @@ export interface DrawerData {
   variants: DrawerVariant[];
   /** The margin rule the proposed prices come from; null when nothing prices it. */
   appliedRule: AppliedRule | null;
+  /**
+   * The shop's categories and brands could not be read just now, and a margin
+   * set on one of them may price this product: the prices shown may miss it,
+   * and the sync holds this product's prices until they can be read.
+   */
+  storeTermsUnknown: boolean;
   /** Store-only products: the live snapshot view, directly editable. */
   store: { productId: number; variants: StoreDrawerVariant[] } | null;
 }
@@ -106,6 +118,10 @@ export interface DrawerData {
 function scopeLabelOf(rule: ScopedPricingRule): string {
   const s = rule.scope;
   const bits = [
+    // A store term by the name it had when the rule was saved; its id when none was kept.
+    s.storeCategory != null || s.storeBrand != null
+      ? s.storeTermName?.trim() || `#${s.storeCategory ?? s.storeBrand}`
+      : null,
     s.brand,
     [s.category, s.secondaryCategory].filter(Boolean).join(" › ") || null,
     s.model ? `“${s.model}”` : null,
@@ -129,6 +145,12 @@ function describeRule(
     bands: rule.markupBands && rule.markupBands.length > 0 ? rule.markupBands : null,
     isGeneral: Object.keys(rule.scope).length === 0,
     mixed,
+    storeTerm:
+      rule.scope.storeCategory != null
+        ? { taxonomy: "category", id: rule.scope.storeCategory, name: rule.scope.storeTermName?.trim() || null }
+        : rule.scope.storeBrand != null
+          ? { taxonomy: "brand", id: rule.scope.storeBrand, name: rule.scope.storeTermName?.trim() || null }
+          : null,
   };
 }
 
@@ -153,7 +175,14 @@ export async function loadDrawerData(
   const covered = (await gsOwnedProducts([entry.sku], market, null)).get(entry.sku);
   const pin = overrides ? ownerPinFor(overrides, entry.sku) : null;
   const gs = pin === "kicksdb" ? undefined : covered;
-  const product = gs?.product ?? entry.product;
+  // With the shop's categories and brands, as the sync plans it: a margin set
+  // on one of them shows here exactly as it will be written.
+  // A catalog row whose data lacks its sizes (an old or partial entry) opens with none, rather than not at all.
+  const source = gs?.product ?? entry.product;
+  const {
+    products: [product],
+    uncertain,
+  } = await withStoreTermsChecked([{ ...source, variants: source.variants ?? [] }], config.pricingRules);
   const deliveryType = config.source.defaultDeliveryType;
 
   // Which rule owns the margin, collected as the variants are priced: sizes
@@ -254,13 +283,15 @@ export async function loadDrawerData(
     pinnedToKicksdb: pin === "kicksdb",
     kicksdbAvailable: kicksdbConfigured(),
     variants,
+    storeTermsUnknown: uncertain.size > 0,
     appliedRule: (() => {
       // With several rules in play, name the most specific one — that is the
       // deliberate instruction the operator wants to verify — and flag the mix.
+      // Ranked as the engine ranks them (a SKU rule, a store term, the rest).
       const winners = config.pricingRules.filter((r) => markupRuleIds.has(r.id));
       if (winners.length === 0) return null;
       const most = winners.reduce((a, b) =>
-        scopeSpecificity(b.scope) >= scopeSpecificity(a.scope) ? b : a,
+        compareScopePrecedence(b.scope, a.scope, product) >= 0 ? b : a,
       );
       return describeRule(most, winners.length > 1);
     })(),

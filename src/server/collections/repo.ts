@@ -10,6 +10,7 @@ import {
   type CollectionChangeRow,
   type SmartCollectionRow,
 } from "@/server/db/schema";
+import { forgetStoreTerms } from "@/server/pricing/store-terms";
 import type { IndexRow } from "./index-rows";
 
 /**
@@ -40,6 +41,12 @@ export async function listCollectionRows(): Promise<SmartCollectionRow[]> {
 export async function getCollectionRow(id: string): Promise<SmartCollectionRow | null> {
   const rows = await db.select().from(smartCollections).where(eq(smartCollections.id, id)).limit(1);
   return rows[0] ?? null;
+}
+
+/** The highest category id a rule is saved on; 0 with none. */
+export async function highestCollectionTermId(): Promise<number> {
+  const [row] = await db.select({ max: sql<number | null>`max(${smartCollections.termId})` }).from(smartCollections);
+  return Number(row?.max ?? 0);
 }
 
 export type CollectionInput = Pick<SmartCollection, "termId" | "name" | "match" | "conditions" | "enabled">;
@@ -115,6 +122,10 @@ export async function upsertIndexRows(rows: IndexRow[], seenAt = new Date()): Pr
       price: r.price,
       onSale: r.onSale,
       stockStatus: r.stockStatus,
+      image: r.image,
+      visibility: r.visibility,
+      menuOrder: r.menuOrder,
+      totalSales: r.totalSales,
       dateCreated: r.dateCreated ? new Date(r.dateCreated) : null,
       dateModified: r.dateModified ? new Date(r.dateModified) : null,
       seenAt,
@@ -137,6 +148,10 @@ export async function upsertIndexRows(rows: IndexRow[], seenAt = new Date()): Pr
           price: sql`excluded.price`,
           onSale: sql`excluded.on_sale`,
           stockStatus: sql`excluded.stock_status`,
+          image: sql`excluded.image`,
+          visibility: sql`excluded.visibility`,
+          menuOrder: sql`excluded.menu_order`,
+          totalSales: sql`excluded.total_sales`,
           dateCreated: sql`excluded.date_created`,
           dateModified: sql`excluded.date_modified`,
           seenAt: sql`excluded.seen_at`,
@@ -144,6 +159,10 @@ export async function upsertIndexRows(rows: IndexRow[], seenAt = new Date()): Pr
         setWhere: sql`${storeIndex.dateModified} is null or excluded.date_modified is null or excluded.date_modified >= ${storeIndex.dateModified}`,
       });
   }
+  // A product moved to a category or a brand (a Vetrina action patches the
+  // index at once) is priced by that term's margin from the next read, not
+  // within the minute the store-terms cache would otherwise serve.
+  if (rows.length > 0) forgetStoreTerms();
 }
 
 /** Mark rows as seen without changing them (a full read that met an older copy). */
@@ -155,6 +174,7 @@ export async function touchIndexRows(ids: number[], seenAt: Date): Promise<void>
 export async function deleteIndexRows(ids: number[]): Promise<void> {
   if (ids.length === 0) return;
   await db.delete(storeIndex).where(inArray(storeIndex.productId, ids));
+  forgetStoreTerms();
 }
 
 /** Drop the products a complete read did not see: gone from the store, or binned. */
@@ -178,6 +198,10 @@ function rowToProduct(r: typeof storeIndex.$inferSelect): IndexRow {
     price: r.price,
     onSale: r.onSale,
     stockStatus: r.stockStatus,
+    image: r.image,
+    visibility: r.visibility,
+    menuOrder: r.menuOrder,
+    totalSales: r.totalSales,
     dateCreated: r.dateCreated?.toISOString() ?? null,
     dateModified: r.dateModified?.toISOString() ?? null,
   };
@@ -187,6 +211,55 @@ function rowToProduct(r: typeof storeIndex.$inferSelect): IndexRow {
 export async function readIndex(): Promise<IndexRow[]> {
   const rows = await db.select().from(storeIndex).orderBy(storeIndex.productId);
   return rows.map(rowToProduct);
+}
+
+/** These products' index rows, in no particular order; ids the index does not hold are left out. */
+export async function readIndexRowsById(ids: number[]): Promise<IndexRow[]> {
+  if (ids.length === 0) return [];
+  const rows = await db.select().from(storeIndex).where(inArray(storeIndex.productId, ids));
+  return rows.map(rowToProduct);
+}
+
+/**
+ * A product as the Vetrina's catalog counts, filters and sorts it: only the
+ * light columns, with its terms as bare ids. The catalog reads the whole index
+ * this way on every request, so it stays small.
+ */
+export interface IndexFacts {
+  id: number;
+  sku: string;
+  name: string;
+  status: string;
+  visibility: string;
+  stockStatus: string;
+  onSale: boolean;
+  price: number | null;
+  hasImage: boolean;
+  menuOrder: number;
+  totalSales: number;
+  /** Creation time (epoch ms), null when unknown. */
+  created: number | null;
+  categories: number[];
+  brands: number[];
+}
+
+/** Every product of the index, as IndexFacts. */
+export async function readIndexFacts(): Promise<IndexFacts[]> {
+  // A raw query whose columns are already IndexFacts' fields: at 10 000
+  // products the query builder's row mapping costs more than the query. And
+  // plain numbers straight from Postgres — the term ids out of the jsonb, the
+  // price and the date as float8 — not strings and dates parsed one by one.
+  const res = await db.execute(sql`
+    select product_id as "id", sku as "sku", name as "name", status as "status",
+           visibility as "visibility", stock_status as "stockStatus", on_sale as "onSale",
+           price::float8 as "price", image <> '' as "hasImage",
+           menu_order as "menuOrder", total_sales as "totalSales",
+           (extract(epoch from date_created) * 1000)::float8 as "created",
+           jsonb_path_query_array(categories, '$[*].id') as "categories",
+           jsonb_path_query_array(brands, '$[*].id') as "brands"
+    from ${storeIndex}
+  `);
+  return rowsOf<IndexFacts>(res);
 }
 
 export interface IndexInfo {

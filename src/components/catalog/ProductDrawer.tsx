@@ -258,6 +258,11 @@ export function ProductDrawer({
 
           {/* Which margin rule these proposed prices come from. */}
           {data.appliedRule && <AppliedRuleCard rule={data.appliedRule} />}
+          {data.storeTermsUnknown && (
+            <p role="status" className="rounded-xl border border-warn/40 bg-warn/8 p-3 text-[11px] font-medium leading-snug text-warn">
+              {t.drawer.storeTermsUnknown}
+            </p>
+          )}
 
           {/* Price audit: live per-size comparison of every price source. */}
           {audit && <AuditPanel audit={audit} />}
@@ -405,7 +410,11 @@ function AppliedRuleCard({ rule }: { rule: AppliedRule }) {
           ? t.margins.gsRule
           : rule.isGeneral
             ? t.drawer.ruleGeneral
-            : rule.scopeLabel}
+            : rule.storeTerm
+              ? rule.storeTerm.taxonomy === "category"
+                ? t.margins.storeCategoryRule(rule.storeTerm.name, rule.storeTerm.id)
+                : t.margins.storeBrandRule(rule.storeTerm.name, rule.storeTerm.id)
+              : rule.scopeLabel}
       </span>
       {margin && <span className="text-[11px] font-medium text-muted tnum">{margin}</span>}
       {rule.mixed && <span className="text-[11px] text-faint">{t.drawer.ruleMixed}</span>}

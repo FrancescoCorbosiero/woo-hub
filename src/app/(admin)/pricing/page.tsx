@@ -3,6 +3,7 @@ import { DbUnavailable } from "@/components/DbUnavailable";
 import { assertSchemaCurrent } from "@/server/db/probe";
 import { listBrandCounts, listCategoryCounts } from "@/server/catalog/repo";
 import { getActiveConfig } from "@/server/config/repo";
+import { pricingRulesVersion } from "@/server/config/rule-list";
 import { getServerDictionary } from "@/i18n/server";
 
 export const dynamic = "force-dynamic";
@@ -25,12 +26,16 @@ export default async function PricingPage() {
   const { t } = await getServerDictionary();
 
   let rules;
+  let version;
   let families;
   let brands;
   try {
     await assertSchemaCurrent();
     const config = await getActiveConfig();
     rules = config.pricingRules;
+    // What the editor saves against: a list changed since (a margin set from
+    // the Vetrina) is not overwritten by this page's older copy.
+    version = pricingRulesVersion(rules);
     // The real catalog tree, so a rule is scoped by PICKING the family the
     // operator already browses by instead of guessing a title substring.
     const [allFamilies, allBrands] = await Promise.all([
@@ -65,7 +70,7 @@ export default async function PricingPage() {
         <h1 className="mt-1 text-2xl font-bold tracking-tight">{t.margins.title}</h1>
         <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-muted">{t.margins.desc}</p>
       </div>
-      <MarginsWorkspace initialRules={rules} families={families} brands={brands} />
+      <MarginsWorkspace initialRules={rules} initialVersion={version} families={families} brands={brands} />
     </main>
   );
 }

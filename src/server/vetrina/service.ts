@@ -38,6 +38,29 @@ export async function attempt<T>(fn: () => Promise<T>): Promise<VetrinaResult<T>
   }
 }
 
+/** The refusals our code words for the owner (invalid, gone, changed meanwhile): said as they are. */
+const SAID: ReadonlySet<VetrinaErrorCode> = new Set(["invalid", "not_found", "stale"]);
+
+/**
+ * attempt() for what the owner does from the catalog (an action, its
+ * preview, its undo): a refusal of ours keeps its words, but anything else —
+ * a failed query, the store's own text — is logged here and answered with
+ * `plain(code)`, so no server text reaches the owner's screen.
+ */
+export async function attemptPlain<T>(
+  fn: () => Promise<T>,
+  plain: (code: VetrinaErrorCode) => string,
+): Promise<VetrinaResult<T>> {
+  try {
+    return { ok: true, data: await fn() };
+  } catch (e) {
+    if (e instanceof VetrinaError && SAID.has(e.code)) return { ok: false, code: e.code, error: e.message };
+    console.error("[vetrina] request failed:", e);
+    const code = e instanceof VetrinaError ? e.code : "failed";
+    return { ok: false, code, error: plain(code) };
+  }
+}
+
 /** Locked sizes per SKU, only for the SKUs shown — the 🔒 on a card. */
 async function locksFor(cards: ProductCard[]): Promise<Record<string, number>> {
   const overrides = await getOverrides().catch(() => null);

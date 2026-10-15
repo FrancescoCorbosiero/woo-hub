@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { publishBlock, publishRail, readHome, readRail } from "./service";
+import { attemptPlain, publishBlock, publishRail, readHome, readRail } from "./service";
+import { VetrinaError } from "./source";
 
 // The demo shop stands in for the site; no database behind the price locks.
 vi.mock("@/lib/env", () => ({ env: { VETRINA_SOURCE: "fixture" } }));
@@ -100,5 +101,32 @@ describe("publishing a block's texts", () => {
         fields: { title: "x" },
       }),
     ).rejects.toMatchObject({ code: "stale" });
+  });
+});
+
+describe("a failure on the owner's screen", () => {
+  const plain = (code: string) => `plain:${code}`;
+
+  it("keeps our refusals' words, and says anything else plainly, logging it", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const refused = await attemptPlain(async () => {
+        throw new VetrinaError("invalid", "Nessun prodotto scelto.", 400);
+      }, plain);
+      expect(refused).toEqual({ ok: false, code: "invalid", error: "Nessun prodotto scelto." });
+      // What the demo once showed the owner: the database's own failure.
+      const query = await attemptPlain(async () => {
+        throw new Error("Failed query: insert into smart_collections (term_id) values ($1)");
+      }, plain);
+      expect(query).toEqual({ ok: false, code: "failed", error: "plain:failed" });
+      const store = await attemptPlain(async () => {
+        throw new VetrinaError("unauthorized", "Sorry, you are not allowed to do that. (rest_forbidden, HTTP 401)", 401);
+      }, plain);
+      expect(store).toEqual({ ok: false, code: "unauthorized", error: "plain:unauthorized" });
+      expect(log).toHaveBeenCalledTimes(2);
+    } finally {
+      log.mockRestore();
+    }
+    expect(await attemptPlain(async () => 3, plain)).toEqual({ ok: true, data: 3 });
   });
 });

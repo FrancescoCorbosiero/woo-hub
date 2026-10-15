@@ -19,6 +19,7 @@ interface FakeVariation {
   id: number;
   sku: string;
   regular_price: string;
+  sale_price?: string;
   manage_stock: boolean;
   stock_quantity: number;
   attributes: { attribute_pa_taglia: string };
@@ -29,12 +30,19 @@ const store = vi.hoisted(() => ({
   products: new Map<number, FakeVariation[]>(),
   reads: 0,
   refuse: new Set<number>(),
+  /** Runs once, right before the next live read: something landing between a plan and its write. */
+  beforeRead: null as null | (() => Promise<void>),
+  /** Runs once, after the store took a batch for this product and before it answers. */
+  afterWrite: null as null | { productId: number; run: () => Promise<void> },
 }));
 
 vi.mock("@/server/woo/client", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/server/woo/client")>();
   const client = {
     getAllVariations: async (productId: number) => {
+      const meanwhile = store.beforeRead;
+      store.beforeRead = null;
+      await meanwhile?.();
       store.reads += 1;
       return structuredClone(store.products.get(productId) ?? []);
     },
@@ -49,6 +57,11 @@ vi.mock("@/server/woo/client", async (importOriginal) => {
         if (row.stock_quantity != null) v.stock_quantity = Number(row.stock_quantity);
         return { id };
       });
+      const hook = store.afterWrite;
+      if (hook?.productId === productId) {
+        store.afterWrite = null;
+        await hook.run();
+      }
       return { create: [], update, delete: [] };
     },
     updateProduct: async () => undefined,
@@ -66,6 +79,9 @@ const load = async () => ({
   ...(await import("./price-sync")),
   ...(await import("./store-edits")),
   ...(await import("@/server/actions/overrides")),
+  ...(await import("@/server/actions/vetrina-prices")),
+  ...(await import("@/server/actions/sync")),
+  ...(await import("@/server/actions/preview")),
 });
 
 const SKU = "LEDGER-1";
@@ -99,6 +115,9 @@ describe.skipIf(!enabled)("prices changed on the store (real SQL, stand-in store
     store.products.set(1, [size(11, "42", "120.00", 2), size(12, "43", "120.00", 2)]);
     store.reads = 0;
     store.refuse.clear();
+    store.beforeRead = null;
+    store.afterWrite = null;
+    store.products.delete(2);
     await saveSnapshot({ products: [{ id: 1, sku: SKU, name: "Ledger Low", variations: structuredClone(store.products.get(1)) }] } as never, "rest");
     await db.insert(feedItems).values([feedRow("42", 130, 2), feedRow("43", 130, 2)]);
   });
@@ -112,6 +131,7 @@ describe.skipIf(!enabled)("prices changed on the store (real SQL, stand-in store
     return (await db.select().from(priceLedger).where(eq(priceLedger.variationId, variationId)))[0] ?? null;
   };
   const storePrice = (variationId: number) => store.products.get(1)!.find((v) => v.id === variationId)!.regular_price;
+  const onStore = (variationId: number) => store.products.get(1)!.find((v) => v.id === variationId)!;
 
   it("records what it writes, keeps an edit made since, and never writes over it", async () => {
     const { runPriceSync, listStoreEdits, getSnapshotProductsByIds } = await load();
@@ -291,5 +311,250 @@ describe.skipIf(!enabled)("prices changed on the store (real SQL, stand-in store
     expect(run.outcome?.failed[0].error).toBe("refused by the store");
     expect(await ledgerRow(12)).toBeNull();
     expect(storePrice(12)).toBe("120.00");
+  });
+
+  describe("the store moved between the plan and the write", () => {
+    it("a size put on sale in WordPress keeps its price, and is no edit; the snapshot learns the sale", async () => {
+      const { runPriceSync, countStoreEdits, getSnapshotProductsByIds } = await load();
+      await runPriceSync({ skus: [SKU], liveCheck: true }); // 130 / 130
+      // A sale is started in WordPress; the snapshot does not know it. The feed moves.
+      onStore(11).sale_price = "99.00";
+      await setFeedPrice(135);
+      const run = await runPriceSync({ skus: [SKU], liveCheck: true });
+      expect(run.outcome?.updated).toBe(1); // 43 only
+      expect(run.outcome?.keptOnSale).toBe(1);
+      expect(storePrice(11)).toBe("130.00"); // the price the sale was set against stays
+      expect(storePrice(12)).toBe("135.00");
+      expect(await countStoreEdits()).toBe(0); // a sale is not a price changed on WordPress
+      const [snap] = await getSnapshotProductsByIds([1]);
+      expect(snap.variations.find((v) => v.id === 11)?.sale_price).toBe("99.00");
+
+      // From the next plan on, the snapshot shows the sale: the plan holds the size itself.
+      await setFeedPrice(145);
+      const next = await runPriceSync({ skus: [SKU], liveCheck: true });
+      expect(next.outcome?.updated).toBe(1); // 43 → 145
+      expect(next.outcome?.keptOnSale).toBe(0);
+      expect(storePrice(11)).toBe("130.00");
+    });
+
+    it("a locked size is written though it went on sale: a lock wins over a sale price", async () => {
+      const { runPriceSync, setVariationManualPrice } = await load();
+      await runPriceSync({ skus: [SKU], liveCheck: true });
+      expect((await setVariationManualPrice({ parentSku: SKU, euSize: "42", price: 150 })).ok).toBe(true);
+      onStore(11).sale_price = "99.00";
+      const run = await runPriceSync({ skus: [SKU], liveCheck: true });
+      expect(run.outcome?.keptOnSale).toBe(0);
+      expect(storePrice(11)).toBe("150.00");
+    });
+
+    it("the Hub's own write landing between the plan and the write is no WordPress edit", async () => {
+      const { runPriceSync, recordPriceWrites, countStoreEdits } = await load();
+      await runPriceSync({ skus: [SKU], liveCheck: true }); // 130 / 130
+      await setFeedPrice(135);
+      // While this run sits between its plan and its write, another Hub write
+      // (the Vetrina publishing this product) puts 142 on size 42.
+      store.beforeRead = async () => {
+        onStore(11).regular_price = "142.00";
+        await recordPriceWrites([{ variationId: 11, productId: 1, sku: SKU, euSize: "42", price: 142 }]);
+      };
+      const run = await runPriceSync({ skus: [SKU], liveCheck: true });
+      expect(run.outcome?.updated).toBe(1); // 43; 42 keeps the Hub's newer price
+      expect(storePrice(11)).toBe("142.00");
+      expect(await countStoreEdits()).toBe(0);
+      expect(await ledgerRow(11)).toMatchObject({ price: 142, storePrice: null });
+    });
+
+    it("a newer plan made while a long apply is still going writes over the apply's write, and lists nothing", async () => {
+      const { runPriceSync, countStoreEdits, saveSnapshot, getSnapshotProductsByIds, db, feedItems, eq } = await load();
+      // A second product, so the long apply is still going after it wrote the first.
+      const OTHER = "LEDGER-2";
+      store.products.set(2, [{ ...size(21, "42", "120.00", 2), sku: `${OTHER}-42` }]);
+      await saveSnapshot(
+        {
+          products: [
+            { id: 1, sku: SKU, name: "Ledger Low", variations: structuredClone(store.products.get(1)) },
+            { id: 2, sku: OTHER, name: "Other", variations: structuredClone(store.products.get(2)) },
+          ],
+        } as never,
+        "rest",
+      );
+      await db.insert(feedItems).values({ ...feedRow("42", 130, 2), sku: OTHER, productName: "Other" });
+
+      let nested: Awaited<ReturnType<typeof runPriceSync>> | null = null;
+      let listedMeanwhile = -1;
+      // The long apply (planned at 130) writes product 1, then, while it is
+      // writing product 2, a newer plan (the feed moved to 140: fresher asks,
+      // a margin) runs for product 1.
+      store.afterWrite = {
+        productId: 2,
+        run: async () => {
+          for (let i = 0; i < 100 && (await ledgerRow(11))?.price !== 130; i++) await new Promise((r) => setTimeout(r, 20));
+          expect(await ledgerRow(11)).toMatchObject({ price: 130, storePrice: null }); // recorded as soon as written
+          await db.update(feedItems).set({ presentedPrice: 140 }).where(eq(feedItems.sku, SKU));
+          nested = await runPriceSync({ skus: [SKU], liveCheck: true });
+          listedMeanwhile = await countStoreEdits();
+        },
+      };
+      const long = await runPriceSync({ skus: [SKU, OTHER], liveCheck: true });
+      expect(long.outcome?.updated).toBe(3);
+      // The newer plan saw the Hub's own write, not the copy from before it: written, nothing kept or listed.
+      expect(nested!.outcome).toMatchObject({ updated: 2, keptStoreEdits: 0 });
+      expect(listedMeanwhile).toBe(0);
+      expect(storePrice(11)).toBe("140.00");
+      expect(await ledgerRow(11)).toMatchObject({ price: 140, storePrice: null });
+      // The long apply's end does not put its older copy over the newer write's.
+      const [copy] = await getSnapshotProductsByIds([1]);
+      expect(copy.variations.find((v) => v.id === 11)?.regular_price).toBe("140.00");
+      expect(await countStoreEdits()).toBe(0);
+      // And the next plan agrees with the store: nothing to write, nothing listed.
+      const again = await runPriceSync({ skus: [SKU], liveCheck: true });
+      expect(again.outcome).toBeNull();
+      expect(await countStoreEdits()).toBe(0);
+    });
+
+    it("a sale learnt by the snapshot while a long apply is going survives the apply's own copy at its end", async () => {
+      const { runPriceSync, saveSnapshot, getSnapshotProductsByIds, patchSnapshotProducts, db, feedItems } = await load();
+      const OTHER = "LEDGER-2";
+      store.products.set(2, [{ ...size(21, "42", "120.00", 2), sku: `${OTHER}-42` }]);
+      await saveSnapshot(
+        {
+          products: [
+            { id: 1, sku: SKU, name: "Ledger Low", variations: structuredClone(store.products.get(1)) },
+            { id: 2, sku: OTHER, name: "Other", variations: structuredClone(store.products.get(2)) },
+          ],
+        } as never,
+        "rest",
+      );
+      await db.insert(feedItems).values({ ...feedRow("42", 130, 2), sku: OTHER, productName: "Other" });
+      // While the apply writes product 2, the Vetrina puts size 43 of product 1 on sale and the snapshot learns it.
+      store.afterWrite = {
+        productId: 2,
+        run: async () => {
+          for (let i = 0; i < 100 && (await ledgerRow(11))?.price !== 130; i++) await new Promise((r) => setTimeout(r, 20));
+          onStore(12).sale_price = "99.00";
+          await patchSnapshotProducts([1], (p) => {
+            const v = p.variations.find((x) => x.id === 12)!;
+            v.sale_price = "99.00";
+          });
+        },
+      };
+      await runPriceSync({ skus: [SKU, OTHER], liveCheck: true });
+      const [copy] = await getSnapshotProductsByIds([1]);
+      expect(copy.variations.map((v) => [v.id, v.regular_price, v.sale_price ?? ""])).toEqual([
+        [11, "130.00", ""],
+        [12, "130.00", "99.00"],
+      ]);
+    });
+
+    it("a price kept because it is the Hub's own newer write is not counted as changed on WordPress", async () => {
+      const { runPriceSync, recordPriceWrites } = await load();
+      await runPriceSync({ skus: [SKU], liveCheck: true }); // 130 / 130
+      await setFeedPrice(135);
+      store.beforeRead = async () => {
+        onStore(11).regular_price = "142.00";
+        await recordPriceWrites([{ variationId: 11, productId: 1, sku: SKU, euSize: "42", price: 142 }]);
+      };
+      const run = await runPriceSync({ skus: [SKU], liveCheck: true });
+      expect(run.outcome?.keptStoreEdits).toBe(0);
+    });
+  });
+
+  describe("the Vetrina's product sheet and the list's answers read the store before writing", () => {
+    it("publish writes the sizes the owner decided, and keeps a size changed in WordPress meanwhile", async () => {
+      const { runPriceSync, setProductManualPrices, publishProductPrices, listStoreEdits } = await load();
+      await runPriceSync({ skus: [SKU], liveCheck: true }); // 130 / 130
+      // Changed in WordPress after the Hub last read the store: its copy still says 130.
+      onStore(11).regular_price = "155.00";
+      onStore(12).regular_price = "149.99";
+      await setFeedPrice(135);
+      // The owner locks 42 at 125 in the sheet, and publishes.
+      expect((await setProductManualPrices({ parentSku: SKU, prices: [{ euSize: "42", price: 125 }] })).ok).toBe(true);
+      const res = await publishProductPrices({ sku: SKU, sizes: ["42"] });
+      expect(res).toMatchObject({ ok: true, updated: 1, failed: 0, kept: 1, onSale: 0 });
+      expect(storePrice(11)).toBe("125.00"); // decided: the owner's word is the newer one
+      expect(storePrice(12)).toBe("149.99"); // nobody decided 43: kept as WordPress has it…
+      const { rows } = await listStoreEdits();
+      expect(rows.map((r) => [r.variationId, r.storePrice])).toEqual([[12, 149.99]]); // …and listed
+      expect(await ledgerRow(11)).toMatchObject({ price: 125, storePrice: null });
+    });
+
+    it("use the Hub's price writes the size handed back, and keeps another changed meanwhile", async () => {
+      const { runPriceSync, repriceStoreEdits, listStoreEdits } = await load();
+      await runPriceSync({ skus: [SKU], liveCheck: true }); // 130 / 130
+      onStore(11).regular_price = "149.99";
+      await setFeedPrice(135);
+      await runPriceSync({ skus: [SKU], liveCheck: true }); // 42 kept and listed, 43 → 135
+      // WordPress moves both again; the snapshot has neither.
+      onStore(11).regular_price = "152.00";
+      onStore(12).regular_price = "160.00";
+      await setFeedPrice(145);
+      const done = await repriceStoreEdits([11]);
+      expect(done).toMatchObject({ handed: 1, updated: 1, failed: 0, error: null });
+      expect(storePrice(11)).toBe("145.00"); // handed back: written whatever the store showed
+      expect(storePrice(12)).toBe("160.00"); // not part of the answer: kept…
+      const { rows } = await listStoreEdits();
+      expect(rows.map((r) => [r.variationId, r.storePrice])).toEqual([[12, 160]]); // …and listed
+    });
+
+    it("the Sync tab's apply of an earlier preview keeps a lock the Vetrina published since", async () => {
+      const { runPriceSync, startStoreSync, advanceStoreSync, applySyncPrices, setProductManualPrices, publishProductPrices, countStoreEdits } =
+        await load();
+      await runPriceSync({ skus: [SKU], liveCheck: true }); // 130 / 130
+      await setFeedPrice(135);
+      // The operator previews the Sync tab…
+      const started = await startStoreSync(undefined, [SKU]);
+      let progress = started.progress!;
+      while (!progress.done) progress = (await advanceStoreSync(progress.runId)).progress!;
+      // …the owner locks 42 at 125 in the Vetrina and publishes it…
+      expect((await setProductManualPrices({ parentSku: SKU, prices: [{ euSize: "42", price: 125 }] })).ok).toBe(true);
+      expect((await publishProductPrices({ sku: SKU, sizes: ["42"] })).ok).toBe(true);
+      expect(storePrice(11)).toBe("125.00");
+      // …then the operator applies the preview made before the lock.
+      const applied = await applySyncPrices({
+        runId: progress.runId,
+        priceScope: "all",
+        selections: [],
+        excluded: [],
+        dryRun: false,
+        sanitize: false,
+        backfillGtins: false,
+      });
+      expect(applied.ok).toBe(true);
+      expect(storePrice(11)).toBe("125.00"); // the lock stands
+      expect(storePrice(12)).toBe("135.00");
+      expect(await countStoreEdits()).toBe(0); // and the Hub's own lock is no WordPress edit
+    });
+
+    it("an earlier preview applied after a lock was saved (not published), or cleared, writes neither its old price", async () => {
+      const { runPriceSync, startStoreSync, advanceStoreSync, applySyncPrices, setVariationManualPrice, countStoreEdits } =
+        await load();
+      const preview = async () => {
+        const started = await startStoreSync(undefined, [SKU]);
+        let progress = started.progress!;
+        while (!progress.done) progress = (await advanceStoreSync(progress.runId)).progress!;
+        return progress.runId;
+      };
+      const apply = (runId: string) =>
+        applySyncPrices({ runId, priceScope: "all", selections: [], excluded: [], dryRun: false, sanitize: false, backfillGtins: false });
+      await runPriceSync({ skus: [SKU], liveCheck: true }); // 130 / 130
+      await setFeedPrice(135);
+      // The operator previews, then locks 42 at 199 in the Hub drawer, which saves it without writing it.
+      const before = await preview();
+      expect((await setVariationManualPrice({ parentSku: SKU, euSize: "42", price: 199 })).ok).toBe(true);
+      expect((await apply(before)).ok).toBe(true);
+      expect(storePrice(11)).toBe("130.00"); // not the preview's 135: the lock is the word now
+      expect(storePrice(12)).toBe("135.00");
+      // The next sync writes the lock.
+      await runPriceSync({ skus: [SKU], liveCheck: true });
+      expect(storePrice(11)).toBe("199.00");
+
+      // A preview that wrote the lock, applied after the lock was cleared: its 150 is nobody's price.
+      expect((await setVariationManualPrice({ parentSku: SKU, euSize: "42", price: 150 })).ok).toBe(true);
+      const locked = await preview();
+      expect((await setVariationManualPrice({ parentSku: SKU, euSize: "42", price: null })).ok).toBe(true);
+      expect((await apply(locked)).ok).toBe(true);
+      expect(storePrice(11)).toBe("199.00");
+      expect(await countStoreEdits()).toBe(0);
+    });
   });
 });

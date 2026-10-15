@@ -8,22 +8,22 @@ import { Button } from "@/components/ui/button";
 import { ProductDrawer } from "./ProductDrawer";
 
 /**
- * The catalog's product drawer, opened WITHOUT a page navigation.
+ * The product drawer, on every page of the Hub: ?product=SKU opens it over
+ * whatever page the operator is on, Back closes it. It is where a product's
+ * operator tools live — sizes and asks, locks, the sale rule, the price
+ * source, a re-sync from KicksDB — now that the catalog browsing belongs to the
+ * Vetrina.
  *
- * It used to be a server render: clicking a card navigated to ?product=, and
- * the whole catalog page — grid, counts, category tree — was rebuilt on the
- * server just to add the drawer; again on close; again after every lock or
- * price edit. Now the card only updates the URL (native history, which Next
- * keeps in sync with useSearchParams), the drawer opens at once on a skeleton
- * and fetches its own data. ?product= still deep-links and Back still closes.
- *
- * Edits reload the drawer alone; the grid behind it is refreshed once, when
- * the drawer closes, and only if something was saved.
+ * Opened WITHOUT a page navigation: a link only updates the URL (native
+ * history, which Next keeps in sync with useSearchParams), the drawer opens at
+ * once on a skeleton and fetches its own data. Edits reload the drawer alone;
+ * the page behind it is refreshed once, when the drawer closes, and only if
+ * something was saved.
  */
 
 type Loaded = Awaited<ReturnType<typeof loadCatalogDrawer>>;
 
-/** The current catalog URL with ?product= set or removed. */
+/** The current URL with ?product= set or removed. */
 function urlWithProduct(sku: string | null): string {
   const url = new URL(window.location.href);
   if (sku) url.searchParams.set("product", sku);
@@ -32,24 +32,25 @@ function urlWithProduct(sku: string | null): string {
 }
 
 /**
- * A grid card that opens the drawer in place. A real link underneath, so a
- * middle-click or ⌘-click still opens the product in a new tab.
+ * A link that opens a product in the drawer, in place. A real link underneath,
+ * so a middle-click or ⌘-click still opens the product in a new tab.
  */
-export function ProductCardLink({
+export function ProductLink({
   sku,
-  href,
   className,
+  title,
   children,
 }: {
   sku: string;
-  href: string;
   className?: string;
+  title?: string;
   children: React.ReactNode;
 }) {
   return (
     <a
-      href={href}
+      href={`?product=${encodeURIComponent(sku)}`}
       className={className}
+      title={title}
       onClick={(e) => {
         if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
         e.preventDefault();
@@ -61,35 +62,35 @@ export function ProductCardLink({
   );
 }
 
-export function CatalogDrawerHost({ market }: { market: string }) {
+export function CatalogDrawerHost() {
   const router = useRouter();
   const sku = useSearchParams().get("product");
   const [loaded, setLoaded] = React.useState<{ sku: string; result: Loaded } | null>(null);
   // Only the latest request may land: a quick second click wins.
   const latest = React.useRef(0);
-  // Something was saved while the drawer was open: the grid is stale.
-  const gridStale = React.useRef(false);
+  // Something was saved while the drawer was open: the page behind is stale.
+  const pageStale = React.useRef(false);
 
   const load = React.useCallback(
     async (target: string) => {
       const id = ++latest.current;
       let result: Loaded;
       try {
-        result = await loadCatalogDrawer({ market, sku: target });
+        result = await loadCatalogDrawer({ sku: target });
       } catch (e) {
         result = { ok: false, error: e instanceof Error ? e.message : String(e) };
       }
       if (id === latest.current) setLoaded({ sku: target, result });
     },
-    [market],
+    [],
   );
 
   React.useEffect(() => {
     if (sku) {
       void load(sku);
-    } else if (gridStale.current) {
-      // Closed (button, Escape or Back) after an edit: one grid refresh, now.
-      gridStale.current = false;
+    } else if (pageStale.current) {
+      // Closed (button, Escape or Back) after an edit: one page refresh, now.
+      pageStale.current = false;
       router.refresh();
     }
   }, [sku, load, router]);
@@ -111,7 +112,7 @@ export function CatalogDrawerHost({ market }: { market: string }) {
       data={current.data}
       onClose={close}
       onChanged={() => {
-        gridStale.current = true;
+        pageStale.current = true;
         void load(sku);
       }}
     />
@@ -178,7 +179,7 @@ function DrawerShell({
             <div className="shimmer h-72 rounded-xl bg-surface-2" />
           </div>
         ) : (
-          <p className="p-4 text-sm leading-relaxed text-muted">{error ?? t.drawer.notFoundBody}</p>
+          <p className="p-4 text-sm leading-relaxed text-muted">{error ? t.drawer.loadFailedBody : t.drawer.notFoundBody}</p>
         )}
       </div>
     </div>

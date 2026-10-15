@@ -48,6 +48,41 @@ async function withSnapshotWriteLock<T>(write: (tx: Tx) => Promise<T>): Promise<
 export const PATCHED_AT = "hub_patched_at";
 
 /**
+ * The field that says how old a product's copy is: when the store was last
+ * known to look as the copy says, its prices included. A pull stamps the time
+ * it started (the product was read at some point after it); a long apply, the
+ * time of each product's own write. A patch of a few fields (a sale learned)
+ * leaves it as it was: the rest of the copy is no newer for it. A price the
+ * Hub wrote after it is what the store holds, whatever the copy says (see
+ * snapshotCopyTime and planChunk in actions/preview.ts).
+ */
+export const AS_OF = "hub_as_of";
+
+/** A product's stamp, as epoch ms; null when it has none. */
+function stampOf(product: StoreProductModel, key: string): number | null {
+  const at = (product as Record<string, unknown>)[key];
+  const t = typeof at === "string" ? Date.parse(at) : NaN;
+  return Number.isFinite(t) ? t : null;
+}
+
+/** When the snapshot was saved whole (no snapshot: null). */
+async function savedAtIn(tx: Tx): Promise<Date | null> {
+  const rows = await tx
+    .select({ at: storeSnapshot.uploadedAt })
+    .from(storeSnapshot)
+    .where(eq(storeSnapshot.id, SINGLETON))
+    .limit(1);
+  return rows[0]?.at ?? null;
+}
+
+/** Keep a product's copy time before a patch of a few fields stamps it as patched now. */
+function freezeCopyTime(product: StoreProductModel, savedAt: Date | null): void {
+  if (stampOf(product, AS_OF) != null) return;
+  const at = snapshotCopyTime(product, savedAt);
+  if (at != null) (product as Record<string, unknown>)[AS_OF] = new Date(at).toISOString();
+}
+
+/**
  * Rewrite the snapshot's product list as the products `keep` matches plus
  * `incoming`, under the write lock's transaction. Postgres does the swap; only
  * the changed products cross the wire. Returns the new product count, or null
@@ -61,10 +96,13 @@ async function rewriteProducts(
   tx: Tx,
   keep: SQL,
   incoming: StoreModel["products"],
+  /** The incoming products carry their own PATCHED_AT: the time the store was as they say. */
+  stamped = false,
 ): Promise<number | null> {
+  const product = stamped ? sql`p` : sql`p || jsonb_build_object(${PATCHED_AT}::text, now())`;
   const res = await tx.execute(sql`
     with incoming as (
-      select p || jsonb_build_object(${PATCHED_AT}::text, now()) as product
+      select ${product} as product
       from jsonb_array_elements(${JSON.stringify(incoming)}::jsonb) as p
     ),
     kept as (
@@ -161,8 +199,11 @@ export async function saveSnapshotKeepingPatches(
     const patched = rowsOf<{ product: StoreProductModel }>(res).map((r) => r.product);
     const ids = new Set(patched.map((p) => p.id));
     const keys = new Set(patched.map((p) => (p.sku ?? "").trim().toUpperCase()).filter(Boolean));
+    const readSince = since.toISOString();
     const products = [
-      ...model.products.filter((p) => !ids.has(p.id) && !keys.has((p.sku ?? "").trim().toUpperCase())),
+      ...model.products
+        .filter((p) => !ids.has(p.id) && !keys.has((p.sku ?? "").trim().toUpperCase()))
+        .map((p) => ({ ...p, [AS_OF]: readSince })),
       ...patched,
     ];
     const data = { ...model, product_count: products.length, products };
@@ -414,6 +455,97 @@ export async function upsertSnapshotProducts(
   }
 }
 
+/** One product of a long apply, as the store had it right after its write. */
+export interface AsOfPatch {
+  product: StoreProductModel;
+  asOf: Date;
+  /**
+   * The write's own fields, laid over a copy patched after it by a patch of a
+   * few fields (a sale learned meanwhile), instead of replacing that copy.
+   * Omitted: the product replaces the copy (a cleanup changed its sizes).
+   */
+  wrote?: (product: StoreProductModel) => void;
+}
+
+/**
+ * Write products as the store was at a given moment each — a long apply's
+ * products, each as it stood right after its own write:
+ *  - a copy taken after that moment (another write that landed while the
+ *    apply was still going, a pull started after it) is the newer word and
+ *    stays: putting the older copy over it made the newer write look like a
+ *    WordPress edit to the next plan;
+ *  - a copy patched after it in a few fields only (a sale learned) keeps
+ *    them, and takes the write's own fields on top;
+ *  - otherwise the product replaces the copy, dated by its own write, so a
+ *    pull that started after it replaces it (see saveSnapshotKeepingPatches).
+ */
+export async function upsertSnapshotProductsAsOf(entries: AsOfPatch[]): Promise<number | null> {
+  if (entries.length === 0) return null;
+  const ids = [...new Set(entries.map((e) => e.product.id).filter((id) => Number.isInteger(id) && id > 0))];
+  const inIds = (list: number[]) =>
+    sql`${productId} in (select jsonb_array_elements_text(${JSON.stringify(list)}::jsonb)::bigint)`;
+  try {
+    return await withSnapshotWriteLock(async (tx) => {
+      const savedAt = await savedAtIn(tx);
+      const res = await tx.execute(sql`
+        select ${productId} as id, p->>${AS_OF} as as_of, p->>${PATCHED_AT} as patched_at
+        from ${storeSnapshot} s, jsonb_array_elements(s.data->'products') as p
+        where s.id = ${SINGLETON} and ${inIds(ids)}
+      `);
+      const stamps = new Map<number, StoreProductModel>();
+      for (const r of rowsOf<{ id: number | string; as_of: string | null; patched_at: string | null }>(res)) {
+        stamps.set(Number(r.id), { [AS_OF]: r.as_of ?? undefined, [PATCHED_AT]: r.patched_at ?? undefined } as never);
+      }
+      const replace: StoreProductModel[] = [];
+      const merge = new Map<number, AsOfPatch>();
+      for (const e of entries) {
+        const at = e.asOf.getTime();
+        const current = stamps.get(e.product.id);
+        const copied = current ? snapshotCopyTime(current, savedAt) : null;
+        if (copied != null && copied > at) continue;
+        const patched = current ? stampOf(current, PATCHED_AT) : null;
+        if (patched != null && patched > at && e.wrote) merge.set(e.product.id, e);
+        else replace.push({ ...e.product, [AS_OF]: e.asOf.toISOString(), [PATCHED_AT]: e.asOf.toISOString() });
+      }
+      const merged: StoreProductModel[] = [];
+      if (merge.size > 0) {
+        const rows = await tx.execute(sql`
+          select p as product
+          from ${storeSnapshot} s, jsonb_array_elements(s.data->'products') as p
+          where s.id = ${SINGLETON} and ${inIds([...merge.keys()])}
+        `);
+        for (const { product } of rowsOf<{ product: StoreProductModel }>(rows)) {
+          const e = merge.get(product.id);
+          if (!e?.wrote) continue;
+          freezeCopyTime(product, savedAt);
+          e.wrote(product);
+          merged.push(product);
+        }
+      }
+      const incoming = [...replace, ...merged];
+      if (incoming.length === 0) return null;
+      const keys = [...new Set(incoming.map((p) => (p.sku ?? "").trim().toUpperCase()).filter(Boolean))];
+      return rewriteProducts(
+        tx,
+        sql`upper(trim(coalesce(p->>'sku', ''))) not in (select jsonb_array_elements_text(${JSON.stringify(keys)}::jsonb))`,
+        incoming,
+        true,
+      );
+    });
+  } catch (e) {
+    console.warn("[snapshot] patch skipped:", e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
+/**
+ * When the snapshot's copy of a product was taken, at the earliest (see
+ * AS_OF): its own stamp, else its last patch, else when the copy was saved.
+ */
+export function snapshotCopyTime(product: StoreProductModel, savedAt: Date | null): number | null {
+  return stampOf(product, AS_OF) ?? stampOf(product, PATCHED_AT) ?? (savedAt ? savedAt.getTime() : null);
+}
+
 /**
  * Change one product of the snapshot, found by store id: read, changed and
  * written back under the write lock, so nothing written meanwhile is lost —
@@ -434,9 +566,43 @@ export async function patchSnapshotProduct(
     `);
     const product = rowsOf<{ product: StoreProductModel }>(res)[0]?.product;
     if (!product) return false;
+    freezeCopyTime(product, await savedAtIn(tx));
     change(product);
     await rewriteProducts(tx, sql`${productId} <> ${storeProductId}`, [product]);
     return true;
+  });
+}
+
+/**
+ * Change many products of the snapshot at once, found by store id — those
+ * without a SKU too: read, changed and written back in ONE pass under the
+ * write lock, as patchSnapshotProduct does for one. Reading them first and
+ * writing them later lost whatever landed in between (a pull's swap, a
+ * publish batch). Returns how many it changed; 0 when none is in the
+ * snapshot, or there is none.
+ */
+export async function patchSnapshotProducts(
+  storeProductIds: readonly number[],
+  change: (product: StoreProductModel) => void,
+): Promise<number> {
+  const ids = [...new Set(storeProductIds.filter((id) => Number.isInteger(id) && id > 0))];
+  if (ids.length === 0) return 0;
+  const wanted = sql`${productId} in (select jsonb_array_elements_text(${JSON.stringify(ids)}::jsonb)::bigint)`;
+  return withSnapshotWriteLock(async (tx) => {
+    const res = await tx.execute(sql`
+      select p as product
+      from ${storeSnapshot} s, jsonb_array_elements(s.data->'products') as p
+      where s.id = ${SINGLETON} and ${wanted}
+    `);
+    const products = rowsOf<{ product: StoreProductModel }>(res).map((r) => r.product);
+    if (products.length === 0) return 0;
+    const savedAt = await savedAtIn(tx);
+    for (const product of products) {
+      freezeCopyTime(product, savedAt);
+      change(product);
+    }
+    await rewriteProducts(tx, sql`not (${wanted})`, products);
+    return products.length;
   });
 }
 

@@ -2,6 +2,7 @@ import "server-only";
 import { DEMO_BRAND_PARENT, DEMO_TAGS, DEMO_TERM_IDS, DEMO_TERM_NAMES, type DemoProduct } from "@/server/vetrina/fixture-data";
 import { demoShop } from "@/server/vetrina/fixture-source";
 import type { ProductBatchRow, WooClient, WooIndexProduct } from "@/server/woo/client";
+import { highestCollectionTermId } from "./repo";
 
 /**
  * The automatic categories on the Vetrina's demo shop (VETRINA_SOURCE=fixture):
@@ -9,6 +10,10 @@ import type { ProductBatchRow, WooClient, WooIndexProduct } from "@/server/woo/c
  * WooCommerce answers them. A rule saved in demo mode really moves the demo
  * products, and the demo homepage's rails follow — no site involved, nothing
  * written anywhere, a restart puts everything back.
+ *
+ * The catalog's actions use it too: visibility, tags, categories and sales.
+ * The demo's products are sold as one item (WooCommerce's "simple" type): a
+ * sale is the product's own sale price, and the shelf price follows it.
  */
 
 type Term = { id: number; name: string; slug: string; parent?: number };
@@ -32,6 +37,18 @@ function terms(): DemoTerms {
   });
 }
 
+/**
+ * The id of a term created in demo mode. Above every category a rule is
+ * saved on: the rules outlive a restart, the terms created on an earlier
+ * demo shop do not, and a new category taking one of their ids would
+ * collide with its rule (one rule per category).
+ */
+async function nextId(): Promise<number> {
+  const t = terms();
+  t.next = Math.max(t.next, (await highestCollectionTermId().catch(() => 0)) + 1);
+  return t.next++;
+}
+
 function brands(): Term[] {
   return Object.entries(DEMO_BRAND_PARENT).map(([slug, parent]) => ({
     id: DEMO_TERM_IDS[slug],
@@ -51,6 +68,41 @@ const slugify = (name: string) =>
 
 const gmt = (ms: number) => new Date(ms).toISOString().slice(0, 19);
 
+const money = (n: number | null) => (n == null ? "" : n.toFixed(2));
+
+/** Saved: its modified time moves, as WooCommerce's does. */
+function touch(p: DemoProduct): void {
+  p.modified = Math.max(Date.now(), p.modified + 1000);
+}
+
+/**
+ * A write of the fields the catalog's actions send, as WooCommerce takes
+ * them: an empty sale price ends the sale, and the shelf price follows. The
+ * regular price is never among them — nothing here writes it.
+ */
+function applyFields(p: DemoProduct, body: Record<string, unknown>): void {
+  if (typeof body.catalog_visibility === "string") p.visibility = body.catalog_visibility;
+  if ("sale_price" in body) {
+    const sale = Number.parseFloat(String(body.sale_price ?? ""));
+    p.salePrice = Number.isFinite(sale) && sale > 0 && sale < p.regularPrice ? Math.round(sale * 100) / 100 : null;
+  }
+  if ("date_on_sale_to" in body) p.saleTo = typeof body.date_on_sale_to === "string" && body.date_on_sale_to ? body.date_on_sale_to : null;
+  if (p.salePrice == null) p.saleTo = null;
+  p.onSale = p.salePrice != null;
+  p.price = p.salePrice ?? p.regularPrice;
+}
+
+/** The product as WooCommerce's products/{id} answers it, as far as the actions read it. */
+function full(p: DemoProduct): Record<string, unknown> {
+  return {
+    ...view(p),
+    regular_price: money(p.regularPrice),
+    sale_price: money(p.salePrice),
+    date_on_sale_from: null,
+    date_on_sale_to: p.saleTo,
+  };
+}
+
 function view(p: DemoProduct): WooIndexProduct {
   const { categories, tags } = terms();
   const brand = brands().find((b) => b.slug === p.brand);
@@ -58,7 +110,7 @@ function view(p: DemoProduct): WooIndexProduct {
     id: p.id,
     sku: p.sku,
     name: p.name,
-    type: "variable",
+    type: "simple",
     status: "publish",
     permalink: `https://demo.shop/prodotto/${p.id}`,
     categories: p.categories.flatMap((slug) => categories.filter((c) => c.slug === slug)),
@@ -70,6 +122,10 @@ function view(p: DemoProduct): WooIndexProduct {
     stock_status: p.inStock ? "instock" : "outofstock",
     date_created_gmt: p.created.slice(0, 19),
     date_modified_gmt: gmt(p.modified),
+    images: p.image ? [{ src: p.image }] : [],
+    catalog_visibility: p.visibility,
+    menu_order: p.menuOrder,
+    total_sales: p.totalSales,
   };
 }
 
@@ -96,10 +152,30 @@ export function fixtureClient(): WooClient {
         const ids = (field: string) => ((u[field] as { id: number }[] | undefined) ?? []).map((t) => t.id);
         if (u.categories) p.categories = ids("categories").flatMap((id) => categories.filter((c) => c.id === id).map((c) => c.slug));
         if (u.tags) p.tags = ids("tags").flatMap((id) => tags.filter((t) => t.id === id).map((t) => t.slug));
-        // Saved: its modified time moves, as WooCommerce's does.
-        p.modified = Math.max(Date.now(), p.modified + 1000);
+        applyFields(p, u);
+        touch(p);
         return { id: p.id, product: view(p), error: null };
       });
+    },
+
+    async getProduct(id: number) {
+      const p = demoShop().byId.get(id);
+      return p ? full(p) : null;
+    },
+
+    async updateProduct(id: number, body: Record<string, unknown>) {
+      const p = demoShop().byId.get(id);
+      if (!p) throw Object.assign(new Error("Invalid ID."), { status: 404 });
+      applyFields(p, body);
+      touch(p);
+    },
+
+    // No product of the demo has sizes.
+    async getAllVariations() {
+      return [];
+    },
+    async batchVariations() {
+      return { create: [], update: [], delete: [] };
     },
 
     async listCategories() {
@@ -112,15 +188,15 @@ export function fixtureClient(): WooClient {
       return terms().tags;
     },
     async createTag(name: string) {
-      const t = terms();
-      const tag = { id: t.next++, name, slug: slugify(name) || `tag-${t.next}` };
-      t.tags.push(tag);
+      const id = await nextId();
+      const tag = { id, name, slug: slugify(name) || `tag-${id}` };
+      terms().tags.push(tag);
       return tag;
     },
     async createCategory(name: string, parent?: number) {
-      const t = terms();
-      const category = { id: t.next++, name, slug: slugify(name) || `categoria-${t.next}`, parent: parent ?? 0 };
-      t.categories.push(category);
+      const id = await nextId();
+      const category = { id, name, slug: slugify(name) || `categoria-${id}`, parent: parent ?? 0 };
+      terms().categories.push(category);
       return category;
     },
   };

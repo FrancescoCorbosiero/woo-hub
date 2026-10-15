@@ -51,6 +51,20 @@ export interface RuleScope {
     sizeType?: string;                    // "us m"
     sizeMin?: number;                     // numeric size range, inclusive
     sizeMax?: number;
+    /**
+     * The STORE's own taxonomies: a WooCommerce product_cat or product_brand
+     * term id — the owner's "Ricarico 25%" on a category or a brand of the
+     * shop. Covers the term and every term below it (a "Nike" rule covers
+     * "Nike › Off-White"), tested against the product's storeCategories /
+     * storeBrands. Ids, never names: a term renamed in WordPress keeps its
+     * rule. Never matches a product a supplier feed prices, nor one whose
+     * store terms are unknown (see productScopeMatches). Outranks every rule
+     * but a SKU rule (see compareScopePrecedence).
+     */
+    storeCategory?: number;
+    storeBrand?: number;
+    /** The term's name when the rule was saved: for labels only, never matched. */
+    storeTermName?: string;
 }
 
 export interface RoundingConfig {
@@ -72,6 +86,14 @@ export interface MarkupBand {
     upTo: number | null;
     percent: number;
 }
+
+/**
+ * The most rules the list may hold — one cap for every editor: the Margins
+ * tab's save refuses more, and the Vetrina will not add a category's or a
+ * brand's rule past it. Two caps used to disagree: the Vetrina appended past
+ * the tab's 100, and the tab could then never save again.
+ */
+export const MAX_PRICING_RULES = 200;
 
 export interface ScopedPricingRule {
     id: string;
@@ -217,9 +239,11 @@ export function resolveCategoryPath(
             .map((c) => (c ?? "").trim())
             .filter((c) => c.length > 0);
     }
+    // Most specific first; on a tie the stable sort keeps the earlier rule, as
+    // it always has here.
     const winner = taxonomy.rules
         .filter((r) => r.enabled && r.category.trim() && productScopeMatches(r.scope, product))
-        .sort((a, b) => scopeSpecificity(b.scope) - scopeSpecificity(a.scope))[0];
+        .sort((a, b) => compareScopePrecedence(b.scope, a.scope, product))[0];
     return categoryPathOf(winner ? winner.category : taxonomy.defaultCategory);
 }
 
@@ -282,11 +306,45 @@ const sameText = (a: string | undefined, b: string | undefined): boolean => norm
  */
 export type ProductScopeAxes = Pick<
     SourceProduct,
-    "sku" | "title" | "brand" | "source" | "category" | "secondaryCategory" | "model"
+    | "sku"
+    | "title"
+    | "brand"
+    | "source"
+    | "category"
+    | "secondaryCategory"
+    | "model"
+    | "storeCategories"
+    | "storeBrands"
 >;
+
+/** True when the scope names a term of the store's own categories or brands. */
+export function isStoreTermScope(scope: RuleScope): boolean {
+    return scope.storeCategory != null || scope.storeBrand != null;
+}
+
+/**
+ * Whether a store-term margin may price this product at all: only when the
+ * Hub's engine makes its price from a market ask (KicksDB). A supplier feed's
+ * price (GoldenSneakers' presented price) already carries the supplier's
+ * margin and passes through untouched, whatever category the shop files it
+ * under; a store-only product has no engine price to change.
+ */
+export function storeTermsPrice(p: Pick<ProductScopeAxes, "source">): boolean {
+    return (norm(p.source) || "kicksdb") === "kicksdb";
+}
+
+const holdsTerm = (terms: readonly { id: number }[] | undefined, id: number): boolean =>
+    terms?.some((t) => t.id === id) ?? false;
 
 /** The product half of a scope — everything that is not about the size. */
 export function productScopeMatches(scope: RuleScope, p: ProductScopeAxes): boolean {
+    if (isStoreTermScope(scope)) {
+        if (!storeTermsPrice(p)) return false;
+        // The product's terms come with their ancestors, so a parent's rule
+        // finds the products of its sub-terms here too.
+        if (scope.storeCategory != null && !holdsTerm(p.storeCategories, scope.storeCategory)) return false;
+        if (scope.storeBrand != null && !holdsTerm(p.storeBrands, scope.storeBrand)) return false;
+    }
     if (scope.source && !sameText(scope.source, p.source ?? "kicksdb")) return false;
     if (scope.brand && !sameText(scope.brand, p.brand)) return false;
     if (scope.category && !sameText(scope.category, p.category)) return false;
@@ -335,6 +393,14 @@ const SCOPE_WEIGHT: Record<keyof RuleScope, number> = {
     secondaryCategory: 4,
     model: 4,
     sku: 10,
+    // Store terms rank in a tier of their own (scopeTier), where the deeper
+    // term decides first; this weight only separates two rules on terms of
+    // the same depth, one of which narrows further (a size range, say). The
+    // two taxonomies weigh the same on purpose: between a category rule and a
+    // brand rule at the same depth, the list order decides.
+    storeCategory: 3,
+    storeBrand: 3,
+    storeTermName: 0, // a label, never matched
 };
 
 /** Specificity = summed weight of the constrained fields; higher wins. */
@@ -345,6 +411,68 @@ export function scopeSpecificity(scope: RuleScope): number {
         total += SCOPE_WEIGHT[key as keyof RuleScope] ?? 1;
     }
     return total;
+}
+
+/**
+ * The precedence tier of a scope (docs/vetrina-customer-hub.md §8.2):
+ *
+ *   3  a SKU rule        — the operator's word on one exact product;
+ *   2  a store-term rule — the owner's margin on a category or brand of the shop;
+ *   1  everything else   — source, brand, family, name, sizes.
+ *
+ * Weights alone could not say this: a family + sub-family + name rule (11)
+ * outweighed a bare SKU rule (10), and no weight can put "the owner's
+ * category" above every combination of the catalog's own axes. The tier
+ * decides first; the weight only ranks rules within a tier.
+ */
+export function scopeTier(scope: RuleScope): 1 | 2 | 3 {
+    if (scope.sku) return 3;
+    if (isStoreTermScope(scope)) return 2;
+    return 1;
+}
+
+/**
+ * How deep the scope's store term sits in this product's trees (the deeper
+ * of the two when it names both); 0 when it names none or the product does
+ * not carry it.
+ */
+function storeTermDepth(scope: RuleScope, p?: Pick<ProductScopeAxes, "storeCategories" | "storeBrands">): number {
+    let depth = 0;
+    if (scope.storeCategory != null) {
+        depth = Math.max(depth, p?.storeCategories?.find((t) => t.id === scope.storeCategory)?.depth ?? 0);
+    }
+    if (scope.storeBrand != null) {
+        depth = Math.max(depth, p?.storeBrands?.find((t) => t.id === scope.storeBrand)?.depth ?? 0);
+    }
+    return depth;
+}
+
+/**
+ * Which of two scopes that both match `product` is the more specific: < 0
+ * when `a` ranks below `b`, > 0 above, 0 when only the list order can tell
+ * (and then the LATER pricing rule wins, as it always has).
+ *
+ *   1. the tier (scopeTier): SKU > store term > everything else;
+ *   2. between two store-term rules, the deeper term: a sub-term's rule
+ *      beats its parent's ("Nike › Off-White" over "Nike"), and a category
+ *      rule and a brand rule meet on the same scale — the term deeper in
+ *      its own tree wins;
+ *   3. the weight (scopeSpecificity), as before tiers existed.
+ *
+ * `product` gives the depths; without it two store-term rules tie on step 2.
+ */
+export function compareScopePrecedence(
+    a: RuleScope,
+    b: RuleScope,
+    product?: Pick<ProductScopeAxes, "storeCategories" | "storeBrands">,
+): number {
+    const tier = scopeTier(a) - scopeTier(b);
+    if (tier !== 0) return tier;
+    if (scopeTier(a) === 2) {
+        const depth = storeTermDepth(a, product) - storeTermDepth(b, product);
+        if (depth !== 0) return depth;
+    }
+    return scopeSpecificity(a) - scopeSpecificity(b);
 }
 
 /** True if the rule states, in any of the three mechanisms, what the margin is. */
@@ -365,15 +493,21 @@ export function declaresMarkup(rule: ScopedPricingRule): boolean {
  * that is NOT the margin — rounding, VAT, floors, delta guards, the anomaly
  * nets — still merges field-by-field, so the house defaults keep protecting a
  * family rule that only means to change the margin.
+ *
+ * "Most specific" is compareScopePrecedence: a SKU rule, then a store-term
+ * rule (the deeper term first), then the rest by weight; on a tie the later
+ * rule in the list.
  */
 export function resolveEffectiveRule(
     product: SourceProduct,
     variant: SourceVariant,
     config: AppConfig,
 ): EffectivePricingRule | null {
+    // General first, so the more specific rules write last. The sort is
+    // stable: on a tie the list order stands, and the later rule wins.
     const matched = config.pricingRules
         .filter((r) => r.enabled && scopeMatches(r.scope, product, variant))
-        .sort((a, b) => scopeSpecificity(a.scope) - scopeSpecificity(b.scope)); // general first
+        .sort((a, b) => compareScopePrecedence(a.scope, b.scope, product));
 
     if (matched.length === 0) return null;
 
@@ -456,16 +590,11 @@ export function winningMarkupRuleId(
     rules: ScopedPricingRule[],
 ): string | null {
     let winner: ScopedPricingRule | null = null;
-    let best = -1;
     for (const r of rules) {
         if (!r.enabled || !declaresMarkup(r)) continue;
         if (!productScopeMatches(r.scope, axes)) continue;
-        const weight = scopeSpecificity(r.scope);
         // Ties go to the later rule, matching the resolver's stable sort.
-        if (weight >= best) {
-            best = weight;
-            winner = r;
-        }
+        if (!winner || compareScopePrecedence(r.scope, winner.scope, axes) >= 0) winner = r;
     }
     return winner?.id ?? null;
 }

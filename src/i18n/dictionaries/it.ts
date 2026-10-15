@@ -1,4 +1,5 @@
 import type { RoundingMode } from "@/server/config/summary";
+import { catalogIt } from "./catalog/it";
 
 /**
  * Italian dictionary — the source of truth. Every other locale must match this
@@ -17,7 +18,6 @@ export const it = {
   header: {
     navVetrina: "Vetrina",
     navDashboard: "Panoramica",
-    navCatalog: "Catalogo",
     navOrders: "Ordini",
     navMargins: "Margini",
     navSync: "Sync",
@@ -34,8 +34,6 @@ export const it = {
     step: (n: number, of: number) => `Passo ${n} di ${of}`,
     homeHint: "Lo stato di tutto, in un colpo d'occhio. Da qui parte il percorso.",
     importHint: "Aggiungi SKU al catalogo, a mano o da file.",
-    catalogHint: (n: number | null) =>
-      n == null ? "Tutto l'inventario in un posto solo." : `${n} prodotti a catalogo.`,
     publishHint: (n: number | null) =>
       n == null
         ? "Crea sul negozio i prodotti che hai a catalogo."
@@ -94,10 +92,10 @@ export const it = {
     syncCardDesc:
       "Confronta i prezzi del negozio con le fonti e applica le differenze. Nulla viene scritto senza la tua conferma.",
     syncCardCta: "Vai alla sincronizzazione",
-    catalogCardTitle: "Sfoglia il catalogo",
-    catalogCardDesc:
-      "Cerca un prodotto, controlla i prezzi taglia per taglia e blocca quelli che decidi tu.",
-    catalogCardCta: "Apri il catalogo",
+    publishCardTitle: "Pubblica i prodotti nuovi",
+    publishCardDesc:
+      "I prodotti del listino che il negozio non vende ancora: scegli quali creare, con taglie, prezzi e foto.",
+    publishCardCta: "Vai a Pubblica",
     importCardTitle: "Aggiungi prodotti",
     importCardDesc:
       "Incolla una lista di codici SKU o carica un file: i prodotti riconosciuti entrano nel catalogo.",
@@ -254,6 +252,9 @@ export const it = {
   product: {
     exactMatch: "match esatto",
     noSku: "(nessuno SKU)",
+    /** Opens the product drawer: sizes and asks, locks, the price source, a re-sync. */
+    open: "Scheda",
+    openHint: "Apri la scheda del prodotto: taglie e prezzi, prezzi bloccati, fonte del prezzo",
     variants: (n: number) => `${n} varianti`,
     sel: (a: number, b: number) => `${a}/${b} sel`,
     headerSize: "Taglia (EU)",
@@ -334,73 +335,9 @@ export const it = {
     parentsRealigned: (n: number) => `${n} attributi prodotto riallineati`,
   },
   discovery: {
-    title: "Catalogo",
-    desc: "Tutto l'inventario del negozio in un posto solo: prodotti con prezzi StockX, prodotti del listino fornitore e prodotti solo negozio.",
     total: (n: number) => `${n} SKU`,
-    searchPlaceholder: "Cerca per SKU o modello…",
-    brands: "Brand",
-    allBrands: "Tutti i brand",
-    categories: "Categorie",
-    moreCategories: (n: number) =>
-      `+${n} altre categorie non elencate. Se sono quasi quante i prodotti, la fonte non ha un vero albero: sistemalo in Tassonomie.`,
-    allCategories: "Tutte le categorie",
-    uncategorized: "Senza categoria",
-    genderLabel: "Genere",
-    genderName: (g: string) =>
-      (
-        {
-          men: "Uomo",
-          women: "Donna",
-          child: "Bambini",
-          kids: "Bambini",
-          youth: "Ragazzi",
-          preschool: "Bambini (PS)",
-          toddler: "Bimbi (TD)",
-          infant: "Neonati",
-          unisex: "Unisex",
-        } as Record<string, string>
-      )[g] ?? g,
-    freshnessLabel: "Freschezza",
-    freshness: { all: "Tutti", fresh: "Prezzi freschi", stale: "Da aggiornare" },
-    sortLabel: "Ordina per",
-    sort: {
-      added: "Aggiunti di recente",
-      brand: "Brand",
-      title: "Nome",
-      fetched: "Aggiornati di recente",
-      priceAsc: "Prezzo crescente",
-      priceDesc: "Prezzo decrescente",
-    },
-    priceMin: "Min €",
-    priceMax: "Max €",
-    clearFilters: "Azzera filtri",
-    from: (p: string) => `da ${p}`,
-    noAsk: "nessun prezzo",
-    sizes: (n: number) => `${n} taglie`,
     freshBadge: "prezzi freschi",
     staleBadge: "da aggiornare",
-    gsBadgeHint:
-      "Prodotto gestito dal fornitore GoldenSneakers: taglie, prezzi finali e stock reale arrivano dal suo listino.",
-    tabs: {
-      all: "Tutti",
-      kicksdb: "StockX",
-      kicksdbHint: "Prodotti con prezzi automatici da StockX (via KicksDB)",
-      goldensneakers: "GoldenSneakers",
-      goldensneakersHint:
-        "Prodotti gestiti dal fornitore GoldenSneakers: taglie, prezzi e stock reali dal suo listino",
-      woo: "Negozio",
-      wooHint:
-        "Prodotti solo negozio: nessun listino collegato — prezzi e stock si modificano direttamente dalla scheda prodotto",
-    },
-    wooBadge: "Negozio",
-    wooBadgeHint:
-      "Prodotto solo negozio: non collegato a nessun listino — prezzi e stock si modificano direttamente dalla scheda",
-    lockedHint: (n: number) =>
-      n === 1
-        ? "1 prezzo bloccato a mano — la sincronizzazione non lo tocca"
-        : `${n} prezzi bloccati a mano — la sincronizzazione non li tocca`,
-    empty: "Nessun prodotto con questi filtri.",
-    emptyCatalog: "Il catalogo è vuoto — aggiungi SKU dalla scheda Importa o esegui una sincronizzazione.",
     page: (p: number, n: number) => `Pagina ${p} di ${n}`,
     prev: "Precedente",
     next: "Successiva",
@@ -410,6 +347,7 @@ export const it = {
     copySku: "Copia SKU",
     notFoundTitle: "Prodotto non trovato",
     loadFailed: "Impossibile caricare il prodotto",
+    loadFailedBody: "Qualcosa è andato storto leggendo questo prodotto. Riprova tra poco; se succede ancora, i suoi dati nel catalogo potrebbero essere incompleti.",
     notFoundBody:
       "Questo prodotto non è nel catalogo per il mercato attivo. Il link potrebbe essere vecchio, oppure il prodotto è stato rimosso.",
     audit: "Verifica prezzi (API)",
@@ -452,7 +390,7 @@ export const it = {
     wpEditHint: (hub: string) =>
       `Cambiato sul negozio dopo l'ultima scrittura dell'Hub (${hub}): la sincronizzazione non lo sovrascrive finché non decidi.`,
     wpEditKeep: "Tieni",
-    wpEditKeepHint: "Blocca questo prezzo: da ora il Hub scrive questo",
+    wpEditKeepHint: "Blocca questo prezzo: da ora l'Hub scrive questo",
     wpEditReprice: "Prezzo dell'Hub",
     wpEditRepriceHint: "Ridà la taglia alle regole e scrive subito il prezzo dell'Hub",
     sourceTitle: "Chi decide i prezzi di questo prodotto",
@@ -474,6 +412,8 @@ export const it = {
     ruleMarginBands: (n: number) => `ricarico dinamico a ${n} fasce`,
     rulePassthrough: "prezzo finale del fornitore, nessun ricarico applicato",
     ruleMixed: "taglie diverse seguono regole diverse",
+    storeTermsUnknown:
+      "Ora non riesco a leggere categorie e brand del negozio: questi prezzi potrebbero non tenere conto del margine di una categoria o di un brand del negozio. Finché non li rileggo, il sync non scrive i prezzi di questo prodotto.",
     ruleEdit: "Modifica la regola",
     ruleCreate: "Dai a questa famiglia una regola sua",
     storeTitle: "Prezzi e stock sul negozio",
@@ -614,16 +554,20 @@ export const it = {
       sizesTitle: (n: number) =>
         `${n === 1 ? "1 taglia mancante" : `${n} taglie mancanti`} sullo store, da aggiungere (le altre taglie non vengono toccate):`,
       sizesAdded: (n: number) => `${n === 1 ? "1 taglia aggiunta" : `${n} taglie aggiunte`} sullo store ✓`,
+      keptChanged: (n: number) =>
+        `${n === 1 ? "1 prezzo lasciato com'era" : `${n} prezzi lasciati com'erano`}: sullo store sono cambiati dopo l'anteprima. Quelli cambiati su WordPress sono in «Prezzi cambiati su WordPress».`,
+      keptOnSale: (n: number) =>
+        `${n === 1 ? "1 taglia è andata in saldo" : `${n} taglie sono andate in saldo`} dopo l'anteprima: il prezzo non è stato toccato.`,
     },
     storeEdits: {
       title: "Prezzi cambiati su WordPress",
       count: (n: number) => (n === 1 ? "1 prezzo tenuto" : `${n} prezzi tenuti`),
-      desc: "Qualcuno li ha cambiati sul negozio dopo l'ultima scrittura dell'Hub — da wp-admin, o un altro plugin. La sincronizzazione non li sovrascrive, nemmeno quella automatica: decidi tu. «Tieni» blocca il prezzo del negozio con un lucchetto, così da ora il Hub scrive quello. «Usa il prezzo dell'Hub» lo ridà alle regole e lo scrive subito.",
+      desc: "Qualcuno li ha cambiati sul negozio dopo l'ultima scrittura dell'Hub — da wp-admin, o un altro plugin. La sincronizzazione non li sovrascrive, nemmeno quella automatica: decidi tu. «Tieni» blocca il prezzo del negozio con un lucchetto, così da ora l'Hub scrive quello. «Usa il prezzo dell'Hub» lo ridà alle regole e lo scrive subito.",
       store: (price: string) => `Negozio ${price}`,
       hub: (price: string) => `Hub ${price}`,
       since: (when: string) => `dal ${when}`,
       keep: "Tieni",
-      keepHint: "Blocca questo prezzo: da ora il Hub scrive questo",
+      keepHint: "Blocca questo prezzo: da ora l'Hub scrive questo",
       reprice: "Usa il prezzo dell'Hub",
       repriceHint: "Ridà la taglia alle regole e scrive subito il prezzo dell'Hub",
       keepAll: (n: number) => `Tieni tutti (${n})`,
@@ -820,19 +764,24 @@ export const it = {
   },
   margins: {
     title: "Margini",
-    desc: "Le regole di prezzo, dalla più generale alla più specifica. Il MARGINE lo decide una regola sola: la più specifica che ne indica uno: il suo ricarico sostituisce per intero quello generale (fasce comprese). Tutto il resto — arrotondamento, IVA, margine minimo, reti di sicurezza — si eredita dalle regole più generali. Esempi: il listino dinamico a fasce per tutto il resto, «Yeezy › Foam RNNR» al 45%, «Jordan» +3 € fissi.",
+    desc: "Le regole di prezzo, dalla più generale alla più specifica. Il MARGINE lo decide una regola sola: la più specifica che ne indica uno: il suo ricarico sostituisce per intero quello generale (fasce comprese). Tutto il resto — arrotondamento, IVA, margine minimo, reti di sicurezza — si eredita dalle regole più generali. Esempi: il listino dinamico a fasce per tutto il resto, «Yeezy › Foam RNNR» al 45%, «Jordan» +3 € fissi. Un margine su una categoria o un brand del NEGOZIO (dalla Vetrina, o da «Margine per categoria o brand del negozio») batte ogni regola di brand, famiglia, nome o sorgente, e perde solo contro una regola su un singolo SKU.",
     addRule: "Aggiungi regola",
+    addStoreRule: "Margine per categoria o brand del negozio",
     save: "Salva regole",
     saving: "Salvataggio…",
     saved: "Regole salvate ✓",
     saveFailed: "Salvataggio fallito",
+    staleRules:
+      "Non salvato: le regole sono cambiate da quando hai aperto la pagina (per esempio un ricarico impostato dalla Vetrina). Ricarica la pagina per vederle, poi rifai le tue modifiche.",
+    reload: "Ricarica la pagina",
+    rulesFull: (max: number) => `Al massimo ${max} regole: togline una per aggiungerne un'altra.`,
     deleteRule: "Elimina",
     enabled: "Attiva",
     generalRule: "Regola generale (tutto il resto)",
     gsRule: "Listino GoldenSneakers — passthrough",
     customRule: (n: number) => `Regola ${n}`,
     scopeTitle: "Si applica a",
-    scopeHint: "Campo vuoto = qualsiasi. Vince sempre la regola che descrive meno prodotti: SKU › sotto-famiglia e nome › famiglia › brand › sorgente.",
+    scopeHint: "Campo vuoto = qualsiasi. Vince sempre la regola più specifica: SKU › categoria o brand del negozio › sotto-famiglia e nome › famiglia › brand › sorgente.",
     scopeSource: "Sorgente",
     scopeSourceAny: "Qualsiasi",
     scopeAny: "Qualsiasi",
@@ -856,6 +805,36 @@ export const it = {
         : min != null
           ? `taglie da ${min} in su`
           : `taglie fino a ${max}`,
+    sumStoreCategory: (name: string | null, id: number) =>
+      `${name ? `categoria del negozio «${name}»` : `categoria del negozio n. ${id}`} con le sue sotto-categorie`,
+    sumStoreBrand: (name: string | null, id: number) =>
+      `${name ? `brand del negozio «${name}»` : `brand del negozio n. ${id}`} con i suoi sotto-brand`,
+    sumKicksOnly: "solo i prodotti col prezzo da KicksDB",
+    // The shop's own taxonomies — the Vetrina's "Ricarico" on a category or a brand.
+    storeCategoryRule: (name: string | null, id: number) =>
+      name ? `Categoria del negozio «${name}»` : `Categoria del negozio n. ${id}`,
+    storeBrandRule: (name: string | null, id: number) =>
+      name ? `Brand del negozio «${name}»` : `Brand del negozio n. ${id}`,
+    storeCategoryField: "Categoria del negozio",
+    storeBrandField: "Brand del negozio",
+    storeTermChange: "Cambia",
+    storeTermHint: (taxonomy: "category" | "brand") =>
+      `${taxonomy === "category" ? "Vale anche per le sue sotto-categorie" : "Vale anche per i suoi sotto-brand"}. Batte le regole di brand, famiglia, nome e sorgente; perde solo contro una regola su un singolo SKU. Se un prodotto è in due categorie o brand con una regola, vince il più interno (una sotto-categoria batte la sua categoria); a pari livello, l'ultima regola della lista. I prodotti col prezzo di GoldenSneakers e quelli solo del negozio non cambiano.`,
+    storePickTitle: "Scegli una categoria o un brand del negozio",
+    storePickCategories: "Categorie",
+    storePickBrands: "Brand",
+    storePickSearch: "Cerca…",
+    storePickLoading: "Leggo categorie e brand del negozio…",
+    storePickFailed: "Non riesco a leggere categorie e brand del negozio.",
+    storePickRetry: "Riprova",
+    storePickNoTerms: "Il negozio non ha ancora categorie o brand letti.",
+    storePickNoMatch: "Nessuna corrispondenza",
+    storePickMore: (n: number) => `…e altri ${n}: continua a scrivere`,
+    storePickRuled: "ha già una regola",
+    storePickProducts: (n: number) => (n === 1 ? "1 prodotto" : `${n} prodotti`),
+    storePickDemo:
+      "Nel negozio dimostrativo i margini per categoria o brand non si aggiungono: gli id sono della demo, non del negozio vero, e finirebbero su altri prodotti.",
+    storePickCancel: "Annulla",
     scopeBrand: "Brand",
     scopeCategory: "Famiglia",
     scopeSecondaryCategory: "Sotto-famiglia",
@@ -900,6 +879,8 @@ export const it = {
       n === 1 ? "Decide il margine di 1 prodotto" : `Decide il margine di ${n} prodotti`,
     coverageNone:
       "Non si applica a nessun prodotto — o non corrisponde a nulla, o una regola più specifica la scavalca",
+    coverageNoneStore:
+      "Non si applica a nessun prodotto — la categoria o il brand è vuoto, i suoi prodotti hanno il prezzo del fornitore, oppure una regola su un singolo SKU o su una categoria o un brand più interno la scavalca",
     coverageSizeScoped: "(solo sulle taglie indicate)",
     exampleLabel: "Esempio:",
   },
@@ -1069,7 +1050,8 @@ export const it = {
       remove: "Togli la condizione",
       fields: {
         tag: "Tag",
-        brand: "Marchio",
+        // "Brand", as the Vetrina says it everywhere (its Categorie | Brand, the filters, the product sheet).
+        brand: "Brand",
         category: "Categoria",
         attribute: "Attributo",
         title: "Nome del prodotto",
@@ -1168,7 +1150,7 @@ export const it = {
     },
     words: {
       tag: { is: (v: string) => `tag «${v}»`, isNot: (v: string) => `senza il tag «${v}»` },
-      brand: { is: (v: string) => `marchio ${v}`, isNot: (v: string) => `marchio diverso da ${v}` },
+      brand: { is: (v: string) => `brand ${v}`, isNot: (v: string) => `brand diverso da ${v}` },
       category: { is: (v: string) => `in «${v}»`, isNot: (v: string) => `non in «${v}»` },
       attribute: {
         is: (name: string, v: string) => `${name}: ${v}`,
@@ -1408,6 +1390,8 @@ export const it = {
     shown: (shown: number, total: number) => `${shown} di ${total} mostrati — usa Copia per l'elenco completo`,
     failed: "Impossibile caricare il catalogo",
   },
+  /** The Vetrina's catalog tab: its own files under ./catalog. */
+  vetrinaCatalog: catalogIt,
   vetrina: {
     title: "Vetrina",
     demo: "Negozio demo — nulla va sul sito",
@@ -1435,7 +1419,7 @@ export const it = {
     } as Record<string, string>,
     editor: {
       termCategory: "Categoria",
-      termBrand: "Marchio",
+      termBrand: "Brand",
       visibleCount: (n: number) => (n === 1 ? "1 prodotto visibile" : `${n} prodotti visibili`),
       fold: (n: number) => `In homepage si vedono i primi ${n}`,
       autoLabel: "Dopo i fissati, in automatico:",
@@ -1495,6 +1479,8 @@ export const it = {
       publishedDemo: "Salvato nel negozio demo",
       discardConfirm: "Annullare le modifiche non ancora pubblicate?",
       leaveConfirm: "Hai modifiche non pubblicate. Uscire lo stesso?",
+      /** The section's products moved (a rule, a tag) while the owner had changes not yet published: they stay. */
+      changedMeanwhile: "La sezione è cambiata nel frattempo: le tue modifiche restano, controllale prima di pubblicare.",
       menu: {
         title: "Sezione",
         history: "Cronologia",
@@ -1592,13 +1578,28 @@ export const it = {
         goldensneakers: "Prezzo del fornitore",
         woo: "Prezzo gestito a mano",
       } as Record<string, string>,
-      rule: (label: string) => `Margine: ${label}`,
-      generalRule: "margine standard",
+      rule: (label: string) => `Ricarico: ${label}`,
+      generalRule: "ricarico standard",
+      /** A margin set on one of the shop's own categories or brands (the Catalogo's "Ricarico"). */
+      storeTermRule: (name: string, taxonomy: "category" | "brand") =>
+        `«${name}» (${taxonomy === "category" ? "categoria" : "brand"} del negozio)`,
+      storeTermsUnknown:
+        "Ora non riesco a leggere categorie e brand del negozio: questi prezzi potrebbero non tenere conto del loro ricarico. Finché non li rileggo, i prezzi di questo prodotto sul sito restano come sono.",
+      storeTermsDemo:
+        "Negozio dimostrativo: le sue categorie e i suoi brand non sono quelli del negozio vero, quindi qui i prezzi non tengono conto del loro ricarico.",
       belowMarket: (ask: string) => `Sotto il prezzo di mercato (${ask})`,
       storeEdit: (price: string) => `Cambiato su WordPress: ${price}`,
       storeEditKeep: "Tienilo",
       storeEditReprice: "Usa il prezzo dell'Hub",
       storeEditRepriced: "Prezzo dell'Hub di nuovo sul sito",
+      keptChanged: (n: number) =>
+        n === 1
+          ? "1 taglia lasciata com'è: il suo prezzo era stato cambiato su WordPress. La trovi qui sotto."
+          : `${n} taglie lasciate come sono: i loro prezzi erano stati cambiati su WordPress. Le trovi qui sotto.`,
+      keptOnSale: (n: number) =>
+        n === 1
+          ? "1 taglia è in saldo sul sito: il suo prezzo non è stato toccato."
+          : `${n} taglie sono in saldo sul sito: i loro prezzi non sono stati toccati.`,
       noSnapshot: "Per pubblicare i prezzi serve prima un aggiornamento dal negozio (Sync).",
       openSite: "Apri sul sito",
       editWp: "Modifica su WordPress",
@@ -1623,7 +1624,7 @@ export const it = {
       sheetNew: (name: string) => `«${name}» automatica`,
       sheetEdit: (name: string) => `Regola di «${name}»`,
       intro:
-        "Decidi quali prodotti entrano nella categoria: il Hub li mette e li toglie da solo, anche quando cambi i tag da WordPress.",
+        "Decidi quali prodotti entrano nella categoria: l'Hub li mette e li toglie da solo, anche quando cambi i tag da WordPress.",
       on: "Attiva",
       off: "In pausa",
       save: "Salva e applica",
@@ -1632,20 +1633,20 @@ export const it = {
       delete: "Togli la regola",
       deleteConfirm:
         "Togliere la regola? La categoria resta com'è, con i prodotti che ha adesso: da quel momento la riempi a mano.",
-      deleted: "Regola tolta: la sezione ora si riempie a mano.",
-      applying: "Aggiorno la sezione…",
+      // Worded around the category: the sheet opens from its catalog screen too, where no section may show it.
+      deleted: "Regola tolta: la categoria ora si riempie a mano.",
+      applying: "Aggiorno la categoria…",
       applied: (n: number) =>
         n === 0
           ? "Regola salvata: nessun prodotto da spostare."
           : n === 1
             ? "Regola salvata: 1 prodotto spostato."
             : `Regola salvata: ${n} prodotti spostati.`,
-      savedPaused: "Regola salvata in pausa: la sezione non cambia.",
-      slow: "Regola salvata: la sezione si aggiorna tra poco.",
+      savedPaused: "Regola salvata in pausa: la categoria non cambia.",
+      slow: "Regola salvata: la categoria si aggiorna tra poco.",
       heldHint: "L'ultimo controllo ha trovato un cambiamento grande e aspetta la tua conferma.",
       confirm: "Conferma e applica",
       loading: "Carico…",
-      failed: "Non riuscito",
     },
     tags: {
       title: "Tag",
@@ -1662,6 +1663,8 @@ export const it = {
       pending: "Tag salvati: le sezioni si aggiornano tra poco.",
       inCollections: (names: string) => `Nelle categorie automatiche: ${names}`,
       failed: "Tag non salvati",
+      loadFailed: "Non riesco a leggere i tag del prodotto.",
+      gone: "Questo prodotto non c'è più nel negozio.",
       loading: "Carico i tag…",
       refused: (reason: string) => `Tag salvati, ma il negozio non ha accettato il cambio di categoria: ${reason}`,
     },

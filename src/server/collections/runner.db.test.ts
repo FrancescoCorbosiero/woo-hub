@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CollectionCondition } from "@core/collections";
 import type { WooClient, WooIndexProduct } from "@/server/woo/client";
 
@@ -36,6 +36,10 @@ interface FakeProduct {
   stock: string;
   created: number;
   modified: number;
+  image?: string;
+  visibility?: string;
+  menuOrder?: number;
+  totalSales?: number;
 }
 
 type Term = { id: number; name: string; slug: string; parent?: number };
@@ -118,6 +122,10 @@ class FakeStore {
       stock_status: p.stock,
       date_created_gmt: gmt(p.created),
       date_modified_gmt: gmt(p.modified),
+      images: p.image ? [{ src: p.image }] : [],
+      catalog_visibility: p.visibility ?? "visible",
+      menu_order: p.menuOrder ?? 0,
+      total_sales: String(p.totalSales ?? 0),
     };
   }
 
@@ -185,11 +193,25 @@ describe.skipIf(!enabled)("the automatic categories' runs (real SQL)", () => {
     return insertCollection({ termId, name, match: "all", conditions, enabled: true });
   }
 
-  it("does nothing at all while no category is automatic — not one request", async () => {
-    const { runCheck } = await load();
+  it("keeps the index fresh while no category is automatic, and writes nothing", async () => {
+    const { runCheck, readIndex } = await load();
     const store = new FakeStore();
-    expect(await runCheck({ client: store.client })).toBeNull();
-    expect(store.reads).toEqual([]);
+    store.add({ id: 1 });
+    store.add({ id: 2, categories: [10], image: "https://shop/dunk.jpg", visibility: "hidden", menuOrder: 30, totalSales: 17 });
+    expect(await runCheck({ client: store.client })).toEqual({ read: 2, moved: 0 });
+    const index = await readIndex();
+    expect(index.map((p) => p.id)).toEqual([1, 2]);
+    // What the Vetrina's catalog lists, kept with the rest.
+    expect(index[1]).toMatchObject({ image: "https://shop/dunk.jpg", visibility: "hidden", menuOrder: 30, totalSales: 17 });
+    expect(index[0]).toMatchObject({ image: "", visibility: "visible", menuOrder: 0, totalSales: 0 });
+    expect(store.batches).toEqual([]);
+
+    // The next check asks only what changed since (with its overlap).
+    store.edit(2, { name: "Renamed" });
+    expect((await runCheck({ client: store.client }))?.moved).toBe(0);
+    expect(store.reads.at(-1)?.modifiedAfter).toBeDefined();
+    expect((await readIndex()).find((p) => p.id === 2)?.name).toBe("Renamed");
+    expect(store.batches).toEqual([]);
   });
 
   it("reads the store whole the first time, then fills and empties the category by the rule", async () => {
@@ -238,6 +260,32 @@ describe.skipIf(!enabled)("the automatic categories' runs (real SQL)", () => {
     // A check, not a full read: one listing of what changed, one live re-read.
     expect(store.reads[0].modifiedAfter).toBeDefined();
     expect(store.reads.filter((r) => !r.modifiedAfter && !r.include)).toEqual([]);
+  });
+
+  it("a row the Vetrina writes into the index between checks does not move the check past an edit made before it", async () => {
+    const { runCheck, upsertIndexRows, readIndex } = await load();
+    const at = (hhmm: string) => Date.parse(`2026-10-05T${hhmm}:00Z`);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const store = new FakeStore();
+      store.clock = at("11:00");
+      store.add({ id: 1 });
+      store.add({ id: 2 });
+      vi.setSystemTime(at("12:00"));
+      await runCheck({ client: store.client }); // the first of the process: the whole store
+      // Edited in WordPress at 12:01…
+      store.clock = at("12:00");
+      store.edit(1, { name: "Edited in WordPress" });
+      // …then at 12:14 a Vetrina action writes product 2, and the index takes the store's answer.
+      const row = (await readIndex()).find((r) => r.id === 2)!;
+      await upsertIndexRows([{ ...row, dateModified: new Date(at("12:14")).toISOString() }]);
+      // The 12:15 check starts from its own last read, not from 12:14 less its overlap.
+      vi.setSystemTime(at("12:15"));
+      await runCheck({ client: store.client });
+      expect((await readIndex()).find((r) => r.id === 1)?.name).toBe("Edited in WordPress");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("writes nothing when the live store already disagrees with a stale index", async () => {
@@ -444,5 +492,17 @@ describe.skipIf(!enabled)("the automatic categories' runs (real SQL)", () => {
     expect(edit.tags.map((t) => t.name)).toEqual(["saldi", "estate"]);
     expect(store.membersOf(10)).toEqual([1]);
     expect((await listChanges()).find((c) => c.productId === 1)?.trigger).toBe("product");
+  });
+
+  it("a product sheet's save writes its change, not the list it loaded: a tag added meanwhile stays", async () => {
+    const { setProductTags } = await load();
+    const store = new FakeStore();
+    store.tags.push({ id: 8, name: "estate", slug: "estate" });
+    store.add({ id: 1, tags: [7] });
+    // The sheet opened on [saldi]; a bulk "Tag +" put "estate" on the product since.
+    store.products.get(1)!.tags = [7, 8];
+    // The sheet takes "saldi" off and adds a new tag: "estate" is not the sheet's to drop.
+    const edit = await setProductTags(1, [{ name: "nuovo" }], { client: store.client, base: [7] });
+    expect(edit.tags.map((t) => t.name)).toEqual(["estate", "nuovo"]);
   });
 });

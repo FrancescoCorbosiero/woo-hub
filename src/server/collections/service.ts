@@ -211,6 +211,17 @@ export async function loadForTerm(termId: number): Promise<TermEditor> {
   };
 }
 
+/**
+ * The rule editor opened for a NEW automatic category (the Vetrina's "+", a
+ * filter saved as a category): the choices, and whether there is an index to
+ * preview against — no rule yet.
+ */
+export async function loadCollectionOptions(): Promise<TermEditor> {
+  const [options, info] = await Promise.all([loadOptions(), repo.indexInfo()]);
+  await freshen();
+  return { view: null, options, indexProducts: info.products, demo: demoMode() };
+}
+
 /* ---------------------------------------------------------------- *
  * Checking and saving a draft
  * ---------------------------------------------------------------- */
@@ -391,8 +402,12 @@ export async function productTags(productId: number): Promise<ProductTagsView> {
 }
 
 /** Save a product's tags; its automatic categories follow at once (see setProductTags). */
-export async function saveProductTags(productId: number, tags: { id?: number; name: string }[]): Promise<ProductTagsResult> {
+export async function saveProductTags(
+  productId: number,
+  tags: { id?: number; name: string }[],
+  base?: number[],
+): Promise<ProductTagsResult> {
   await woo();
-  const edit = await setProductTags(productId, tags);
+  const edit = await setProductTags(productId, tags, { base });
   return { ...edit, tags: edit.tags.map(asOption) };
 }

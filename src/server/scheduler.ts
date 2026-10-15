@@ -55,8 +55,9 @@ import { schedulerRuns, type SchedulerRunRow } from "@/server/db/schema";
  *
  * And every SCHEDULER_COLLECTIONS_MINUTES (default 5) the automatic
  * categories check the store for changes and take in or let go of the
- * products their rules now say (src/server/collections). Not a single
- * request reaches the store while no category is automatic.
+ * products their rules now say (src/server/collections). While no category
+ * is automatic the check still keeps the store index fresh — the Vetrina's
+ * catalog lists from it — and writes nothing.
  *
  * On by default in production, off in dev; SCHEDULER=on|off overrides.
  * Needs a long-running server (`next start`, Docker) — a serverless
@@ -153,7 +154,7 @@ export interface SchedulerStatus {
   mediaLastAt: number | null; // the photo queue last worked on something
   mediaError: string | null;
   collectionsEveryMinutes: number; // 0 = only in the daily sync
-  collectionsLastAt: number | null; // the last check that had work to do
+  collectionsLastAt: number | null; // the last check that ran
   collectionsLastMoved: number | null; // products it moved
   collectionsError: string | null;
 }
@@ -370,6 +371,7 @@ const RUN_STEP: Record<StepName, () => Promise<StepOutcome | null>> = {
     const { runFull } = await import("@/server/collections/runner");
     const outcome = await runFull();
     if (!outcome) return null;
+    await sweepHiddenTerms();
     console.log(`[scheduler] automatic categories: ${outcome.read} products read, ${outcome.moved} moved`);
     return { ok: true, count: outcome.moved, note: `${outcome.read} products read` };
   },
@@ -522,10 +524,10 @@ async function pruneLogs(): Promise<void> {
   try {
     const { pruneRunLogs } = await import("@/server/retention");
     const pruned = await pruneRunLogs();
-    const total = pruned.syncRuns + pruned.ingestionRuns + pruned.applyRuns;
+    const total = pruned.syncRuns + pruned.ingestionRuns + pruned.applyRuns + pruned.vetrinaOperations;
     if (total > 0) {
       console.log(
-        `[scheduler] old run logs removed: ${pruned.syncRuns} sync runs, ${pruned.ingestionRuns} ingestion runs, ${pruned.applyRuns} apply records`,
+        `[scheduler] old run logs removed: ${pruned.syncRuns} sync runs, ${pruned.ingestionRuns} ingestion runs, ${pruned.applyRuns} apply records, ${pruned.vetrinaOperations} Vetrina actions`,
       );
     }
   } catch (e) {
@@ -703,6 +705,20 @@ async function pullOrders(): Promise<void> {
 }
 
 /**
+ * The index has caught up with the store: a product that joined a category
+ * or brand the owner hid in the Vetrina is hidden with it (its products are
+ * hidden everywhere). Queued behind the Vetrina's actions; never fatal.
+ */
+async function sweepHiddenTerms(): Promise<void> {
+  try {
+    const { queueSweep } = await import("@/server/vetrina/operations/runner");
+    void queueSweep();
+  } catch (e) {
+    console.warn(`[scheduler] hidden categories not swept: ${messageOf(e)}`);
+  }
+}
+
+/**
  * The automatic categories' check, then again every SCHEDULER_COLLECTIONS_MINUTES.
  * Said once when it starts failing and once when it recovers, not every round.
  */
@@ -715,6 +731,7 @@ async function checkCollections(): Promise<void> {
       if (s.collectionsError) console.log("[scheduler] automatic categories are working again");
       s.collectionsLastAt = Date.now();
       s.collectionsLastMoved = outcome.moved;
+      await sweepHiddenTerms();
     }
     s.collectionsError = null;
   } catch (e) {

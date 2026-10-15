@@ -10,8 +10,20 @@ import * as schema from "./schema";
  */
 const globalForDb = globalThis as unknown as { __pgPool?: Pool };
 
-const pool = globalForDb.__pgPool ?? new Pool({ connectionString: env.DATABASE_URL });
+const pool = globalForDb.__pgPool ?? createPool();
 if (process.env.NODE_ENV !== "production") globalForDb.__pgPool = pool;
+
+/**
+ * An idle client that loses its connection (Postgres restarted, a network
+ * blip) makes the pool emit "error"; without a listener Node treats it as an
+ * uncaught exception. The pool drops that client and opens a new one on the
+ * next query, so logging it is enough.
+ */
+function createPool(): Pool {
+  const p = new Pool({ connectionString: env.DATABASE_URL });
+  p.on("error", (e) => console.error(`[db] idle client error: ${e.message}`));
+  return p;
+}
 
 export const db = drizzle(pool, { schema });
 export { schema };

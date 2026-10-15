@@ -1,0 +1,253 @@
+"use client";
+
+import * as React from "react";
+import useSWR, { mutate as revalidate } from "swr";
+import { Block, BlockTitle, Button, List, ListButton, Preloader } from "konsta/react";
+import { toast } from "sonner";
+import { useI18n } from "@/i18n/provider";
+import { skuKey } from "@/lib/skus";
+import { toProductCard, type CatalogProduct, type CatalogSearch } from "@/lib/vetrina/catalog";
+import type { VetrinaResult } from "@/server/vetrina/service";
+import { loadCatalogPage, searchCatalog } from "@/server/actions/vetrina-catalog";
+import { ProductSheet } from "../../ProductSheet";
+import { useOperationSettled } from "../act/operations-context";
+import { formatCount } from "../format";
+import { ProductRow } from "../term/ProductRow";
+import { useProductCards } from "../term/use-product-cards";
+import { TermRow } from "./TermGroups";
+
+/**
+ * The catalog's search, in place of the lists: categories, brands and
+ * products found at once. A term opens its screen; a product opens the
+ * product sheet, as in the section editor.
+ *
+ * Answers are kept per query (SWR), so going back to a word is instant, and
+ * an answer that arrives after the words have changed is never shown. While
+ * a new answer is on its way the last one stays, dimmed: the screen does not
+ * jump at every letter.
+ */
+
+const SEARCH_KEY = "vetrina-catalog-search";
+/** Products asked per page after the first answer's 20. */
+const MORE_PAGE = 40;
+
+type Answer = { q: string; result: VetrinaResult<CatalogSearch> };
+
+/** Never throws: a lost connection is an answer too, shown with "Riprova". */
+async function fetchSearch([, q]: readonly [string, string]): Promise<Answer> {
+  try {
+    return { q, result: await searchCatalog({ q }) };
+  } catch (e) {
+    return { q, result: { ok: false, code: "failed", error: e instanceof Error ? e.message : String(e) } };
+  }
+}
+
+/** Reads every search kept so far again (the navbar's refresh). */
+export function revalidateSearches(): void {
+  void revalidate((key) => Array.isArray(key) && key[0] === SEARCH_KEY);
+}
+
+/** Products past the first answer's, for one query: what is loaded, and where readPage stopped. */
+interface More {
+  q: string;
+  products: CatalogProduct[];
+  offset: number;
+  total: number;
+}
+
+export function SearchResults({
+  q,
+  typing,
+  demo,
+  onChanged,
+}: {
+  /** The words searched (trimmed); "" while the first ones are being typed. */
+  q: string;
+  /** The search bar holds other words than q: an answer is coming. */
+  typing: boolean;
+  demo: boolean;
+  /** A product's tags changed in its sheet: the counts may have moved. */
+  onChanged: () => void;
+}) {
+  const { t } = useI18n();
+  const r = t.vetrinaCatalog.home.results;
+  const { data, mutate } = useSWR(q ? ([SEARCH_KEY, q] as const) : null, fetchSearch, {
+    keepPreviousData: true,
+    revalidateOnFocus: false,
+  });
+  const current = data != null && data.q === q && !typing;
+
+  const [more, setMore] = React.useState<More | null>(null);
+  const [loadingMore, setLoadingMore] = React.useState(false);
+  // An action ended: the first answer is read again (CatalogHome), and the rows loaded past it would keep
+  // their old badges ("Nascosto", "In saldo"): dropped, they come back fresh with the next "Mostra altri".
+  useOperationSettled(() => setMore(null));
+  const found = data?.result.ok ? data.result.data : null;
+  const products = React.useMemo(() => {
+    if (!found || !data) return [];
+    return more && more.q === data.q ? [...found.products, ...more.products] : found.products;
+  }, [found, data, more]);
+
+  const ids = React.useMemo(() => products.map((p) => p.id), [products]);
+  const { cards, refresh: refreshCard } = useProductCards(ids);
+  // Locks changed in the sheet since the search was read, by SKU.
+  const [locks, setLocks] = React.useState<ReadonlyMap<string, number>>(() => new Map());
+  const [open, setOpen] = React.useState<CatalogProduct | null>(null);
+
+  async function loadMore() {
+    if (!found || !data) return;
+    const forQ = data.q;
+    const from = more?.q === forQ ? more : { q: forQ, products: [], offset: 0, total: found.totalProducts };
+    setLoadingMore(true);
+    try {
+      // The first answer's products are ranked; the rest come by name, minus
+      // those already shown, so nothing moves and nothing repeats. The page
+      // asked has room for every ranked one it may skip: a tap brings
+      // exactly the MORE_PAGE its button promised (or the last few).
+      const res = await loadCatalogPage({
+        q: forQ,
+        sort: "name",
+        offset: from.offset,
+        limit: MORE_PAGE + found.products.length,
+      });
+      if (!res.ok) {
+        toast.error(t.vetrina.errors[res.code] ?? res.error);
+        return;
+      }
+      const shown = new Set([...found.products, ...from.products].map((p) => p.id));
+      const fresh: CatalogProduct[] = [];
+      let used = 0;
+      for (const p of res.data.products) {
+        if (fresh.length === MORE_PAGE) break;
+        used += 1;
+        if (!shown.has(p.id)) fresh.push(p);
+      }
+      setMore({ q: forQ, products: [...from.products, ...fresh], offset: from.offset + used, total: res.data.total });
+    } catch {
+      toast.error(t.vetrina.errors.failed);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  if (!data) return <ResultsSkeleton />;
+
+  if (!data.result.ok) {
+    return (
+      <Block strong inset className={`space-y-3 text-center ${current ? "" : "opacity-50"}`}>
+        <p className="text-[17px]">{r.failed}</p>
+        <Button rounded tonal onClick={() => void mutate()} className="!h-11">
+          {r.retry}
+        </Button>
+        {/* The technical words ("Failed to fetch") only for whoever asks, as ErrorState does. */}
+        {data.result.error && (
+          <details className="text-left text-[13px] opacity-60">
+            <summary className="cursor-pointer">{t.vetrina.errors.details}</summary>
+            <p className="mt-2 whitespace-pre-wrap break-words font-mono">{data.result.error}</p>
+          </details>
+        )}
+      </Block>
+    );
+  }
+
+  const s = data.result.data;
+  const nothing = s.categories.length + s.brands.length + s.products.length === 0;
+  const finished = more?.q === data.q && more.offset >= more.total;
+  const remaining = finished ? 0 : Math.max(0, s.totalProducts - products.length);
+
+  return (
+    <>
+      <div aria-busy={!current} className={`transition-opacity duration-200 ${current ? "" : "opacity-50"}`}>
+        {nothing ? (
+          <Block strong inset className="space-y-1.5 text-center">
+            <p className="text-[17px] font-semibold">{r.none(data.q)}</p>
+            <p className="text-[15px] opacity-60">{r.hint}</p>
+          </Block>
+        ) : (
+          <>
+            {s.categories.length > 0 && (
+              <>
+                <BlockTitle>{r.categories}</BlockTitle>
+                <List strong inset>
+                  {s.categories.map((term) => (
+                    <TermRow key={term.id} term={term} title={term.path} homeMark />
+                  ))}
+                </List>
+              </>
+            )}
+            {s.brands.length > 0 && (
+              <>
+                <BlockTitle>{r.brands}</BlockTitle>
+                <List strong inset>
+                  {s.brands.map((term) => (
+                    <TermRow key={term.id} term={term} title={term.path} homeMark />
+                  ))}
+                </List>
+              </>
+            )}
+            {products.length > 0 && (
+              <>
+                <BlockTitle>
+                  <span>{r.products}</span>
+                  <CountLabel n={s.totalProducts} />
+                </BlockTitle>
+                <List strong inset>
+                  {products.map((p) => (
+                    // The same row as a category's list: one look for a product everywhere.
+                    <ProductRow
+                      key={p.id}
+                      product={p}
+                      card={cards.get(p.id)}
+                      locks={locks.get(skuKey(p.sku)) ?? p.locks}
+                      onOpen={setOpen}
+                    />
+                  ))}
+                  {remaining > 0 && (
+                    // Says what a tap brings: the next MORE_PAGE, or the last few.
+                    <ListButton onClick={() => void loadMore()}>
+                      {loadingMore ? <Preloader className="!h-5 !w-5" /> : r.showMore(Math.min(MORE_PAGE, remaining))}
+                    </ListButton>
+                  )}
+                </List>
+              </>
+            )}
+          </>
+        )}
+      </div>
+
+      <ProductSheet
+        card={open ? (cards.get(open.id) ?? toProductCard(open)) : null}
+        onClose={() => setOpen(null)}
+        onLocksChanged={(sku, count) => setLocks((prev) => new Map(prev).set(skuKey(sku), count))}
+        onPricesChanged={refreshCard}
+        onTagsChanged={onChanged}
+        demo={demo}
+      />
+    </>
+  );
+}
+
+function CountLabel({ n }: { n: number }) {
+  const { locale } = useI18n();
+  return <span className="text-[15px] font-normal tabular-nums opacity-55">{formatCount(n, locale)}</span>;
+}
+
+/** The first search's place holder: the shape of a few results, nothing that jumps when they come. */
+function ResultsSkeleton() {
+  return (
+    <div aria-hidden className="animate-pulse">
+      <div className="mx-4 mt-8 h-4 w-24 rounded-full bg-black/10 dark:bg-white/10" />
+      <List strong inset className="!mt-3">
+        {[0, 1, 2, 3].map((i) => (
+          <li key={i} className="flex items-center gap-4 py-2 ps-4 pe-4">
+            <span className="h-16 w-16 shrink-0 rounded-xl bg-black/[0.06] dark:bg-white/10" />
+            <span className="flex-1 space-y-2">
+              <span className="block h-3.5 w-3/4 rounded-full bg-black/10 dark:bg-white/10" />
+              <span className="block h-3 w-1/3 rounded-full bg-black/[0.07] dark:bg-white/[0.07]" />
+            </span>
+          </li>
+        ))}
+      </List>
+    </div>
+  );
+}

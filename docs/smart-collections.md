@@ -122,7 +122,9 @@ Other nets:
 
 `store_index` is a light copy of the store: one row per product (every status but
 the bin), with its categories, tags, brands, attributes, price, on-sale and stock
-status, and creation and modification dates.
+status, and creation and modification dates — plus what the Vetrina's catalog
+lists: the first photo, the catalog visibility, the shop's order (`menu_order`)
+and the sales count.
 
 | Run | When | What it reads |
 |---|---|---|
@@ -145,7 +147,9 @@ that a product was binned, or changed without its modified time moving.
 Deciding runs on every check even when nothing changed: "added in the last 30
 days" moves products that nobody touched.
 
-**Nothing reaches the store while no category is automatic.**
+**While no category is automatic, nothing is written to the store.** The check
+and the daily full read still run: the index is also what the Vetrina's catalog
+lists ([vetrina-catalog.md](vetrina-catalog.md)).
 
 ## 6. Where it shows
 

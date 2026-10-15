@@ -2,12 +2,23 @@
 
 import * as React from "react";
 import type { MarginKind, MarkupBand, RoundingConfig, ScopedPricingRule } from "@core/config";
-import { marginKindOf } from "@core/config";
+import { MAX_PRICING_RULES, marginKindOf } from "@core/config";
 import { pricingRuleCoverage, savePricingRules, type RuleCoverage } from "@/server/actions/config";
 import { useI18n } from "@/i18n/provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
+import type { CatalogTaxonomy, CatalogTerm } from "@/lib/vetrina/catalog";
+import { StoreTermPicker, StoreTermsProvider } from "./StoreTermPicker";
+import {
+  findStoreTermRule,
+  ruleLabel,
+  ruledTermIds,
+  scopeSummary,
+  storeTermLabel,
+  storeTermScope,
+  storeTermsOf,
+} from "./rule-text";
 
 /**
  * The margins admin: the whole rule list edited in place, saved as one
@@ -19,6 +30,11 @@ import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
  * really sets the margin for, and the shelf price the engine returns at three
  * sample asks. A rule that covers nothing, or that a broader rule silently
  * outranks, used to look exactly like a working one.
+ *
+ * A margin on one of the SHOP's categories or brands (the Vetrina's
+ * "Ricarico", core/config.ts storeCategory / storeBrand) is a rule like the
+ * others here: same margin editor, same coverage, removable — its scope just
+ * leads with the store term, picked from the store's own trees.
  */
 
 type MarginType = MarginKind;
@@ -57,35 +73,6 @@ function Field({
   );
 }
 
-/**
- * The scope as a sentence. A rule is a claim about which products it governs,
- * and reading that claim off six separate inputs is exactly the step where an
- * operator mistakes a name filter for a family one.
- */
-function scopeSummary(
-  scope: ScopedPricingRule["scope"],
-  t: ReturnType<typeof useI18n>["t"],
-): string {
-  const bits: string[] = [];
-  if (scope.source) bits.push(t.margins.sumSource(scope.source));
-  if (scope.brand) bits.push(t.margins.sumBrand(scope.brand));
-  if (scope.category) {
-    bits.push(
-      scope.secondaryCategory
-        ? t.margins.sumFamilyPair(scope.category, scope.secondaryCategory)
-        : t.margins.sumFamily(scope.category),
-    );
-  } else if (scope.secondaryCategory) {
-    bits.push(t.margins.sumFamily(scope.secondaryCategory));
-  }
-  if (scope.model) bits.push(t.margins.sumName(scope.model));
-  if (scope.sku) bits.push(t.margins.sumSku(scope.sku));
-  if (scope.sizeMin != null || scope.sizeMax != null) {
-    bits.push(t.margins.sumSizes(scope.sizeMin ?? null, scope.sizeMax ?? null));
-  }
-  return bits.length === 0 ? t.margins.sumEverything : t.margins.sumJoin(bits);
-}
-
 const eur = new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" });
 
 /** Parse a locale-tolerant number input; "" -> undefined. */
@@ -100,20 +87,47 @@ const FIELD = "h-8 w-24 text-xs";
 const SELECT =
   "h-8 rounded-md border border-line bg-surface px-2 text-xs text-ink shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-accent/40";
 
+/** The card's element id, for scrolling a rule into view. */
+const ruleDomId = (ruleId: string) => `margin-rule-${ruleId}`;
+
 export function MarginsWorkspace({
   initialRules,
+  initialVersion,
   families = [],
   brands = [],
 }: {
   initialRules: ScopedPricingRule[];
+  /** The fingerprint of initialRules: a save is refused once the stored list has moved on. */
+  initialVersion: string;
   families?: FamilyOption[];
   brands?: BrandOption[];
 }) {
   const { t } = useI18n();
   const [rules, setRules] = React.useState<ScopedPricingRule[]>(initialRules);
+  const [version, setVersion] = React.useState(initialVersion);
   const [saving, setSaving] = React.useState(false);
-  const [note, setNote] = React.useState<{ ok: boolean; text: string } | null>(null);
+  const [note, setNote] = React.useState<{ ok: boolean; text: string; stale?: boolean } | null>(null);
   const [coverage, setCoverage] = React.useState<Map<string, RuleCoverage>>(new Map());
+  const [pickingStoreTerm, setPickingStoreTerm] = React.useState(false);
+  const [focusId, setFocusId] = React.useState<string | null>(null);
+
+  // One cap for every editor (core/config.ts): the save refuses more.
+  const full = rules.length >= MAX_PRICING_RULES;
+
+  // The store terms some rule already names — marked in every picker.
+  const ruled = React.useMemo<Record<CatalogTaxonomy, Set<number>>>(
+    () => ({ category: ruledTermIds(rules, "category"), brand: ruledTermIds(rules, "brand") }),
+    [rules],
+  );
+
+  // A rule just added (or found) at the bottom of a long list is out of
+  // sight: bring its card into view and mark it for a moment.
+  React.useEffect(() => {
+    if (!focusId) return;
+    document.getElementById(ruleDomId(focusId))?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const timer = setTimeout(() => setFocusId(null), 1800);
+    return () => clearTimeout(timer);
+  }, [focusId]);
 
   // Diagnostics track the list being EDITED, not the saved one: retune a band
   // and the sample prices move before you commit. Debounced, and stale
@@ -154,6 +168,43 @@ export function MarginsWorkspace({
     ]);
   }
 
+  /**
+   * A margin on one of the shop's categories or brands. Appended, never put
+   * first: the list's first rule is the general one the pricing bar edits,
+   * and on a tie between rules the later one wins. Picking a term that
+   * already has its own rule opens that rule instead of adding a twin.
+   */
+  function addStoreTermRule(term: CatalogTerm) {
+    setNote(null);
+    setPickingStoreTerm(false);
+    const existing = findStoreTermRule(rules, term.taxonomy, term.id);
+    if (existing) {
+      setFocusId(existing.id);
+      return;
+    }
+    const id = `rule-${crypto.randomUUID().slice(0, 8)}`;
+    const scope = Object.fromEntries(
+      Object.entries(storeTermScope(term)).filter(([, v]) => v !== undefined),
+    ) as ScopedPricingRule["scope"];
+    setRules((rs) => [...rs, { id, scope, enabled: true, markupPercent: 10 }]);
+    setFocusId(id);
+  }
+
+  /**
+   * A store rule's "Cambia": the rule moves to the picked term — unless that
+   * term already has a rule of its own, which is then shown instead. Two rules
+   * on one term would leave the list order to decide between them, and the
+   * Vetrina shows and edits only one.
+   */
+  function changeStoreTerm(index: number, term: CatalogTerm) {
+    const existing = findStoreTermRule(rules, term.taxonomy, term.id);
+    if (existing && existing.id !== rules[index]?.id) {
+      setFocusId(existing.id);
+      return;
+    }
+    patchRule(index, { scope: { ...rules[index].scope, ...storeTermScope(term) } });
+  }
+
   function removeRule(index: number) {
     setNote(null);
     setRules((rs) => rs.filter((_, i) => i !== index));
@@ -162,75 +213,92 @@ export function MarginsWorkspace({
   async function save() {
     setSaving(true);
     setNote(null);
-    const res = await savePricingRules(rules);
+    const res = await savePricingRules(rules, version);
     setSaving(false);
-    if (res.ok && res.rules) {
+    if (res.ok && res.rules && res.version) {
       setRules(res.rules);
+      setVersion(res.version);
       setNote({ ok: true, text: t.margins.saved });
+    } else if (res.stale) {
+      // Someone else changed the list since this page loaded it: saving this
+      // copy would undo their change, so nothing was saved.
+      setNote({ ok: false, text: t.margins.staleRules, stale: true });
+    } else if (res.demo) {
+      setNote({ ok: false, text: t.margins.storePickDemo });
     } else {
       setNote({ ok: false, text: `${t.margins.saveFailed}: ${res.error ?? ""}` });
     }
   }
 
   return (
-    <div className="space-y-4">
-      {rules.length === 0 && (
-        <div className="rounded-xl border border-line bg-surface p-8 text-center text-sm text-muted">
-          {t.margins.empty}
-        </div>
-      )}
-      <ul className="space-y-4">
-        {rules.map((rule, i) => (
-          <RuleCard
-            key={rule.id}
-            rule={rule}
-            index={i}
-            families={families}
-            brands={brands}
-            coverage={coverage.get(rule.id) ?? null}
-            onPatch={(p) => patchRule(i, p)}
-            onRemove={() => removeRule(i)}
-          />
-        ))}
-      </ul>
-
-      <div className="flex flex-wrap items-center gap-3">
-        <Button type="button" variant="outline" onClick={addRule}>
-          + {t.margins.addRule}
-        </Button>
-        <Button type="button" variant="accent" onClick={save} disabled={saving}>
-          {saving ? t.margins.saving : t.margins.save}
-        </Button>
-        {note && (
-          <span className={`text-sm font-medium ${note.ok ? "text-up" : "text-skip"}`}>
-            {note.text}
-          </span>
+    <StoreTermsProvider>
+      <div className="space-y-4">
+        {rules.length === 0 && (
+          <div className="rounded-xl border border-line bg-surface p-8 text-center text-sm text-muted">
+            {t.margins.empty}
+          </div>
         )}
-      </div>
-    </div>
-  );
-}
+        <ul className="space-y-4">
+          {rules.map((rule, i) => (
+            <RuleCard
+              key={rule.id}
+              rule={rule}
+              index={i}
+              families={families}
+              brands={brands}
+              coverage={coverage.get(rule.id) ?? null}
+              ruled={ruled}
+              focused={focusId === rule.id}
+              onPatch={(p) => patchRule(i, p)}
+              onChangeTerm={(term) => changeStoreTerm(i, term)}
+              onRemove={() => removeRule(i)}
+            />
+          ))}
+        </ul>
 
-function ruleLabel(
-  rule: ScopedPricingRule,
-  index: number,
-  t: ReturnType<typeof useI18n>["t"],
-): string {
-  if (rule.id === "general") return t.margins.generalRule;
-  if (rule.id === "goldensneakers-passthrough" || rule.scope.source === "goldensneakers") {
-    return t.margins.gsRule;
-  }
-  const family = [rule.scope.category, rule.scope.secondaryCategory].filter(Boolean).join(" › ");
-  const bits = [
-    rule.scope.brand,
-    family || null,
-    rule.scope.model && `“${rule.scope.model}”`,
-    rule.scope.sku,
-    rule.scope.sizeMin != null || rule.scope.sizeMax != null
-      ? `${rule.scope.sizeMin ?? ""}–${rule.scope.sizeMax ?? ""}`
-      : null,
-  ].filter(Boolean);
-  return bits.length > 0 ? bits.join(" · ") : t.margins.customRule(index + 1);
+        {pickingStoreTerm && !full && (
+          <StoreTermPicker
+            className="max-w-xl"
+            ruled={ruled}
+            onPick={addStoreTermRule}
+            onCancel={() => setPickingStoreTerm(false)}
+          />
+        )}
+
+        {full && <p className="text-xs text-muted">{t.margins.rulesFull(MAX_PRICING_RULES)}</p>}
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="button" variant="outline" onClick={addRule} disabled={full}>
+            + {t.margins.addRule}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            aria-expanded={pickingStoreTerm}
+            disabled={full}
+            onClick={() => setPickingStoreTerm((v) => !v)}
+          >
+            + {t.margins.addStoreRule}
+          </Button>
+          <Button type="button" variant="accent" onClick={save} disabled={saving}>
+            {saving ? t.margins.saving : t.margins.save}
+          </Button>
+          {note && (
+            <span
+              role={note.ok ? "status" : "alert"}
+              className={`text-sm font-medium ${note.ok ? "text-down" : "text-skip"}`}
+            >
+              {note.text}
+            </span>
+          )}
+          {note?.stale && (
+            <Button type="button" variant="outline" onClick={() => window.location.reload()}>
+              {t.margins.reload}
+            </Button>
+          )}
+        </div>
+      </div>
+    </StoreTermsProvider>
+  );
 }
 
 function RuleCard({
@@ -239,7 +307,10 @@ function RuleCard({
   families,
   brands,
   coverage,
+  ruled,
+  focused,
   onPatch,
+  onChangeTerm,
   onRemove,
 }: {
   rule: ScopedPricingRule;
@@ -247,12 +318,18 @@ function RuleCard({
   families: FamilyOption[];
   brands: BrandOption[];
   coverage: RuleCoverage | null;
+  ruled: Record<CatalogTaxonomy, Set<number>>;
+  focused: boolean;
   onPatch: (patch: Partial<ScopedPricingRule>) => void;
+  onChangeTerm: (term: CatalogTerm) => void;
   onRemove: () => void;
 }) {
   const { t } = useI18n();
   const type = marginKindOf(rule);
   const isGeneral = rule.id === "general";
+  const storeTerms = storeTermsOf(rule.scope);
+  const storeTerm = storeTerms[0] ?? null;
+  const [changingTerm, setChangingTerm] = React.useState(false);
 
   // Category → its sub-categories, from what the catalog actually holds.
   const categories = React.useMemo(() => {
@@ -325,13 +402,14 @@ function RuleCard({
 
   return (
     <li
-      className={`overflow-hidden rounded-xl border bg-surface shadow-xs ${
+      id={ruleDomId(rule.id)}
+      className={`overflow-hidden rounded-xl border bg-surface shadow-xs transition-shadow ${
         rule.enabled ? "border-line" : "border-line/60 opacity-60"
-      }`}
+      } ${focused ? "ring-2 ring-accent" : ""}`}
     >
       <div className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3">
         <span className="min-w-0 flex-1 truncate text-sm font-semibold">
-          {ruleLabel(rule, index, t)}
+          {ruleLabel(rule, index, t.margins)}
         </span>
         <label className="flex cursor-pointer items-center gap-1.5 text-xs font-medium text-muted">
           <input
@@ -358,6 +436,49 @@ function RuleCard({
           <div className="text-xs font-semibold">{t.margins.scopeTitle}</div>
           <p className="mb-3 mt-0.5 text-[11px] leading-snug text-muted">{t.margins.scopeHint}</p>
 
+          {/* The shop's own category or brand leads the scope: it is what the
+              owner set this margin on (in the Vetrina, or here). It can be
+              changed for another term but not cleared — without it the rule
+              would reprice far more than the term; delete the rule instead. */}
+          {storeTerm && (
+            <div className="mb-3 rounded-lg border border-accent/40 bg-accent/8 px-3 py-2">
+              <div className="flex items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="text-[11px] font-medium text-muted">
+                    {storeTerm.taxonomy === "category" ? t.margins.storeCategoryField : t.margins.storeBrandField}
+                  </div>
+                  {/* The field label already says "Categoria del negozio": the value is the term itself. */}
+                  <div className="truncate text-sm font-semibold">
+                    {storeTerms.map((term) => term.name ?? storeTermLabel(term, t.margins)).join(" · ")}
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-expanded={changingTerm}
+                  onClick={() => setChangingTerm((v) => !v)}
+                >
+                  {t.margins.storeTermChange}
+                </Button>
+              </div>
+              <p className="mt-1 text-[11px] leading-snug text-muted">{t.margins.storeTermHint(storeTerm.taxonomy)}</p>
+              {changingTerm && (
+                <StoreTermPicker
+                  className="mt-2"
+                  initialTaxonomy={storeTerm.taxonomy}
+                  selected={storeTerm}
+                  ruled={ruled}
+                  onPick={(term) => {
+                    setChangingTerm(false);
+                    onChangeTerm(term);
+                  }}
+                  onCancel={() => setChangingTerm(false)}
+                />
+              )}
+            </div>
+          )}
+
           <div className="grid gap-x-3 gap-y-2.5 sm:grid-cols-2">
             <Field label={t.margins.scopeSource}>
               <select
@@ -368,7 +489,12 @@ function RuleCard({
               >
                 <option value="">{t.margins.scopeSourceAny}</option>
                 <option value="kicksdb">kicksdb</option>
-                <option value="goldensneakers">goldensneakers</option>
+                {/* Never priced by a store rule (core/config.ts, said in the
+                    term's hint above): offered, it would only make this rule
+                    cover nothing. */}
+                <option value="goldensneakers" disabled={!!storeTerm}>
+                  goldensneakers
+                </option>
               </select>
             </Field>
 
@@ -465,7 +591,7 @@ function RuleCard({
               actually cover?", which a grid of fields never quite gives. */}
           <p className="mt-3 rounded-lg bg-surface-2 px-2.5 py-1.5 text-[11px] leading-snug text-muted">
             <span className="font-semibold text-ink">{t.margins.scopeSummaryLabel}</span>{" "}
-            {scopeSummary(rule.scope, t)}
+            {scopeSummary(rule.scope, t.margins)}
           </p>
         </div>
 
@@ -575,7 +701,7 @@ function RuleCard({
         </div>
       </div>
 
-      <RuleDiagnostics rule={rule} coverage={coverage} />
+      <RuleDiagnostics rule={rule} coverage={coverage} storeTerm={storeTerm != null} />
 
       {/* Advanced knobs */}
       <details className="border-t border-line px-4 py-3">
@@ -692,9 +818,12 @@ function RuleCard({
 function RuleDiagnostics({
   rule,
   coverage,
+  storeTerm,
 }: {
   rule: ScopedPricingRule;
   coverage: RuleCoverage | null;
+  /** A store category's or brand's rule: "nothing" has its own reasons. */
+  storeTerm: boolean;
 }) {
   const { t } = useI18n();
   if (!coverage) return null;
@@ -703,7 +832,11 @@ function RuleDiagnostics({
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-line bg-canvas/40 px-4 py-2.5 text-[11px]">
       <span className={dead ? "font-semibold text-skip" : "font-medium text-muted"}>
-        {dead ? t.margins.coverageNone : t.margins.coverageCount(coverage.products)}
+        {dead
+          ? storeTerm
+            ? t.margins.coverageNoneStore
+            : t.margins.coverageNone
+          : t.margins.coverageCount(coverage.products)}
       </span>
       {coverage.sizeScoped && coverage.products > 0 && (
         <span className="text-faint">{t.margins.coverageSizeScoped}</span>

@@ -226,8 +226,30 @@ describe.skipIf(!enabled)("run logs retention (real SQL)", () => {
     await db.update(storeSyncRuns).set({ startedAt: old }).where(eq(storeSyncRuns.id, withPlans.id));
     const [oldIngestion] = await db.insert(ingestionRuns).values({ source: "feed:goldensneakers", market: "IT", startedAt: old }).returning();
     const [oldApply] = await db.insert(applyAudit).values({ status: "applied", dryRun: false, startedAt: old }).returning();
+    // The Vetrina's log is cut in the same pass: an old action goes, a whole term's standing hide stays.
+    const { vetrinaOperations, inArray } = await load();
+    const action = (label: string, termKey: string | null) => ({
+      kind: "hide" as const,
+      input: { kind: "hide" as const, target: { kind: "ids" as const, ids: [1] } },
+      label,
+      status: "done" as const,
+      changed: 1,
+      termKey,
+      createdAt: old,
+    });
+    const [oldAction, standingHide] = await db
+      .insert(vetrinaOperations)
+      .values([action("old", null), action("standing", "brand:900")])
+      .returning();
 
-    await pruneRunLogs();
+    const pruned = await pruneRunLogs();
+    expect(pruned.vetrinaOperations).toBeGreaterThanOrEqual(1);
+    const left = await db
+      .select({ id: vetrinaOperations.id })
+      .from(vetrinaOperations)
+      .where(inArray(vetrinaOperations.id, [oldAction.id, standingHide.id]));
+    expect(left.map((r) => r.id)).toEqual([standingHide.id]);
+    await db.delete(vetrinaOperations).where(inArray(vetrinaOperations.id, [standingHide.id]));
     const ids = (await db.select({ id: storeSyncRuns.id }).from(storeSyncRuns)).map((r) => r.id);
     expect(ids).not.toContain(stale.id);
     expect(ids).toContain(withPlans.id); // its plans are still there

@@ -1,5 +1,5 @@
-import { VetrinaLoading } from "@/components/vetrina/VetrinaLoading";
+import { HomeScreenSkeleton } from "@/components/vetrina/HomeScreen";
 
 export default function Loading() {
-  return <VetrinaLoading />;
+  return <HomeScreenSkeleton />;
 }

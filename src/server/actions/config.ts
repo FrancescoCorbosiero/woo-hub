@@ -2,11 +2,19 @@
 
 import { z } from "zod";
 import type { AppConfig, ScopedPricingRule } from "@core/config";
-import { resolveEffectiveRule, scopeTargetsSizes, winningMarkupRuleId } from "@core/config";
+import { MAX_PRICING_RULES, resolveEffectiveRule, scopeTargetsSizes, winningMarkupRuleId } from "@core/config";
 import type { SourceProduct, SourceVariant } from "@core/core-spine";
 import { computePrice } from "@core/core-spine";
 import { listProductScopeAxes } from "@/server/catalog/repo";
-import { clearConfig, getActiveConfig, saveActiveConfig } from "@/server/config/repo";
+import { getActiveConfig, updateActiveConfig } from "@/server/config/repo";
+import { buildDefaultConfig } from "@/server/config/defaults";
+import { pricingRulesVersion } from "@/server/config/rule-list";
+import { activeFeedSkus, GS_FEED } from "@/server/feeds/repo";
+import { getOverrides } from "@/server/overrides/repo";
+import { skusPinnedTo } from "@/server/overrides/model";
+import { withStoreTerms } from "@/server/pricing/store-terms";
+import { demoMode } from "@/server/collections/store";
+import { skuKey } from "@/lib/skus";
 import { pricingSummary, type PricingSummary } from "@/server/config/summary";
 
 /**
@@ -16,17 +24,15 @@ import { pricingSummary, type PricingSummary } from "@/server/config/summary";
  * "put the default back", not "delete the Yeezy Foam rule I built last week".
  */
 export async function resetPricingToDefaults(): Promise<PricingSummary> {
-  const current = await getActiveConfig().catch(() => null);
-  const kept = (current?.pricingRules ?? []).filter(
-    (r) => Object.keys(r.scope).length > 0 && r.scope.source !== "goldensneakers",
-  );
-
-  await clearConfig();
-  const fresh = await getActiveConfig();
-  if (kept.length > 0) {
-    fresh.pricingRules = [...fresh.pricingRules, ...kept];
-    await saveActiveConfig(fresh);
-  }
+  // One locked read-modify-write: a scoped rule saved a moment ago (a
+  // category's margin from the Vetrina) is among the ones kept.
+  const fresh = await updateActiveConfig((current) => {
+    const kept = current.pricingRules.filter(
+      (r) => Object.keys(r.scope).length > 0 && r.scope.source !== "goldensneakers",
+    );
+    const defaults = buildDefaultConfig(current.connection);
+    return { ...defaults, pricingRules: [...defaults.pricingRules, ...kept] };
+  });
   return pricingSummary(fresh);
 }
 
@@ -50,32 +56,35 @@ export async function updatePricing(
   }
   const d = parsed.data;
 
-  const cfg = await getActiveConfig();
-  const rule = cfg.pricingRules[0] ?? {
-    id: "general",
-    scope: {},
-    enabled: true,
-    sourceDeliveryType: "standard" as const,
-  };
-  rule.markupPercent = d.markupPercent;
-  // Saving an explicit flat markup switches banded pricing off — the operator
-  // chose a single percent. "Reset" restores the banded defaults.
-  delete rule.markupBands;
-  rule.minAsks = d.minAsks;
-  // 0 = off (reprice on any change) — stored as absence, like maxDeltaPercent.
-  if (d.minDeltaPercent > 0) rule.minDeltaPercent = d.minDeltaPercent;
-  else delete rule.minDeltaPercent;
-  rule.rounding = {
-    mode: d.roundingMode,
-    ...(d.increment != null ? { increment: d.increment } : {}),
-  };
-  // VAT is added on top ONLY when the operator sets a rate here; 0 means the
-  // markup is the total uplift (VAT inside the price) — the banded default.
-  rule.tax = { priceIncludesVat: d.vatRatePercent > 0, vatRatePercent: d.vatRatePercent };
-  if (cfg.pricingRules.length === 0) cfg.pricingRules.push(rule);
-
   try {
-    await saveActiveConfig(cfg);
+    // Into the list as it is now, under the config's lock: only the general
+    // rule's fields change, and every other rule stays as the last writer left it.
+    const cfg = await updateActiveConfig((current) => {
+      const cfg = structuredClone(current);
+      const rule = cfg.pricingRules[0] ?? {
+        id: "general",
+        scope: {},
+        enabled: true,
+        sourceDeliveryType: "standard" as const,
+      };
+      rule.markupPercent = d.markupPercent;
+      // Saving an explicit flat markup switches banded pricing off — the operator
+      // chose a single percent. "Reset" restores the banded defaults.
+      delete rule.markupBands;
+      rule.minAsks = d.minAsks;
+      // 0 = off (reprice on any change) — stored as absence, like maxDeltaPercent.
+      if (d.minDeltaPercent > 0) rule.minDeltaPercent = d.minDeltaPercent;
+      else delete rule.minDeltaPercent;
+      rule.rounding = {
+        mode: d.roundingMode,
+        ...(d.increment != null ? { increment: d.increment } : {}),
+      };
+      // VAT is added on top ONLY when the operator sets a rate here; 0 means the
+      // markup is the total uplift (VAT inside the price) — the banded default.
+      rule.tax = { priceIncludesVat: d.vatRatePercent > 0, vatRatePercent: d.vatRatePercent };
+      if (cfg.pricingRules.length === 0) cfg.pricingRules.push(rule);
+      return cfg;
+    });
     return { ok: true, summary: pricingSummary(cfg) };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -97,6 +106,11 @@ const ScopeSchema = z.object({
   sizeType: z.string().max(32).optional(),
   sizeMin: z.number().min(0).max(100).optional(),
   sizeMax: z.number().min(0).max(100).optional(),
+  // The shop's own category or brand (WooCommerce term ids) — a margin set
+  // from the Vetrina, or on the Margins tab. The name is a label only.
+  storeCategory: z.number().int().positive().optional(),
+  storeBrand: z.number().int().positive().optional(),
+  storeTermName: z.string().max(200).optional(),
 });
 
 const BandSchema = z.object({
@@ -129,7 +143,7 @@ const RuleSchema = z.object({
   minMarginFixed: z.number().min(0).max(10000).optional(),
 });
 
-const RulesSchema = z.array(RuleSchema).min(1).max(100);
+const RulesSchema = z.array(RuleSchema).min(1).max(MAX_PRICING_RULES);
 
 /** Strip empty-string scope fields so "" never over-constrains a rule. */
 function cleanScope(scope: z.infer<typeof ScopeSchema>): ScopedPricingRule["scope"] {
@@ -143,18 +157,35 @@ function cleanScope(scope: z.infer<typeof ScopeSchema>): ScopedPricingRule["scop
   if (scope.sizeType?.trim()) out.sizeType = scope.sizeType.trim();
   if (scope.sizeMin != null) out.sizeMin = scope.sizeMin;
   if (scope.sizeMax != null) out.sizeMax = scope.sizeMax;
+  // Kept through every save: dropping them would turn a category's margin
+  // into a rule on the whole shop.
+  if (scope.storeCategory != null) out.storeCategory = scope.storeCategory;
+  if (scope.storeBrand != null) out.storeBrand = scope.storeBrand;
+  if ((out.storeCategory != null || out.storeBrand != null) && scope.storeTermName?.trim()) {
+    out.storeTermName = scope.storeTermName.trim();
+  }
   return out;
 }
 
 export interface SaveRulesResult {
   ok: boolean;
   error?: string;
+  /**
+   * Refused because the list changed since the editor loaded it (a margin set
+   * from the Vetrina, the pricing bar, another tab): nothing was written, and
+   * the editor must reload rather than save over the newer list.
+   */
+  stale?: boolean;
+  /**
+   * Refused because it names a store category or brand no saved rule named,
+   * while the Vetrina runs on its demo shop: the picker offered the demo's
+   * ids, which are not the real shop's.
+   */
+  demo?: boolean;
+  /** The list as saved — as the next read returns it. */
   rules?: ScopedPricingRule[];
-}
-
-/** The current rule list, for the margins editor. */
-export async function getPricingRules(): Promise<ScopedPricingRule[]> {
-  return (await getActiveConfig()).pricingRules;
+  /** Its fingerprint (pricingRulesVersion): what the editor sends with its next save. */
+  version?: string;
 }
 
 /** How many catalog products each rule actually sets the margin for. */
@@ -190,6 +221,10 @@ function sampleProductFor(rule: ScopedPricingRule): SourceProduct {
     ...(s.source ? { source: s.source } : {}),
     ...(s.category ? { category: s.category } : {}),
     ...(s.secondaryCategory ? { secondaryCategory: s.secondaryCategory } : {}),
+    // Filed under the rule's own store term (its depth does not matter: no
+    // other store term is on the sample to compete with it).
+    ...(s.storeCategory != null ? { storeCategories: [{ id: s.storeCategory, depth: 0 }] } : {}),
+    ...(s.storeBrand != null ? { storeBrands: [{ id: s.storeBrand, depth: 0 }] } : {}),
     variants: [],
   };
 }
@@ -222,6 +257,29 @@ function ruleExamples(
 }
 
 /**
+ * The catalog's products, each with the source that really prices it. A row
+ * KicksDB registered keeps "kicksdb" even when the supplier feed owns the
+ * product (src/server/feeds/owner.ts): counted as such, a rule the engine
+ * never applies to it — a store category's margin, which feed prices never
+ * take — would claim it. Feed coverage minus the products pinned back to
+ * KicksDB, as the sync decides; best-effort, like the read it refines.
+ */
+async function pricedByOwner(market: string): Promise<Awaited<ReturnType<typeof listProductScopeAxes>>> {
+  const [axes, feed, overrides] = await Promise.all([
+    listProductScopeAxes(market),
+    activeFeedSkus(GS_FEED),
+    getOverrides().catch(() => null),
+  ]);
+  if (feed.size === 0) return axes;
+  const feedSkus = new Set([...feed].map(skuKey));
+  const pinned = new Set((overrides ? skusPinnedTo(overrides, "kicksdb") : []).map(skuKey));
+  return axes.map((p) => {
+    const key = skuKey(p.sku);
+    return feedSkus.has(key) && !pinned.has(key) && p.source !== GS_FEED ? { ...p, source: GS_FEED } : p;
+  });
+}
+
+/**
  * Answer "is this rule doing anything?" against the real catalog. A rule that
  * covers 0 products is either shadowed by a more specific one or scoped to
  * something no product matches — and until now both looked exactly like a
@@ -237,7 +295,7 @@ export async function pricingRuleCoverage(
   const parsed = rulesInput != null ? RulesSchema.safeParse(rulesInput) : null;
   const rules = (parsed?.success ? (parsed.data as ScopedPricingRule[]) : cfg.pricingRules) ?? [];
 
-  const axes = await listProductScopeAxes(cfg.source.market);
+  const axes = await withStoreTerms(await pricedByOwner(cfg.source.market), rules);
   const counts = new Map<string, number>();
   for (const p of axes) {
     const id = winningMarkupRuleId(p, rules);
@@ -254,17 +312,45 @@ export async function pricingRuleCoverage(
   };
 }
 
+/** "category:12", "brand:7" — each store term the rules name. */
+function storeTermKeys(rules: readonly ScopedPricingRule[]): Set<string> {
+  const out = new Set<string>();
+  for (const r of rules) {
+    if (r.scope.storeCategory != null) out.add(`category:${r.scope.storeCategory}`);
+    if (r.scope.storeBrand != null) out.add(`brand:${r.scope.storeBrand}`);
+  }
+  return out;
+}
+
+/** True when `next` names a store term `current` does not — a rule added, or moved to another term. */
+function namesNewStoreTerm(next: readonly ScopedPricingRule[], current: readonly ScopedPricingRule[]): boolean {
+  const known = storeTermKeys(current);
+  return [...storeTermKeys(next)].some((k) => !known.has(k));
+}
+
+const RulesVersion = z.string().regex(/^[0-9a-f]{16}$/);
+
 /**
  * Replace the whole pricing-rule list (the margins editor saves everything at
  * once — rules are one document, and partial saves would allow half-edited
  * precedence). Everything else in the config is left untouched.
+ *
+ * `version` is the fingerprint of the list the editor loaded (or last saved).
+ * The list has other editors — the Vetrina sets a category's or a brand's
+ * margin from the phone, the pricing bar the general rule — and a tab opened
+ * before one of them and saved after would silently drop (or bring back)
+ * what they did. So the save is refused, nothing written, when the stored
+ * list no longer has that fingerprint: the operator reloads and sees it.
+ * Checked and written under the config's lock, so nothing lands in between.
  */
-export async function savePricingRules(input: unknown): Promise<SaveRulesResult> {
+export async function savePricingRules(input: unknown, version: string): Promise<SaveRulesResult> {
   const parsed = RulesSchema.safeParse(input);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
     return { ok: false, error: `${issue?.path.join(".") ?? ""}: ${issue?.message ?? "invalid"}` };
   }
+  // A fingerprint is 16 hex characters (pricingRulesVersion): anything else is no list this editor loaded.
+  if (!RulesVersion.safeParse(version).success) return { ok: false, stale: true };
 
   const rules: ScopedPricingRule[] = parsed.data.map((r) => ({
     id: r.id,
@@ -287,10 +373,21 @@ export async function savePricingRules(input: unknown): Promise<SaveRulesResult>
   }));
 
   try {
-    const cfg = await getActiveConfig();
-    cfg.pricingRules = rules;
-    await saveActiveConfig(cfg);
-    return { ok: true, rules };
+    let refused: "stale" | "demo" | null = null;
+    const saved = await updateActiveConfig((current) => {
+      if (pricingRulesVersion(current.pricingRules) !== version) {
+        refused = "stale";
+        return null;
+      }
+      if (demoMode() && namesNewStoreTerm(rules, current.pricingRules)) {
+        refused = "demo";
+        return null;
+      }
+      return { ...current, pricingRules: rules };
+    });
+    if (refused === "stale") return { ok: false, stale: true };
+    if (refused === "demo") return { ok: false, demo: true };
+    return { ok: true, rules: saved.pricingRules, version: pricingRulesVersion(saved.pricingRules) };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }

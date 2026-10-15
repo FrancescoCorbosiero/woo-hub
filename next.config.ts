@@ -32,6 +32,10 @@ const nextConfig: NextConfig = {
       // The old password page. Signing in is Authelia's now (docs/auth.md),
       // done before any page loads, so a bookmark to it just opens the app.
       { source: "/login", destination: "/", permanent: false },
+      // The Catalog tab is gone: browsing the shop belongs to the Vetrina.
+      // An old link lands on the dashboard, its ?product= (kept by the
+      // redirect) still opening that product's drawer.
+      { source: "/catalog", destination: "/", permanent: false },
     ];
   },
 };

@@ -2,6 +2,7 @@ import "server-only";
 import { and, lt, sql } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import { applyAudit, ingestionRuns, plans, storeSyncRuns } from "@/server/db/schema";
+import { trimOperations } from "@/server/vetrina/operations/repo";
 
 /**
  * The run logs, cut back once a day (the scheduler's daily run).
@@ -11,7 +12,9 @@ import { applyAudit, ingestionRuns, plans, storeSyncRuns } from "@/server/db/sch
  * an apply_audit row whenever something was written, and — for a sync started
  * from the Sync tab — the stepped run with the SKU list it walked. Every screen
  * reads only their latest rows. Nothing here is state: the snapshot, the
- * catalog, the ledger, locks and plans are never touched.
+ * catalog, the ledger, locks and plans are never touched. The Vetrina's log
+ * of catalog actions is cut here too, keeping what a term's screen still
+ * reads (trimOperations says which).
  */
 
 /** Stepped syncs: a run nobody applied in a week never will be. */
@@ -21,7 +24,12 @@ const LOG_DAYS = 90;
 
 const daysAgo = (days: number) => new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
-export async function pruneRunLogs(): Promise<{ syncRuns: number; ingestionRuns: number; applyRuns: number }> {
+export async function pruneRunLogs(): Promise<{
+  syncRuns: number;
+  ingestionRuns: number;
+  applyRuns: number;
+  vetrinaOperations: number;
+}> {
   // Only runs whose plans are gone: a run without its row reads as a manual
   // preview, "complete by construction" (syncRunApplicable) — a half-walked
   // run must never get there with plans left to apply.
@@ -42,5 +50,6 @@ export async function pruneRunLogs(): Promise<{ syncRuns: number; ingestionRuns:
     .delete(applyAudit)
     .where(lt(applyAudit.startedAt, daysAgo(LOG_DAYS)))
     .returning({ id: applyAudit.id });
-  return { syncRuns: syncRuns.length, ingestionRuns: ingestion.length, applyRuns: apply.length };
+  const vetrinaOperations = await trimOperations();
+  return { syncRuns: syncRuns.length, ingestionRuns: ingestion.length, applyRuns: apply.length, vetrinaOperations };
 }

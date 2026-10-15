@@ -14,6 +14,7 @@ import {
   DialogButton,
   Link as KLink,
   Navbar,
+  NavbarBackLink,
   Page,
   Preloader,
   Segmented,
@@ -28,7 +29,6 @@ import {
   hide,
   pinToTop,
   pinsAfterPlacing,
-  sameState,
   show,
   unpin,
   type EditorRow,
@@ -41,14 +41,18 @@ import { changedFields, editableFields } from "@/lib/vetrina/fields";
 import type { HiddenReason, ProductCard, RailDetail, RailFallback, SectionDraft } from "@/lib/vetrina/types";
 import type { VetrinaRail, VetrinaResult } from "@/server/vetrina/service";
 import { loadVetrinaCards, loadVetrinaRail, publishVetrinaRail } from "@/server/actions/vetrina";
+import { useOperationSettled } from "./catalog/act/operations-context";
+import { railCatalogHref } from "./catalog/sheet/links";
 import { CollectionSheet } from "./CollectionSheet";
 import { ErrorState } from "./ErrorState";
 import { FieldsSheet } from "./FieldsSheet";
 import { HistorySheet } from "./HistorySheet";
 import { ProductSheet } from "./ProductSheet";
 import { formatFromPrice } from "./format";
-import { ChevronLeft, ChevronRight, EyeOff, Funnel, Grip, Lock, More, Pin } from "./icons";
+import { ChevronRight, EyeOff, Funnel, Grip, Lock, More, Pin } from "./icons";
 import { SEGMENTED_COLORS } from "./segmented";
+import { edited, movedUnderDraft, movesSection } from "./section-reload";
+import { useBack } from "./use-back";
 
 export interface EditorOptions {
   fallbacks: RailFallback[];
@@ -90,20 +94,23 @@ export function RailEditor({
   return <Editor railKey={railKey} initial={initial.data} options={options} />;
 }
 
+/**
+ * Back to where the editor was opened from — the homepage, or a category's
+ * screen in the catalog — or the homepage when there is none (a link from
+ * outside). An arrow alone: the screen behind is not always the homepage,
+ * and the section's title keeps its room.
+ */
 function BackLink({ dirty }: { dirty: boolean }) {
   const { t } = useI18n();
-  const router = useRouter();
+  const back = useBack("/vetrina");
   return (
-    <KLink
+    <NavbarBackLink
       onClick={() => {
         if (dirty && !window.confirm(t.vetrina.editor.leaveConfirm)) return;
-        router.push("/vetrina");
+        back();
       }}
-      className="gap-0.5"
-    >
-      <ChevronLeft className="h-5 w-5" />
-      {t.vetrina.title}
-    </KLink>
+      aria-label={t.vetrinaCatalog.term.back}
+    />
   );
 }
 
@@ -118,8 +125,10 @@ const stateOf = (rail: RailDetail): SectionDraft => ({
 const trimmed = (fields: Record<string, string>) =>
   Object.fromEntries(Object.entries(fields).map(([field, value]) => [field, value.trim()]));
 
+
 function Editor({ railKey, initial, options }: { railKey: string; initial: VetrinaRail; options: EditorOptions }) {
   const { t } = useI18n();
+  const router = useRouter();
   const v = t.vetrina.editor;
   const demo = initial.source === "fixture";
 
@@ -130,7 +139,7 @@ function Editor({ railKey, initial, options }: { railKey: string; initial: Vetri
   // The order, plus the section's texts and size: one draft, one publish.
   const fieldsChanged = changedFields(saved.fields, draft.fields);
   const resized = saved.limit !== draft.limit;
-  const dirty = !sameState(saved, draft) || fieldsChanged.length > 0 || resized;
+  const dirty = edited(saved, draft);
   const orderChanges = countChanges(saved, draft);
   const changes = { ...orderChanges, total: orderChanges.total + fieldsChanged.length + (resized ? 1 : 0) };
 
@@ -150,6 +159,12 @@ function Editor({ railKey, initial, options }: { railKey: string; initial: Vetri
   const [reasons, setReasons] = React.useState(
     () => new Map<number, HiddenReason>(initial.rail.hidden.map((h) => [h.id, h.reason])),
   );
+
+  // The draft as it is now, for an answer that arrives after the customer changed it.
+  const latestDraft = React.useRef(draft);
+  React.useEffect(() => {
+    latestDraft.current = draft;
+  }, [draft]);
 
   const absorb = React.useCallback((more: ProductCard[], moreLocks: Record<string, number>) => {
     setCards((prev) => {
@@ -173,10 +188,15 @@ function Editor({ railKey, initial, options }: { railKey: string; initial: Vetri
 
   /**
    * The category's members moved (its rule changed, a product's tags did):
-   * read the rail again. The draft stays — pins and hides are the
-   * customer's — but every automatic order cached so far is stale.
+   * read the rail again, and every automatic order cached so far is stale.
+   * A draft with nothing unpublished becomes the fresh rail; one with the
+   * customer's own changes keeps them — they are his — and he hears that
+   * the section changed under them, to look before publishing.
    */
   const reloadMembers = React.useCallback(async () => {
+    // The rail the draft was made over, as it was when asked: what "unedited" is measured against.
+    const before = saved;
+    const shownBefore = base.visible;
     const fresh = await loadVetrinaRail({ key: railKey, fallback: draft.fallback });
     if (!fresh.ok) {
       toast.error(t.vetrina.errors[fresh.code] ?? fresh.error);
@@ -184,7 +204,21 @@ function Editor({ railKey, initial, options }: { railKey: string; initial: Vetri
     }
     setVisibleByFallback({ [fresh.data.rail.previewFallback]: fresh.data.rail.visible });
     adoptRail(fresh.data);
-  }, [railKey, draft.fallback, adoptRail, t]);
+    // The draft as it is now: the customer may have changed it while the rail was read.
+    if (!edited(before, latestDraft.current)) setDraft(stateOf(fresh.data.rail));
+    // Said only when the section really moved under the draft: its pins, hidden ones, texts, or products.
+    else if (
+      movedUnderDraft({ state: before, shown: shownBefore }, { state: stateOf(fresh.data.rail), shown: fresh.data.rail.visible })
+    ) {
+      toast(v.changedMeanwhile);
+    }
+  }, [railKey, draft.fallback, saved, base.visible, adoptRail, t, v]);
+
+  // An action that ended — from a toast's "Annulla", the log, a product's sheet — may have moved this section:
+  // a pin, a product hidden or shown, one put in or out of its category.
+  useOperationSettled((view) => {
+    if (movesSection(view.kind)) void reloadMembers();
+  });
 
   // A fallback we have no automatic order for yet: ask the site (nothing is saved).
   React.useEffect(() => {
@@ -329,6 +363,8 @@ function Editor({ railKey, initial, options }: { railKey: string; initial: Vetri
           adoptRail(fresh.data);
           setDraft(stateOf(fresh.data.rail));
         }
+        // The homepage the back button returns to is the router's copy from before: read again.
+        router.refresh();
         toast.dismiss();
         toast.success(demo ? v.publishedDemo : v.published, {
           action: base.pageLink
@@ -364,6 +400,10 @@ function Editor({ railKey, initial, options }: { railKey: string; initial: Vetri
   const categoryId = railCategory(base);
   const auto = t.vetrina.auto;
   const termLabel = base.taxonomy === "product_cat" ? v.termCategory : v.termBrand;
+  // A section showing exactly one category or brand opens it in the catalog.
+  const catalogHref = railCatalogHref(base);
+  // Leaving with unpublished changes asks first, as the back link does.
+  const confirmLeave = () => !dirty || window.confirm(v.leaveConfirm);
   const fallbackChoices = options.fallbacks.includes(draft.fallback) ? options.fallbacks : [...options.fallbacks, draft.fallback];
 
   return (
@@ -371,6 +411,9 @@ function Editor({ railKey, initial, options }: { railKey: string; initial: Vetri
       <Navbar
         title={shownTitle || base.key}
         subtitle={shownEyebrow || undefined}
+        // Clear of the back arrow and the menu, however long the section's title.
+        titleClassName="max-w-[calc(100%-152px)] truncate"
+        subtitleClassName="truncate"
         left={<BackLink dirty={dirty} />}
         right={
           <KLink onClick={() => setSectionMenu(true)} aria-label={v.menu.title}>
@@ -667,6 +710,16 @@ function Editor({ railKey, initial, options }: { railKey: string; initial: Vetri
               {auto.menu}
             </ActionsButton>
           )}
+          {catalogHref && (
+            <ActionsButton
+              onClick={() => {
+                setSectionMenu(false);
+                if (confirmLeave()) router.push(catalogHref);
+              }}
+            >
+              {t.vetrinaCatalog.sheet.openInCatalog}
+            </ActionsButton>
+          )}
           <ActionsButton
             onClick={() => {
               setSectionMenu(false);
@@ -810,8 +863,11 @@ function Editor({ railKey, initial, options }: { railKey: string; initial: Vetri
           void loadVetrinaCards({ ids: [id] }).then((res) => {
             if (res.ok) absorb(res.data.cards, res.data.locks);
           });
+          // The homepage's cards show the old price until read again.
+          router.refresh();
         }}
         onTagsChanged={() => void reloadMembers()}
+        confirmLeave={confirmLeave}
         demo={demo}
       />
 
@@ -863,7 +919,7 @@ function RailRow({
   onDragEnd: () => void;
   onOpen: (id: number) => void;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const v = t.vetrina.editor;
   const controls = useDragControls();
   const ghost = kind === "ghost";
@@ -894,7 +950,7 @@ function RailRow({
               {card?.name ?? "…"}
             </span>
             <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[13px]">
-              {card && <span className="tabular-nums opacity-60">{formatFromPrice(card, v.from)}</span>}
+              {card && <span className="tabular-nums opacity-60">{formatFromPrice(card, v.from, locale)}</span>}
               {kind !== "auto" && (
                 <span className="inline-flex items-center gap-0.5 font-semibold text-amber-700 dark:text-amber-400">
                   <Pin className="h-3 w-3" />

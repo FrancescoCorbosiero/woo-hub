@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import type { TaxonomyConfig } from "@core/config";
-import { getActiveConfig, saveActiveConfig } from "@/server/config/repo";
+import { getActiveConfig, updateActiveConfig } from "@/server/config/repo";
 import { DEFAULT_TAXONOMY } from "@/server/config/defaults";
 import { listPublishCandidates } from "@/server/catalog/repo";
 import { buildTaxonomyPreview, type TaxonomyPreview } from "@/lib/taxonomy-preview";
@@ -84,8 +84,9 @@ export async function saveTaxonomy(
   const parsed = TaxonomySchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "invalid" };
   try {
-    const config = await getActiveConfig();
-    await saveActiveConfig({ ...config, taxonomy: parsed.data });
+    // Under the config's lock, onto the config as it is now: the pricing
+    // rules beside it may have changed since this tab read them.
+    await updateActiveConfig((config) => ({ ...config, taxonomy: parsed.data }));
     return { ok: true, state: await computeState(parsed.data) };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -95,8 +96,7 @@ export async function saveTaxonomy(
 /** Put back the shipped defaults, leaving every other setting alone. */
 export async function resetTaxonomy(): Promise<{ ok: boolean; error?: string; state?: TaxonomyState }> {
   try {
-    const config = await getActiveConfig();
-    await saveActiveConfig({ ...config, taxonomy: DEFAULT_TAXONOMY });
+    await updateActiveConfig((config) => ({ ...config, taxonomy: DEFAULT_TAXONOMY }));
     return { ok: true, state: await computeState(DEFAULT_TAXONOMY) };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };

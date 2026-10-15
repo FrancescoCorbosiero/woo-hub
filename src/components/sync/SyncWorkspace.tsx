@@ -680,6 +680,12 @@ export function SyncWorkspace({
             {applied.sizes.added > 0 && (
               <p className="text-xs font-medium text-up">{t.sync.apply.sizesAdded(applied.sizes.added)}</p>
             )}
+            {applied.keptStoreEdits > 0 && (
+              <p className="text-xs font-medium text-skip">{t.sync.apply.keptChanged(applied.keptStoreEdits)}</p>
+            )}
+            {applied.keptOnSale > 0 && (
+              <p className="text-xs font-normal text-muted">{t.sync.apply.keptOnSale(applied.keptOnSale)}</p>
+            )}
             {applied.cleanup && applied.cleanup.products > 0 && (
               <p className="text-xs font-normal text-muted tnum">
                 {t.sync.apply.cleanupApplied(

@@ -1,14 +1,20 @@
 import type { ProductCard } from "@/lib/vetrina/types";
 
-const euro = new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" });
+// In the reader's language: "129,99 €" in Italian, "€129.99" in English.
+const EURO = {
+  it: new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }),
+  en: new Intl.NumberFormat("en-GB", { style: "currency", currency: "EUR" }),
+};
+const euroIn = (locale: string) => (locale === "en" ? EURO.en : EURO.it);
 
-export function formatEuro(value: number | null | undefined): string {
-  return value == null ? "—" : euro.format(value);
+export function formatEuro(value: number | null | undefined, locale = "it"): string {
+  return value == null ? "—" : euroIn(locale).format(value);
 }
 
 /** "129,99 €", or "129,99 € – 169,99 €" for a product with sizes at different prices. */
-export function formatCardPrice(card: Pick<ProductCard, "price" | "priceMax">): string {
+export function formatCardPrice(card: Pick<ProductCard, "price" | "priceMax">, locale = "it"): string {
   if (card.price == null) return "—";
+  const euro = euroIn(locale);
   if (card.priceMax != null && card.priceMax > card.price) {
     return `${euro.format(card.price)} – ${euro.format(card.priceMax)}`;
   }
@@ -36,8 +42,9 @@ export function parsePrice(input: string): number | null {
 }
 
 /** The list's short form: "da 129,99 €" when sizes differ in price. */
-export function formatFromPrice(card: Pick<ProductCard, "price" | "priceMax">, fromWord: string): string {
+export function formatFromPrice(card: Pick<ProductCard, "price" | "priceMax">, fromWord: string, locale = "it"): string {
   if (card.price == null) return "—";
+  const euro = euroIn(locale);
   return card.priceMax != null && card.priceMax > card.price
     ? `${fromWord} ${euro.format(card.price)}`
     : euro.format(card.price);

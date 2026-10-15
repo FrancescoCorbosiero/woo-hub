@@ -1,5 +1,6 @@
 import "server-only";
 import { createHash } from "node:crypto";
+import { env } from "@/lib/env";
 import { orderIds } from "@/lib/vetrina/order";
 import { FIELD_SPECS, fieldProblem } from "@/lib/vetrina/fields";
 import type {
@@ -56,9 +57,43 @@ export function demoShop(): DemoState {
   return state();
 }
 
+/** The shop's day (YYYY-MM-DD), in the scheduler's time zone: a sale's last day is the shop's. */
+function shopDay(at = Date.now()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: env.SCHEDULER_TIMEZONE ?? "Europe/Rome",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(at);
+}
+
+/**
+ * WooCommerce's scheduled sales, in the demo: a sale whose last day is over
+ * ends — the sale price and its date go, the shelf price is the regular one
+ * again, and the product reads as saved.
+ */
+function endSales(products: DemoProduct[]): void {
+  let today: string | null = null;
+  for (const p of products) {
+    if (!p.saleTo) continue;
+    today ??= shopDay();
+    if (p.saleTo.slice(0, 10) >= today) continue;
+    p.salePrice = null;
+    p.saleTo = null;
+    p.onSale = false;
+    p.price = p.regularPrice;
+    p.modified = Math.max(Date.now(), p.modified + 1000);
+  }
+}
+
 function state(): DemoState {
   if (!g.__vetrinaDemo) {
     const products = demoProducts();
+    const started = Date.now();
+    // A restart puts the shop back as it always is — and every product reads
+    // as saved now, so the store index (and the automatic categories) take
+    // it over whatever a previous run left there.
+    for (const p of products) p.modified = Math.max(p.modified, started);
     g.__vetrinaDemo = {
       products,
       byId: new Map(products.map((p) => [p.id, p])),
@@ -69,6 +104,7 @@ function state(): DemoState {
       history: new Map(),
     };
   }
+  endSales(g.__vetrinaDemo.products);
   return g.__vetrinaDemo;
 }
 
@@ -159,10 +195,13 @@ function sortBy(fallback: RailFallback): (a: DemoProduct, b: DemoProduct) => num
   }
 }
 
+/** Shown in the shop's lists: WooCommerce leaves "hidden" and "search only" products out of them. */
+const listed = (p: DemoProduct) => p.visibility !== "hidden" && p.visibility !== "search";
+
 /** Visible members in automatic order — what ghb_hub_rail_visible_ids() returns. */
 function visibleIds(block: RailBlock, fallback: RailFallback): number[] {
   return members(block)
-    .filter((p) => p.inStock)
+    .filter((p) => p.inStock && listed(p))
     .sort(sortBy(fallback))
     .map((p) => p.id);
 }
@@ -172,12 +211,13 @@ function card(p: DemoProduct): ProductCard {
     id: p.id,
     sku: p.sku,
     name: p.name,
-    type: "variable",
+    type: "simple",
     status: "publish",
-    visibility: "visible",
+    visibility: p.visibility,
     stockStatus: p.inStock ? "instock" : "outofstock",
     price: p.price,
-    priceMax: p.price + 40,
+    // One item, no sizes: a single price, on sale or not.
+    priceMax: p.price,
     onSale: p.onSale,
     image: p.image,
     permalink: `https://demo.shop/prodotto/${p.id}`,
@@ -241,6 +281,7 @@ function hiddenReason(block: RailBlock, id: number, s: RailState): HiddenItem["r
   if (s.exclude.includes(id)) return "excluded";
   if (!members(block).some((m) => m.id === id)) return "not_in_section";
   if (!p.inStock) return "outofstock";
+  if (!listed(p)) return "hidden";
   return "unknown";
 }
 

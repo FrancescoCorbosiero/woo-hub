@@ -1,4 +1,6 @@
 import "server-only";
+import type { AppConfig } from "@core/config";
+import type { SourceProduct } from "@core/core-spine";
 import { db } from "@/server/db/client";
 import { applyAudit, type ApplyAuditRow } from "@/server/db/schema";
 import { getActiveConfig } from "@/server/config/repo";
@@ -28,6 +30,7 @@ import {
   publishedVariations,
   withoutIdentity,
   type PublishPlan,
+  type ResolvedIdentity,
 } from "./publish-plan";
 import { buildIdentityResolver } from "./identity";
 import { toStoreProduct } from "./store-product";
@@ -35,6 +38,7 @@ import { getWooClient, type WooClient, type WooRestProduct, type WooRestVariatio
 import { withTaxonomyCache } from "./taxonomy-cache";
 import { assertSnapshotIsThisStore } from "@/server/woo/site-guard";
 import { forgetVariations, recordPriceWrites, type LedgerWrite } from "@/server/sync/ledger";
+import { STORE_TERMS_HELD, storeTermsForFiling, withStoreTermsIn } from "@/server/pricing/store-terms";
 import { publishing } from "./publishing";
 import { dropMedia, openMediaSkus, queueMedia, setMediaProduct } from "./media";
 import { isHidden } from "./media-plan";
@@ -168,6 +172,27 @@ async function createOrAdopt(
     if (!found) throw e;
     return { product: found, adopted: true };
   }
+}
+
+/**
+ * A product the store index does not hold yet (a new one) is priced by the
+ * categories and brand this publish files it under: a margin set on one of
+ * them is its price from the first write, as the next sync would make it.
+ * The index's own terms, when it holds the product, stand. Null when those
+ * terms cannot be placed in their trees now: the price is held, not written
+ * at the general margin.
+ */
+async function withFilingTerms<T extends SourceProduct>(
+  catalog: T,
+  identity: ResolvedIdentity | undefined,
+  rules: AppConfig["pricingRules"],
+): Promise<T | null> {
+  if (catalog.storeCategories != null || catalog.storeBrands != null) return catalog;
+  const categories = identity?.categoryIds ?? [];
+  const brands = identity?.brandId != null ? [identity.brandId] : [];
+  if (categories.length === 0 && brands.length === 0) return catalog;
+  const terms = await storeTermsForFiling({ categories, brands }, rules);
+  return terms == null ? null : { ...catalog, ...terms };
 }
 
 async function forEachLimit<T>(items: T[], limit: number, fn: (item: T) => Promise<void>) {
@@ -348,7 +373,15 @@ async function publishClaimed(
   const client = withTaxonomyCache(getWooClient());
   const overrides = await getOverrides().catch(() => null);
 
-  const catalogEntries = await getAnyBySkus(market, uniqueSkus);
+  // With the shop's categories and brands where the store already files the
+  // SKU (a product completed or reimported): a margin set on one of them
+  // prices its sizes as the sync would. A new product is priced by the terms
+  // this publish files it under (below). One whose terms cannot be read now
+  // is left for later, never priced without.
+  const { products: catalogEntries, uncertain: termsUnknown } = await withStoreTermsIn(
+    await getAnyBySkus(market, uniqueSkus),
+    config.pricingRules,
+  );
   // SKUs whose photos are already on their way (see media.ts).
   const photosQueued = dryRun ? new Set<string>() : await openMediaSkus();
   // Product-level ownership: a GS-owned SKU publishes the FEED's variant set
@@ -424,6 +457,10 @@ async function publishClaimed(
         return;
       }
       report.title = catalog.title || sku;
+      if (!gs && termsUnknown.has(skuKey(sku))) {
+        report.error = STORE_TERMS_HELD;
+        return;
+      }
 
       // A feed product with no LIVE feed coverage has no stock truth left:
       // the supplier delisted it, and the catalog row is the last thing we
@@ -446,8 +483,13 @@ async function publishClaimed(
       }
 
       const resolvedIdentity = identity?.for(catalog);
+      const priced = await withFilingTerms(catalog, resolvedIdentity, config.pricingRules);
+      if (priced == null) {
+        report.error = STORE_TERMS_HELD;
+        return;
+      }
       const plan = planPublish({
-        catalog,
+        catalog: priced,
         config,
         manualPrices,
         tagliaAttributeId,

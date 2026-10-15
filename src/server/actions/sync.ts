@@ -266,6 +266,10 @@ function applyOptions(data: z.output<typeof ApplySchema>) {
     sanitize: data.sanitize,
     backfillGtins: data.backfillGtins,
     addSizes: data.addSizes ? ("all" as const) : undefined,
+    // The preview can be overtaken before it is applied — a price changed in
+    // WordPress, a lock published from the Vetrina, a sale started: each
+    // product is read again right before its write, and such a size is kept.
+    liveCheck: !data.dryRun,
   };
 }
 

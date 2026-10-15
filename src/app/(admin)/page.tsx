@@ -79,11 +79,12 @@ export default async function Home() {
           ]}
         />
         <ActionCard
-          href="/catalog"
-          title={d.catalogCardTitle}
-          desc={d.catalogCardDesc}
-          cta={d.catalogCardCta}
+          href="/publish"
+          title={d.publishCardTitle}
+          desc={d.publishCardDesc}
+          cta={d.publishCardCta}
           lines={[
+            t.dock.publishHint(data.toPublish),
             `${data.catalog.total} ${d.statCatalog.toLowerCase()}`,
             // Only the sources this shop actually has: a supplier-only
             // catalog has no reason to report "0 with StockX prices".

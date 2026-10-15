@@ -26,6 +26,9 @@ async function attempt<T>(fn: () => Promise<T>): Promise<CollectionsResult<T>> {
     return { ok: true, data: await fn() };
   } catch (e) {
     if (e instanceof service.CollectionError) return { ok: false, code: e.code, error: e.message };
+    // Unforeseen (a failed query, the store down): the log keeps it whole. The Hub's page shows the
+    // message; the Vetrina shows only the code, in the owner's words (catalog/rules/errors.ts).
+    console.error("[collections] request failed:", e);
     return { ok: false, code: "failed", error: e instanceof Error ? e.message : String(e) };
   }
 }
@@ -67,6 +70,11 @@ export async function loadCollectionForTerm(input: { termId: number }): Promise<
   const parsed = z.object({ termId: z.number().int().positive() }).safeParse(input);
   if (!parsed.success) return invalid();
   return attempt(() => service.loadForTerm(parsed.data.termId));
+}
+
+/** The rule editor opened for a new automatic category: the store's categories, tags, brands and attributes. */
+export async function loadCollectionOptions(): Promise<CollectionsResult<TermEditor>> {
+  return attempt(() => service.loadCollectionOptions());
 }
 
 /** Opening the editor: bring the store index up to date in the background. */
@@ -136,6 +144,8 @@ export async function loadProductTags(input: { productId: number }): Promise<Col
 export async function saveProductTags(input: {
   productId: number;
   tags: { id?: number; name: string }[];
+  /** The tags the sheet loaded: only its change is written, over the product's tags as they are now. */
+  base?: number[];
 }): Promise<CollectionsResult<ProductTagsResult>> {
   const parsed = z
     .object({
@@ -143,8 +153,9 @@ export async function saveProductTags(input: {
       tags: z
         .array(z.object({ id: z.number().int().positive().optional(), name: z.string().trim().max(120) }))
         .max(50),
+      base: z.array(z.number().int().positive()).max(200).optional(),
     })
     .safeParse(input);
   if (!parsed.success) return invalid();
-  return attempt(() => service.saveProductTags(parsed.data.productId, parsed.data.tags));
+  return attempt(() => service.saveProductTags(parsed.data.productId, parsed.data.tags, parsed.data.base));
 }

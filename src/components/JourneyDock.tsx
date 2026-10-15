@@ -13,8 +13,8 @@ import { EMPTY_DOCK_STATUS, type DockStatus } from "@/lib/dock";
 
 /**
  * The operator area's navigation: a floating dock at the bottom of the
- * screen that draws the work as ONE path — import, catalog, publish, sync,
- * showcase, orders (hubConfig.ui.journey) — starting from the overview. The
+ * screen that draws the work as ONE path — import, publish, sync, showcase,
+ * orders (hubConfig.ui.journey) — starting from the overview. The
  * stretch already walked is lit in gold up to where you are, and each station
  * carries its live number (what's waiting there), polled from /api/dock.
  *
@@ -26,7 +26,6 @@ import { EMPTY_DOCK_STATUS, type DockStatus } from "@/lib/dock";
 type IconName =
   | "home"
   | "import"
-  | "catalog"
   | "publish"
   | "sync"
   | "vetrina"
@@ -63,13 +62,6 @@ function describe(
       return { icon: "home", label: t.header.navDashboard, hint: t.dock.homeHint };
     case "/import":
       return { icon: "import", label: t.header.navImport, hint: t.dock.importHint };
-    case "/catalog":
-      return {
-        icon: "catalog",
-        label: t.header.navCatalog,
-        hint: t.dock.catalogHint(s.catalog),
-        badge: s.catalog ? { text: format(s.catalog), tone: "quiet" } : undefined,
-      };
     case "/publish":
       return {
         icon: "publish",
@@ -431,13 +423,6 @@ const ICONS: Record<IconName, React.ReactNode> = {
     </>
   ),
   import: <path d="M12 3v11m0 0-4-4m4 4 4-4M4 16v2a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-2" />,
-  catalog: (
-    <>
-      <path d="m12 3 9 4.5-9 4.5-9-4.5L12 3Z" />
-      <path d="m3 12 9 4.5 9-4.5" />
-      <path d="m3 16.5 9 4.5 9-4.5" />
-    </>
-  ),
   publish: (
     <>
       <path d="M12 20V9m0 0-4 4m4-4 4 4" />

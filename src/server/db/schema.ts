@@ -17,6 +17,7 @@ import type { AppConfig } from "@core/config";
 import type { CollectionCondition, HoldReason, IndexedAttribute, IndexedTerm } from "@core/collections";
 import type { Plan, PlanItem, ApplyResult, SourceProduct } from "@core/core-spine";
 import type { StoreOverrides } from "@/server/overrides/model";
+import type { OperationInput, OperationKind, OperationView } from "@/lib/vetrina/catalog-ops";
 import type { MediaImage } from "@/server/woo/media-plan";
 
 /**
@@ -511,6 +512,13 @@ export const storeIndex = pgTable(
     price: numeric("price", { mode: "number" }),
     onSale: boolean("on_sale").notNull().default(false),
     stockStatus: text("stock_status").notNull().default(""),
+    // What the Vetrina's catalog lists: the first photo's address, whether the
+    // shop shows the product ("visible", "catalog", "search", "hidden"), the
+    // shop's own order (menu_order) and how many sold.
+    image: text("image").notNull().default(""),
+    visibility: text("visibility").notNull().default(""),
+    menuOrder: integer("menu_order").notNull().default(0),
+    totalSales: integer("total_sales").notNull().default(0),
     dateCreated: timestamp("date_created", { withTimezone: true }),
     // The store's own last-modified time: the frequent check asks for what
     // changed after the newest one held here.
@@ -592,6 +600,121 @@ export const priceLedger = pgTable(
 );
 
 export type PriceLedgerRow = typeof priceLedger.$inferSelect;
+
+/** A homepage section as a "Metti in homepage" left it: what its undo puts back, and the fingerprint it must still show. */
+export interface OperationSectionRecord {
+  key: string;
+  title: string;
+  before: { pin: number[]; exclude: number[] };
+  after: { pin: number[]; exclude: number[] };
+  /**
+   * The section's attrsHash right after the write: an undo over anything
+   * newer is refused. Null while the write's answer is not in (filed before
+   * the write; a lost answer leaves it so): the undo then goes by the pins.
+   */
+  attrsHash: string | null;
+}
+
+/** How an action's undo went (OperationView.undo). */
+export type OperationUndoOutcome = NonNullable<OperationView["undo"]>;
+
+/**
+ * An action's label as data (a "Saldo −20% · Saldi outlet"): rendered in the
+ * reader's language each time it is shown, from the catalog's dictionaries.
+ */
+export interface OperationLabelParams {
+  kind: OperationKind;
+  /** Products it changes, as counted when it started. */
+  count: number;
+  /** The whole category or brand it is filed under. */
+  term?: string | null;
+  tag?: string;
+  category?: string;
+  section?: string;
+  percent?: number;
+  /**
+   * A whole term's sale that only moved its end ("Cambia lo sconto" at the
+   * same percent): its new last day (YYYY-MM-DD), or null for none. Absent
+   * on every other action.
+   */
+  endsOnly?: { endsOn: string | null };
+}
+
+/**
+ * The Vetrina catalog's actions on products (src/server/vetrina/operations):
+ * hide and show, a sale and its end, tags, categories, a place on the
+ * homepage — one row each, with its progress and how it went. Kept 30 days,
+ * undoable for 7; a whole category or brand hidden by one keeps its row while
+ * it stays hidden, since "Mostra" is that row's undo.
+ */
+export const vetrinaOperations = pgTable(
+  "vetrina_operations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kind: text("kind").$type<OperationKind>().notNull(),
+    // As the owner asked it; a catalog query is resolved again when it runs.
+    input: jsonb("input").$type<OperationInput>().notNull(),
+    // In Italian, for the server's own logs; the screens render label_params in the owner's language.
+    label: text("label").notNull(),
+    labelParams: jsonb("label_params").$type<OperationLabelParams | null>(),
+    // "category:12", "brand:7": a whole term's hide or sale, which its screen shows.
+    termKey: text("term_key"),
+    status: text("status", { enum: ["running", "done", "failed", "undoing", "undone"] }).notNull().default("running"),
+    done: integer("done").notNull().default(0),
+    total: integer("total").notNull().default(0),
+    changed: integer("changed").notNull().default(0),
+    failed: integer("failed").notNull().default(0),
+    error: text("error"),
+    // A "Metti in homepage": the section before and after (null for every other kind).
+    section: jsonb("section").$type<OperationSectionRecord | null>(),
+    // How its undo went: products put back, left alone (changed since), refused.
+    undo: jsonb("undo").$type<OperationUndoOutcome | null>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    undoneAt: timestamp("undone_at", { withTimezone: true }),
+    // A whole term's hide that stopped hiding anything (its products shown
+    // another way) or that a newer hide of the term took over from: closed,
+    // it never stands again, whatever its products do later.
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("vetrina_operations_created_idx").on(t.createdAt),
+    index("vetrina_operations_term_idx").on(t.termKey, t.createdAt),
+  ],
+);
+
+export type VetrinaOperationRow = typeof vetrinaOperations.$inferSelect;
+
+/**
+ * What an action changed, one value per row — a product's visibility, tags or
+ * categories (whole lists), a size's sale (price and dates) — before and
+ * after. "Annulla" writes `before` back wherever the store still shows `after`.
+ * Filed before the write, so a write whose answer was lost can still be undone.
+ */
+export const vetrinaOperationItems = pgTable(
+  "vetrina_operation_items",
+  {
+    id: serial("id").primaryKey(),
+    operationId: uuid("operation_id")
+      .notNull()
+      .references(() => vetrinaOperations.id, { onDelete: "cascade" }),
+    productId: integer("product_id").notNull(),
+    // The size, for a sale on a product with sizes; null for the product itself.
+    variationId: integer("variation_id"),
+    // 'margin' is no product's value: a category's or brand's margin files
+    // its pricing rule before and after here, on product 0 (operations/repo.ts
+    // fileMarginRecord). 'member' is none either: a product a whole term's
+    // hide found already hidden — nothing to put back, but no newcomer to the
+    // term either (operations/standing.ts). The column is plain text: the
+    // list is TypeScript's only.
+    field: text("field", { enum: ["visibility", "tags", "categories", "sale", "margin", "member"] }).notNull(),
+    before: jsonb("before").$type<unknown>(),
+    after: jsonb("after").$type<unknown>(),
+  },
+  (t) => [index("vetrina_operation_items_operation_idx").on(t.operationId, t.productId)],
+);
+
+export type VetrinaOperationItemRow = typeof vetrinaOperationItems.$inferSelect;
 
 export type ConfigRow = typeof config.$inferSelect;
 export type VariantMappingRow = typeof variantMappings.$inferSelect;

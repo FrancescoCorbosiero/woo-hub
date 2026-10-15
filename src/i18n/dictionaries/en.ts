@@ -1,4 +1,5 @@
 import type { Dictionary } from "../dictionary";
+import { catalogEn } from "./catalog/en";
 
 /** English dictionary. Must match the shape of the Italian source of truth. */
 export const en: Dictionary = {
@@ -10,7 +11,6 @@ export const en: Dictionary = {
   header: {
     navVetrina: "Showcase",
     navDashboard: "Overview",
-    navCatalog: "Catalog",
     navOrders: "Orders",
     navMargins: "Margins",
     navSync: "Sync",
@@ -27,8 +27,6 @@ export const en: Dictionary = {
     step: (n, of) => `Step ${n} of ${of}`,
     homeHint: "Everything at a glance. The path starts here.",
     importHint: "Add SKUs to the catalog, by hand or from a file.",
-    catalogHint: (n) =>
-      n == null ? "The whole inventory in one place." : `${n} products in the catalog.`,
     publishHint: (n) =>
       n == null
         ? "Create the products you have in the catalog on the store."
@@ -87,9 +85,9 @@ export const en: Dictionary = {
     syncCardDesc:
       "Compare the store's prices against their sources and apply the differences. Nothing is written without your confirmation.",
     syncCardCta: "Go to sync",
-    catalogCardTitle: "Browse the catalog",
-    catalogCardDesc: "Find a product, check its price size by size, and lock the ones you decide.",
-    catalogCardCta: "Open the catalog",
+    publishCardTitle: "Publish new products",
+    publishCardDesc: "The supplier's products the store doesn't sell yet: pick which to create, with sizes, prices and photos.",
+    publishCardCta: "Go to Publish",
     importCardTitle: "Add products",
     importCardDesc:
       "Paste a list of SKU codes or upload a file: recognized products join the catalog.",
@@ -246,6 +244,8 @@ export const en: Dictionary = {
   product: {
     exactMatch: "exact match",
     noSku: "(no SKU)",
+    open: "Details",
+    openHint: "Open the product's drawer: sizes and prices, locked prices, price source",
     variants: (n) => `${n} variants`,
     sel: (a, b) => `${a}/${b} sel`,
     headerSize: "Size (EU)",
@@ -325,73 +325,9 @@ export const en: Dictionary = {
     parentsRealigned: (n) => `${n} product attributes realigned`,
   },
   discovery: {
-    title: "Catalog",
-    desc: "The store's whole inventory in one place: StockX-priced products, supplier price-list products, and store-only products.",
     total: (n) => `${n} SKUs`,
-    searchPlaceholder: "Search by SKU or model…",
-    brands: "Brands",
-    allBrands: "All brands",
-    categories: "Categories",
-    moreCategories: (n: number) =>
-      `+${n} more categories not listed. If that is close to the product count, the source has no real tree: fix it in Taxonomies.`,
-    allCategories: "All categories",
-    uncategorized: "Uncategorized",
-    genderLabel: "Gender",
-    genderName: (g) =>
-      (
-        {
-          men: "Men",
-          women: "Women",
-          child: "Kids",
-          kids: "Kids",
-          youth: "Youth",
-          preschool: "Preschool",
-          toddler: "Toddler",
-          infant: "Infant",
-          unisex: "Unisex",
-        } as Record<string, string>
-      )[g] ?? g,
-    freshnessLabel: "Freshness",
-    freshness: { all: "All", fresh: "Fresh prices", stale: "Needs refresh" },
-    sortLabel: "Sort by",
-    sort: {
-      brand: "Brand",
-      title: "Name",
-      added: "Recently added",
-      fetched: "Recently refreshed",
-      priceAsc: "Price low → high",
-      priceDesc: "Price high → low",
-    },
-    priceMin: "Min €",
-    priceMax: "Max €",
-    clearFilters: "Clear filters",
-    from: (p) => `from ${p}`,
-    noAsk: "no ask",
-    sizes: (n) => `${n} sizes`,
     freshBadge: "fresh prices",
     staleBadge: "needs refresh",
-    gsBadgeHint:
-      "Product managed by the GoldenSneakers supplier: sizes, final prices and real stock come from its price list.",
-    tabs: {
-      all: "All",
-      kicksdb: "StockX",
-      kicksdbHint: "Products with automatic StockX prices (via KicksDB)",
-      goldensneakers: "GoldenSneakers",
-      goldensneakersHint:
-        "Products managed by the GoldenSneakers supplier: real sizes, prices and stock from its price list",
-      woo: "Store",
-      wooHint:
-        "Store-only products: no price list linked — price and stock are edited directly from the product sheet",
-    },
-    wooBadge: "Store",
-    wooBadgeHint:
-      "Store-only product: not linked to any price list — price and stock are edited directly from the sheet",
-    lockedHint: (n) =>
-      n === 1
-        ? "1 hand-locked price — sync never touches it"
-        : `${n} hand-locked prices — sync never touches them`,
-    empty: "No products match these filters.",
-    emptyCatalog: "The catalog is empty — add SKUs from the Import tab or run a sync.",
     page: (p, n) => `Page ${p} of ${n}`,
     prev: "Previous",
     next: "Next",
@@ -401,6 +337,7 @@ export const en: Dictionary = {
     copySku: "Copy SKU",
     notFoundTitle: "Product not found",
     loadFailed: "Couldn't load the product",
+    loadFailedBody: "Something went wrong reading this product. Try again in a moment; if it keeps happening, its catalog data may be incomplete.",
     notFoundBody:
       "This product is not in the catalog for the active market. The link may be stale, or the product was removed.",
     audit: "Audit prices (API)",
@@ -464,6 +401,8 @@ export const en: Dictionary = {
     ruleMarginBands: (n: number) => `dynamic markup, ${n} bands`,
     rulePassthrough: "supplier's final price, no markup applied",
     ruleMixed: "different sizes follow different rules",
+    storeTermsUnknown:
+      "The store's categories and brands can't be read right now: these prices may miss a store category's or brand's margin. Until they can, the sync writes none of this product's prices.",
     ruleEdit: "Edit the rule",
     ruleCreate: "Give this family its own rule",
     storeTitle: "Store prices & stock",
@@ -600,6 +539,10 @@ export const en: Dictionary = {
       sizesTitle: (n) =>
         `${n === 1 ? "1 size" : `${n} sizes`} missing on the store, to add (the other sizes are left as they are):`,
       sizesAdded: (n) => `${n === 1 ? "1 size" : `${n} sizes`} added to the store ✓`,
+      keptChanged: (n: number) =>
+        `${n === 1 ? "1 price left as it was" : `${n} prices left as they were`}: they changed on the store after the preview. Those changed in WordPress are under "Prices changed on WordPress".`,
+      keptOnSale: (n: number) =>
+        `${n === 1 ? "1 size went on sale" : `${n} sizes went on sale`} after the preview: the price was left alone.`,
     },
     storeEdits: {
       title: "Prices changed on WordPress",
@@ -802,19 +745,24 @@ export const en: Dictionary = {
   },
   margins: {
     title: "Margins",
-    desc: "The pricing rules, from the most general to the most specific. The MARGIN is decided by ONE rule — the most specific one that states a margin: its markup replaces the general one outright, bands included. Everything else — rounding, VAT, minimum margin, the safety nets — is inherited from the more general rules. Examples: the dynamic banded list for everything else, “Yeezy › Foam RNNR” at 45%, “Jordan” +3 € fixed.",
+    desc: "The pricing rules, from the most general to the most specific. The MARGIN is decided by ONE rule — the most specific one that states a margin: its markup replaces the general one outright, bands included. Everything else — rounding, VAT, minimum margin, the safety nets — is inherited from the more general rules. Examples: the dynamic banded list for everything else, “Yeezy › Foam RNNR” at 45%, “Jordan” +3 € fixed. A margin on one of the SHOP's categories or brands (set from the Showcase, or with “Margin for a store category or brand”) beats every brand, family, name or source rule, and loses only to a rule on a single SKU.",
     addRule: "Add rule",
+    addStoreRule: "Margin for a store category or brand",
     save: "Save rules",
     saving: "Saving…",
     saved: "Rules saved ✓",
     saveFailed: "Save failed",
+    staleRules:
+      "Not saved: the rules changed since you opened this page (a margin set from the Showcase, for instance). Reload the page to see them, then make your changes again.",
+    reload: "Reload the page",
+    rulesFull: (max: number) => `At most ${max} rules: remove one to add another.`,
     deleteRule: "Delete",
     enabled: "Enabled",
     generalRule: "General rule (everything else)",
     gsRule: "GoldenSneakers price list — passthrough",
     customRule: (n: number) => `Rule ${n}`,
     scopeTitle: "Applies to",
-    scopeHint: "Empty field = anything. The rule describing the fewest products always wins: SKU › sub-family and name › family › brand › source.",
+    scopeHint: "Empty field = anything. The most specific rule always wins: SKU › store category or brand › sub-family and name › family › brand › source.",
     scopeSource: "Source",
     scopeSourceAny: "Any",
     scopeAny: "Any",
@@ -838,6 +786,34 @@ export const en: Dictionary = {
         : min != null
           ? `sizes ${min} and up`
           : `sizes up to ${max}`,
+    sumStoreCategory: (name: string | null, id: number) =>
+      `${name ? `store category “${name}”` : `store category #${id}`} and its sub-categories`,
+    sumStoreBrand: (name: string | null, id: number) =>
+      `${name ? `store brand “${name}”` : `store brand #${id}`} and its sub-brands`,
+    sumKicksOnly: "only products priced from KicksDB",
+    storeCategoryRule: (name: string | null, id: number) =>
+      name ? `Store category “${name}”` : `Store category #${id}`,
+    storeBrandRule: (name: string | null, id: number) => (name ? `Store brand “${name}”` : `Store brand #${id}`),
+    storeCategoryField: "Store category",
+    storeBrandField: "Store brand",
+    storeTermChange: "Change",
+    storeTermHint: (taxonomy: "category" | "brand") =>
+      `${taxonomy === "category" ? "Also covers its sub-categories" : "Also covers its sub-brands"}. Beats brand, family, name and source rules; loses only to a rule on a single SKU. When a product sits in two categories or brands with a rule, the deeper one wins (a sub-category beats its category); at the same depth, the later rule in the list. Products priced by GoldenSneakers and store-only products do not change.`,
+    storePickTitle: "Pick a category or a brand of the store",
+    storePickCategories: "Categories",
+    storePickBrands: "Brands",
+    storePickSearch: "Search…",
+    storePickLoading: "Reading the store's categories and brands…",
+    storePickFailed: "Couldn't read the store's categories and brands.",
+    storePickRetry: "Retry",
+    storePickNoTerms: "No store categories or brands have been read yet.",
+    storePickNoMatch: "No match",
+    storePickMore: (n: number) => `…and ${n} more: keep typing`,
+    storePickRuled: "already has a rule",
+    storePickProducts: (n: number) => (n === 1 ? "1 product" : `${n} products`),
+    storePickDemo:
+      "In the demo shop store-category and store-brand margins can't be added: the ids are the demo's, not the real shop's, and would land on other products.",
+    storePickCancel: "Cancel",
     scopeBrand: "Brand",
     scopeCategory: "Family",
     scopeSecondaryCategory: "Sub-family",
@@ -882,6 +858,8 @@ export const en: Dictionary = {
       n === 1 ? "Sets the margin for 1 product" : `Sets the margin for ${n} products`,
     coverageNone:
       "Applies to no product — either nothing matches it, or a more specific rule outranks it",
+    coverageNoneStore:
+      "Applies to no product — the category or brand is empty, its products are priced by the supplier, or a rule on a single SKU or on a deeper category or brand outranks it",
     coverageSizeScoped: "(only on the sizes it names)",
     exampleLabel: "Example:",
   },
@@ -1369,6 +1347,7 @@ export const en: Dictionary = {
     shown: (shown, total) => `${shown} of ${total} shown — use Copy for the full list`,
     failed: "Could not load the catalog",
   },
+  vetrinaCatalog: catalogEn,
   vetrina: {
     title: "Showcase",
     demo: "Demo shop — nothing reaches the site",
@@ -1456,6 +1435,7 @@ export const en: Dictionary = {
       publishedDemo: "Saved in the demo shop",
       discardConfirm: "Discard the unpublished changes?",
       leaveConfirm: "You have unpublished changes. Leave anyway?",
+      changedMeanwhile: "The section changed meanwhile: your changes stay, check them before publishing.",
       menu: {
         title: "Section",
         history: "History",
@@ -1554,11 +1534,24 @@ export const en: Dictionary = {
       },
       rule: (label) => `Margin: ${label}`,
       generalRule: "standard margin",
+      storeTermRule: (name, taxonomy) => `“${name}” (store ${taxonomy === "category" ? "category" : "brand"})`,
+      storeTermsUnknown:
+        "The shop's categories and brands can't be read right now: these prices may miss their margin. Until they can, this product's prices on the site stay as they are.",
+      storeTermsDemo:
+        "Demo shop: its categories and brands are not the real shop's, so these prices leave out their margin.",
       belowMarket: (ask) => `Below the market price (${ask})`,
       storeEdit: (price) => `Changed on WordPress: ${price}`,
       storeEditKeep: "Keep it",
       storeEditReprice: "Use the Hub's price",
       storeEditRepriced: "The Hub's price is back on the site",
+      keptChanged: (n: number) =>
+        n === 1
+          ? "1 size left as it is: its price had been changed in WordPress. It's listed below."
+          : `${n} sizes left as they are: their prices had been changed in WordPress. They're listed below.`,
+      keptOnSale: (n: number) =>
+        n === 1
+          ? "1 size is on sale on the site: its price was left alone."
+          : `${n} sizes are on sale on the site: their prices were left alone.`,
       noSnapshot: "Publishing prices needs a store refresh first (Sync).",
       openSite: "Open on site",
       editWp: "Edit in WordPress",
@@ -1589,16 +1582,15 @@ export const en: Dictionary = {
       cancel: "Cancel",
       delete: "Remove the rule",
       deleteConfirm: "Remove the rule? The category stays as it is, with the products it has now: from then on you fill it by hand.",
-      deleted: "Rule removed: the section is now filled by hand.",
-      applying: "Updating the section…",
+      deleted: "Rule removed: the category is now filled by hand.",
+      applying: "Updating the category…",
       applied: (n) =>
         n === 0 ? "Rule saved: no product to move." : n === 1 ? "Rule saved: 1 product moved." : `Rule saved: ${n} products moved.`,
-      savedPaused: "Rule saved paused: the section does not change.",
-      slow: "Rule saved: the section updates shortly.",
+      savedPaused: "Rule saved paused: the category does not change.",
+      slow: "Rule saved: the category updates shortly.",
       heldHint: "The last check found a big change and waits for your confirmation.",
       confirm: "Confirm and apply",
       loading: "Loading…",
-      failed: "Failed",
     },
     tags: {
       title: "Tags",
@@ -1615,6 +1607,8 @@ export const en: Dictionary = {
       pending: "Tags saved: the sections update shortly.",
       inCollections: (names) => `In the automatic categories: ${names}`,
       failed: "Tags not saved",
+      loadFailed: "Couldn't read the product's tags.",
+      gone: "This product is no longer in the shop.",
       loading: "Loading the tags…",
       refused: (reason) => `Tags saved, but the store did not accept the change of category: ${reason}`,
     },

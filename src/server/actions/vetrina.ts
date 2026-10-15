@@ -12,6 +12,7 @@ import {
   type VetrinaResult,
   type VetrinaRail,
 } from "@/server/vetrina/service";
+import { forgetHomepagePresence } from "@/server/vetrina/catalog";
 import type { ProductCard, RailHistoryState, RailWriteResult } from "@/lib/vetrina/types";
 
 /**
@@ -62,7 +63,10 @@ const PublishSchema = z.object({
 export async function publishVetrinaRail(input: z.input<typeof PublishSchema>): Promise<VetrinaResult<RailWriteResult>> {
   const parsed = PublishSchema.safeParse(input);
   if (!parsed.success) return { ok: false, code: "invalid", error: parsed.error.issues[0]?.message ?? "Dati non validi." };
-  return attempt(() => publishRail(parsed.data));
+  const res = await attempt(() => publishRail(parsed.data));
+  // The catalog's homepage marks (badges, "In homepage", a product's places) follow at once.
+  if (res.ok) forgetHomepagePresence();
+  return res;
 }
 
 const PublishBlockSchema = z.object({
