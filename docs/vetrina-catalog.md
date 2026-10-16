@@ -30,7 +30,7 @@ tree; that is the operator's view, and it is gone.
 | Topic | Decision |
 |---|---|
 | Where | The Vetrina (`/vetrina/catalogo/…`), so it is served on the Vetrina's own address too. Konsta UI, the Vetrina's stack. |
-| Navigation | **Categorie** and **Brand**, the store's two taxonomies. Tags are not a third axis: they are what automatic categories read, and what an action adds or removes ("Tag +/−"). The catalog's lists do not filter by tag yet: a tag's products are listed through an automatic category on it. Quick views cover the rest: sold out, on sale, hidden, without photo, without category. |
+| Navigation | **Categorie** and **Brand**, the store's two taxonomies. Tags are not a third axis: they are one of the things an automatic category's rule can read (with brand, category, attribute, name, price, sale, stock and the date a product was added), and what an action adds or removes ("Tag +/−"). The catalog's lists do not filter by tag yet: a tag's products are listed through an automatic category on it. Quick views cover the rest: sold out, on sale, hidden, without photo, without category. |
 | The Hub's Catalog tab | **Removed.** The product drawer stays, on every Hub page (`?product=SKU`): it is the only home of a few operator tools (re-sync from KicksDB, the price-source switch). |
 | Hiding a category | **Its products are hidden, everywhere** (`catalog_visibility = hidden`), those that join it later too, and "Mostra" restores exactly what was hidden: a product already hidden before stays hidden. No plugin change. A product also in other categories disappears there too, and the sheet says so before acting. |
 | Plugins | **woo-hub only.** See [§2](#2-where-things-live). |

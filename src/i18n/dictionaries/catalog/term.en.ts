@@ -24,7 +24,7 @@ export const termEn: typeof termIt = {
   panel: {
     automatic: (rule: string) => `Automatic: ${rule}`,
     automaticSample: "tagged “saldi” and in stock",
-    makeHint: "Products come and go on their own, by a rule: for example every product tagged “sale”.",
+    makeHint: "Products come and go on their own, by a rule: by brand, price, sale, tag and more.",
     inHomepage: (section: string) => `On the homepage: ${section}`,
     notInHomepage: "Not on the homepage",
     soldOut: (count: number) => `${n(count)} sold out`,

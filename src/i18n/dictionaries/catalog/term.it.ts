@@ -31,7 +31,7 @@ export const termIt = {
     automatic: (rule: string) => `Automatica: ${rule}`,
     /** A rule as the skeleton draws it, unseen: only its length matters. */
     automaticSample: "con il tag «saldi» e disponibili",
-    makeHint: "I prodotti entrano ed escono da soli, secondo una regola: per esempio tutti quelli col tag «saldi».",
+    makeHint: "I prodotti entrano ed escono da soli, secondo una regola: per brand, prezzo, saldo, tag e altro.",
     inHomepage: (section: string) => `In homepage: ${section}`,
     notInHomepage: "Non è in homepage",
     soldOut: (count: number) => (count === 1 ? "1 esaurito" : `${n(count)} esauriti`),

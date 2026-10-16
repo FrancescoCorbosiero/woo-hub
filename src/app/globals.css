@@ -141,6 +141,19 @@ body {
   outline-offset: 2px;
 }
 
+/* A native select's open list is painted from the page's styles on Windows,
+   Linux and in Firefox: a see-through field (the Vetrina's rule sheets) put
+   the dark theme's light text on a white list. The options carry their own
+   solid colours, so the list reads in both themes. */
+option,
+optgroup {
+  background-color: var(--surface);
+  color: var(--ink);
+}
+option:disabled {
+  color: var(--faint);
+}
+
 /* Ambient backdrop: faint grid + a single accent bloom, masked to the top. */
 body::before {
   content: "";
