@@ -90,6 +90,8 @@ interface State extends RunnerStatus {
    * before them.
    */
   readFrom?: number;
+  /** The check ↻ asked for, while it is queued or running: another tap joins it. */
+  asked?: Promise<unknown> | null;
 }
 
 const g = globalThis as { __storeHubCollections?: State };
@@ -522,6 +524,20 @@ export function requestFullRead(): void {
       s.lastCheckAt = Date.now();
     }),
   );
+}
+
+/**
+ * ↻ in the Vetrina: a check now, waited for — or the one ↻ already asked for,
+ * never a pile of them however often it is tapped.
+ */
+export function checkNow(): Promise<unknown> {
+  const s = state();
+  if (s.asked) return s.asked;
+  const asked: Promise<unknown> = runCheck().finally(() => {
+    if (s.asked === asked) s.asked = null;
+  });
+  s.asked = asked;
+  return asked;
 }
 
 /** From the Hub, on opening the editor: catch up with the store if a check is not already due. */

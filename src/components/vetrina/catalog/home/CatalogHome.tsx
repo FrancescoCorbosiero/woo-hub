@@ -6,6 +6,7 @@ import { Block, Button, Link as KLink, Navbar, Page, Preloader, Segmented, Segme
 import { useI18n } from "@/i18n/provider";
 import type { CatalogOverview } from "@/lib/vetrina/catalog";
 import type { VetrinaResult } from "@/server/vetrina/service";
+import { refreshVetrina } from "@/server/actions/vetrina";
 import { ErrorState } from "../../ErrorState";
 import { ChevronLeft, Refresh } from "../../icons";
 import { SEGMENTED_COLORS } from "../../segmented";
@@ -44,9 +45,18 @@ export function CatalogHome({ result }: { result: VetrinaResult<CatalogOverview>
   const { tab, order, q: addressQ } = readParams(useSearchParams());
   const [refreshing, startRefresh] = React.useTransition();
 
+  // An action ended: what it changed is already forgotten on the server, so the screen just reads again.
   const refresh = React.useCallback(() => {
     startRefresh(() => router.refresh());
     revalidateSearches();
+  }, [router]);
+  // ↻: the screens answer from what was read lately; this reads the store and the site again first.
+  const refreshAll = React.useCallback(() => {
+    startRefresh(async () => {
+      await refreshVetrina({ store: true }).catch(() => undefined);
+      startRefresh(() => router.refresh());
+      revalidateSearches();
+    });
   }, [router]);
 
   const { query, setQuery, searched } = useAddressSearch(addressQ);
@@ -86,7 +96,7 @@ export function CatalogHome({ result }: { result: VetrinaResult<CatalogOverview>
                 {t.vetrina.backToHub}
               </KLink>
             )}
-            <KLink iconOnly onClick={refresh} aria-label={t.vetrina.refresh}>
+            <KLink iconOnly onClick={refreshAll} aria-label={t.vetrina.refresh}>
               {refreshing ? <Preloader className="!h-5 !w-5" /> : <Refresh className="h-5 w-5" />}
             </KLink>
           </>

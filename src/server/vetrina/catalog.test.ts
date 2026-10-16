@@ -2,10 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HomeBlock, Homepage, ProductCard, RailSummary } from "@/lib/vetrina/types";
 import type { IndexFacts } from "@/server/collections/repo";
 
-// No database, no site: only the pure helpers and the homepage's cache.
-const { readHome } = vi.hoisted(() => ({ readHome: vi.fn() }));
+// No database, no site: only the pure helpers and the homepage's cache, over a stand-in site.
+const { homepage } = vi.hoisted(() => ({ homepage: vi.fn() }));
 vi.mock("@/lib/env", () => ({ env: {} }));
-vi.mock("./service", () => ({ readHome }));
+vi.mock("./source", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./source")>()),
+  getVetrinaSource: async () => ({ kind: "wordpress", homepage }),
+}));
 
 import {
   ancestorIds,
@@ -396,7 +399,6 @@ const HOME: Homepage = {
   ],
 };
 
-const homeRead = () => ({ home: HOME, locks: {}, collections: {}, source: "fixture" as const });
 
 describe("where the homepage shows terms and products", () => {
   it("gives a term the sections showing it alone, and a product every section showing it, with its place", () => {
@@ -420,8 +422,9 @@ describe("where the homepage shows terms and products", () => {
 
 describe("the homepage's sections, remembered", () => {
   beforeEach(() => {
-    forgetHomepagePresence();
-    readHome.mockReset();
+    // The homepage the screens share lives for the whole process: each test starts from none.
+    delete (globalThis as { __vetrinaHomepage?: unknown }).__vetrinaHomepage;
+    homepage.mockReset();
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -429,58 +432,58 @@ describe("the homepage's sections, remembered", () => {
 
   it("reads the homepage once a minute, and again when told to forget", async () => {
     vi.useFakeTimers();
-    readHome.mockResolvedValue(homeRead());
+    homepage.mockResolvedValue(HOME);
     expect((await homepagePresence()).products.get(3)).toHaveLength(1);
     await homepagePresence();
-    expect(readHome).toHaveBeenCalledTimes(1);
+    expect(homepage).toHaveBeenCalledTimes(1);
     vi.advanceTimersByTime(61_000);
     await homepagePresence();
-    expect(readHome).toHaveBeenCalledTimes(2);
+    expect(homepage).toHaveBeenCalledTimes(2);
     forgetHomepagePresence();
     await homepagePresence();
-    expect(readHome).toHaveBeenCalledTimes(3);
+    expect(homepage).toHaveBeenCalledTimes(3);
   });
 
   it("keeps the sections it knew when reading the homepage again fails", async () => {
     vi.useFakeTimers();
-    readHome.mockResolvedValueOnce(homeRead());
+    homepage.mockResolvedValueOnce(HOME);
     expect((await homepagePresence()).products.size).toBeGreaterThan(0);
-    readHome.mockRejectedValueOnce(new Error("502 Bad Gateway"));
+    homepage.mockRejectedValueOnce(new Error("502 Bad Gateway"));
     vi.advanceTimersByTime(61_000);
     await homepagePresence();
     await vi.advanceTimersByTimeAsync(0);
     const after = await homepagePresence();
-    expect(readHome).toHaveBeenCalledTimes(2);
+    expect(homepage).toHaveBeenCalledTimes(2);
     expect(after.products.get(3)).toHaveLength(1);
     expect(after.terms.get("category:11")).toHaveLength(1);
   });
 
   it("gives no sections, never an error, when the homepage cannot be read — and does not ask again at once", async () => {
-    readHome.mockRejectedValue(new Error("Il sito non risponde"));
+    homepage.mockRejectedValue(new Error("Il sito non risponde"));
     const presence = await homepagePresence();
     expect(presence.terms.size).toBe(0);
     expect(presence.products.size).toBe(0);
     await homepagePresence();
-    expect(readHome).toHaveBeenCalledTimes(1);
+    expect(homepage).toHaveBeenCalledTimes(1);
   });
 
   it("does not wait long for a slow site: the answer goes without sections, the next one has them", async () => {
     vi.useFakeTimers();
-    readHome.mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve(homeRead()), 5_000)));
+    homepage.mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve(HOME), 5_000)));
     const first = homepagePresence();
     await vi.advanceTimersByTimeAsync(2_500);
     expect((await first).products.size).toBe(0);
     await vi.advanceTimersByTimeAsync(2_500);
     expect((await homepagePresence()).products.size).toBeGreaterThan(0);
-    expect(readHome).toHaveBeenCalledTimes(1);
+    expect(homepage).toHaveBeenCalledTimes(1);
   });
 
   it("after a minute, answers with what it knows while the homepage is read again", async () => {
     vi.useFakeTimers();
-    readHome.mockResolvedValueOnce(homeRead());
+    homepage.mockResolvedValueOnce(HOME);
     expect((await homepagePresence()).products.size).toBeGreaterThan(0);
-    readHome.mockImplementationOnce(
-      () => new Promise((resolve) => setTimeout(() => resolve({ ...homeRead(), home: { ...HOME, blocks: [] } }), 5_000)),
+    homepage.mockImplementationOnce(
+      () => new Promise((resolve) => setTimeout(() => resolve({ ...HOME, blocks: [] }), 5_000)),
     );
     vi.advanceTimersByTime(61_000);
     // The new read is slow: the sections known so far, at once…
@@ -488,6 +491,6 @@ describe("the homepage's sections, remembered", () => {
     // …until it is done.
     await vi.advanceTimersByTimeAsync(5_000);
     expect((await homepagePresence()).products.size).toBe(0);
-    expect(readHome).toHaveBeenCalledTimes(2);
+    expect(homepage).toHaveBeenCalledTimes(2);
   });
 });

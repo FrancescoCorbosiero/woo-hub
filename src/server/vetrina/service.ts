@@ -17,6 +17,8 @@ import type {
 } from "@/lib/vetrina/types";
 import { railCategory } from "@/lib/collections/rail";
 import type { RailCollection } from "@/lib/collections/types";
+import { cachedCards } from "./card-cache";
+import { cachedHomepage, forgetHomepage } from "./home-cache";
 import { getVetrinaSource, VetrinaError } from "./source";
 
 /**
@@ -97,9 +99,10 @@ export interface VetrinaHome {
   source: "wordpress" | "fixture";
 }
 
+/** The homepage the screens share (home-cache.ts): recent enough, or read again; the locks and rules are the Hub's own, read now. */
 export async function readHome(): Promise<VetrinaHome> {
   const source = await getVetrinaSource();
-  const home = await source.homepage();
+  const home = await cachedHomepage();
   const shown = home.blocks.flatMap((b) => (b.kind === "rail" ? b.rail.products : []));
   const [locks, collections] = await Promise.all([locksFor(shown), automaticCategories()]);
   return { home, locks, collections, source: source.kind };
@@ -121,9 +124,10 @@ export async function readRail(key: string, fallback?: RailFallback): Promise<Ve
   return { rail, locks, collection: term != null ? (collections[term] ?? null) : null, source: source.kind };
 }
 
+/** Product cards, remembered for a while (card-cache.ts): only the ones not seen lately are asked of the site. */
 export async function readCards(ids: number[]): Promise<{ cards: ProductCard[]; locks: Record<string, number> }> {
   const source = await getVetrinaSource();
-  const cards = await source.products(ids);
+  const cards = await cachedCards(ids, (missing) => source.products(missing));
   return { cards, locks: await locksFor(cards) };
 }
 
@@ -189,7 +193,7 @@ export async function publishRail(input: PublishInput): Promise<RailWriteResult>
     }
     limit = input.limit;
   }
-  return source.writeRail({
+  const written = await source.writeRail({
     pageId: current.pageId,
     path: current.path,
     blockName: RAIL_BLOCK,
@@ -201,6 +205,9 @@ export async function publishRail(input: PublishInput): Promise<RailWriteResult>
     ...(Object.keys(fields).length > 0 ? { fields } : {}),
     ...(limit != null ? { limit } : {}),
   });
+  // Every screen showing the homepage reads it again.
+  forgetHomepage();
+  return written;
 }
 
 export interface PublishBlockInput {
@@ -231,7 +238,7 @@ export async function publishBlock(input: PublishBlockInput): Promise<RailWriteR
   if (Object.keys(fields).length === 0) {
     throw new VetrinaError("invalid", "Nessun campo da cambiare.", 400);
   }
-  return source.writeBlock({
+  const written = await source.writeBlock({
     pageId: home.pageId,
     path: block.path,
     blockName: block.name,
@@ -239,4 +246,6 @@ export async function publishBlock(input: PublishBlockInput): Promise<RailWriteR
     expectedAttrsHash: block.attrsHash,
     fields,
   });
+  forgetHomepage();
+  return written;
 }

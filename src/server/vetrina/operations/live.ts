@@ -73,6 +73,39 @@ export async function readSizes(client: WooClient, product: { id: number; type?:
   return { variable: false, sizes: [{ variationId: null, regular: priceCents(full.regular_price), sale: saleOf(full) }] };
 }
 
+/** How long a preview takes a product's sizes as it last read them: the sale sheet asks again on every slider stop. */
+const PREVIEW_SIZES_MS = 60_000;
+
+interface PreviewSizes {
+  read: Map<number, { sizes: ProductSizes | null; at: number }>;
+  forgotAt: number;
+}
+// One copy per process, like the actions' queue that forgets it.
+const previews = globalThis as { __vetrinaPreviewSizes?: PreviewSizes };
+
+/**
+ * readSizes for a preview only: what was read in the last minute is taken as
+ * it is. Running the action reads the sizes again, live, and plans from those.
+ */
+export async function previewSizes(client: WooClient, product: { id: number; type?: string | null }): Promise<ProductSizes | null> {
+  const memo = (previews.__vetrinaPreviewSizes ??= { read: new Map(), forgotAt: 0 });
+  const started = Date.now();
+  const hit = memo.read.get(product.id);
+  if (hit && started - hit.at < PREVIEW_SIZES_MS) return hit.sizes;
+  const sizes = await readSizes(client, product);
+  // Forgotten while on its way (an action finished): the read may be from before it.
+  if (started > memo.forgotAt) memo.read.set(product.id, { sizes, at: started });
+  return sizes;
+}
+
+/** An action finished, or ↻: previews read the sizes again. */
+export function forgetPreviewSizes(): void {
+  const memo = previews.__vetrinaPreviewSizes;
+  if (!memo) return;
+  memo.read.clear();
+  memo.forgotAt = Date.now();
+}
+
 export interface SaleWrite {
   variationId: number | null;
   sale: SaleState;

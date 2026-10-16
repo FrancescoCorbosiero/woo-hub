@@ -89,6 +89,17 @@ vi.mock("@/server/collections/runner", async (importOriginal) => {
   return { ...real, requestCheck: () => void (checks.requested += 1) };
 });
 
+// The homepage the screens share answers from the stand-in below as it is now: what the
+// actions' warnings and pins see is this test's business, not the cache's (home-cache.test.ts).
+vi.mock("@/server/vetrina/home-cache", async () => {
+  const { readHome } = await import("@/server/vetrina/service");
+  return {
+    cachedHomepage: async () => (await readHome()).home,
+    lastHomepage: () => null,
+    forgetHomepage: () => undefined,
+  };
+});
+
 vi.mock("@/server/vetrina/service", async () => {
   const { VetrinaError } = await import("@/server/vetrina/source");
   const members = (rail: { taxonomy: string; term: { id: number } }) =>

@@ -23,7 +23,8 @@ import type {
   TermOption,
 } from "@/lib/collections/types";
 import type { WooClient } from "@/server/woo/client";
-import { decodeEntities, parentsOf, toIndexRow } from "./index-rows";
+import { noteTermsChanged } from "@/server/woo/taxonomy-cache";
+import { decodeEntities, parentsOf, toIndexRow, type IndexRow } from "./index-rows";
 import * as repo from "./repo";
 import { getRunnerStatus, maxChanges, requestApply, requestCheck, requestFullRead, setProductTags } from "./runner";
 import { demoMode, storeClient, storeReady } from "./store";
@@ -332,6 +333,8 @@ export async function saveDraft(draft: CollectionDraft): Promise<string> {
     const existing = categories.find((c) => (c.parent ?? 0) === parent && sameName(c.name, wanted));
     const created = existing ?? (await client.createCategory(wanted, parent || undefined));
     if (!created) throw new CollectionError("store", "The store did not create the category (check the key's permissions).");
+    // The Vetrina opens the new category's screen next: its copy of the store's categories reads again.
+    if (!existing) noteTermsChanged();
     termId = created.id;
     name = created.name;
   }
@@ -382,23 +385,35 @@ export async function readAgain(): Promise<void> {
 
 const asOption = (t: { id: number; name: string }): TermOption => ({ id: t.id, name: t.name, path: t.name });
 
-/** A product's tags as the store has them now (read live), and every tag to choose from. */
+/**
+ * A product's tags as the store index has them (a few minutes behind at
+ * most: saving applies only the sheet's change, over the tags read live
+ * then), and every tag to choose from. A product the index does not hold yet
+ * is read from the store, and indexed.
+ */
 export async function productTags(productId: number): Promise<ProductTagsView> {
   const client = await woo();
-  const [{ products }, tags, rows] = await Promise.all([
-    client.getProductIndexPage({ page: 1, perPage: 1, include: [productId] }),
+  const [[indexed], tags, rows] = await Promise.all([
+    repo.readIndexRowsById([productId]),
     client.listTags(),
     repo.listCollectionRows(),
   ]);
-  const product = products[0];
-  if (!product) throw new CollectionError("not_found", "The store has no such product.");
-  const row = toIndexRow(product);
-  await repo.upsertIndexRows([row]);
+  const row = indexed ?? (await liveIndexRow(client, productId));
   return {
     tags: row.tags.map(asOption),
     available: termOptions(tags),
     inCollections: rows.filter((r) => row.categories.some((c) => c.id === r.termId)).map((r) => r.name),
   };
+}
+
+/** One product read from the store as the index keeps it, and indexed. */
+async function liveIndexRow(client: WooClient, productId: number): Promise<IndexRow> {
+  const { products } = await client.getProductIndexPage({ page: 1, perPage: 1, include: [productId] });
+  const product = products[0];
+  if (!product) throw new CollectionError("not_found", "The store has no such product.");
+  const row = toIndexRow(product);
+  await repo.upsertIndexRows([row]);
+  return row;
 }
 
 /** Save a product's tags; its automatic categories follow at once (see setProductTags). */

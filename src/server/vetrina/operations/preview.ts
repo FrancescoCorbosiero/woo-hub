@@ -11,7 +11,7 @@ import { readRail } from "@/server/vetrina/service";
 import { VetrinaError } from "@/server/vetrina/source";
 import type { OperationLabelParams } from "@/server/db/schema";
 import { mapLimit, parseTermKey, resolveTarget, rowsInOrder, termName, wholeTermAction } from "./context";
-import { readSizes } from "./live";
+import { previewSizes } from "./live";
 import { assessMargin, marginChanges } from "./margin";
 import {
   bump,
@@ -205,7 +205,8 @@ async function assessSale(ctx: Ctx, input: Extract<OperationInput, { kind: "sale
   if (ctx.live && candidates.length > 0) {
     const client = await storeClient();
     const first = candidates.slice(0, SAMPLE);
-    const read = await mapLimit(first, LIVE_READS, (r) => readSizes(client, r));
+    // Sizes read in the last minute are taken as they are: the sheet asks again on every slider stop.
+    const read = await mapLimit(first, LIVE_READS, (r) => previewSizes(client, r));
     sampled = first.length;
     first.forEach((row, i) => {
       const sizes = read[i];

@@ -11,6 +11,7 @@ import {
   type SmartCollectionRow,
 } from "@/server/db/schema";
 import { forgetStoreTerms } from "@/server/pricing/store-terms";
+import { forgetCards } from "@/server/vetrina/card-cache";
 import type { IndexRow } from "./index-rows";
 
 /**
@@ -161,8 +162,12 @@ export async function upsertIndexRows(rows: IndexRow[], seenAt = new Date()): Pr
   }
   // A product moved to a category or a brand (a Vetrina action patches the
   // index at once) is priced by that term's margin from the next read, not
-  // within the minute the store-terms cache would otherwise serve.
-  if (rows.length > 0) forgetStoreTerms();
+  // within the minute the store-terms cache would otherwise serve. Its
+  // Vetrina card (price, stock, photo) is asked for again too.
+  if (rows.length > 0) {
+    forgetStoreTerms();
+    forgetCards(rows.map((r) => r.id));
+  }
 }
 
 /** Mark rows as seen without changing them (a full read that met an older copy). */
@@ -175,11 +180,13 @@ export async function deleteIndexRows(ids: number[]): Promise<void> {
   if (ids.length === 0) return;
   await db.delete(storeIndex).where(inArray(storeIndex.productId, ids));
   forgetStoreTerms();
+  forgetCards(ids);
 }
 
 /** Drop the products a complete read did not see: gone from the store, or binned. */
 export async function deleteUnseen(before: Date): Promise<number> {
   const gone = await db.delete(storeIndex).where(lt(storeIndex.seenAt, before)).returning({ id: storeIndex.productId });
+  if (gone.length > 0) forgetCards(gone.map((g) => g.id));
   return gone.length;
 }
 

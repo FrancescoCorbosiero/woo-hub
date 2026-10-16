@@ -12,8 +12,13 @@ import {
   type VetrinaResult,
   type VetrinaRail,
 } from "@/server/vetrina/service";
-import { forgetHomepagePresence } from "@/server/vetrina/catalog";
 import type { ProductCard, RailHistoryState, RailWriteResult } from "@/lib/vetrina/types";
+import { checkNow } from "@/server/collections/runner";
+import { forgetCards } from "@/server/vetrina/card-cache";
+import { forgetScreenTrees } from "@/server/vetrina/catalog";
+import { forgetHomepage } from "@/server/vetrina/home-cache";
+import { forgetPreviewSizes } from "@/server/vetrina/operations/live";
+import { forgetTaxonomies } from "@/server/woo/taxonomy-cache";
 
 /**
  * The Vetrina editor's server actions: thin, validated wrappers over
@@ -63,10 +68,8 @@ const PublishSchema = z.object({
 export async function publishVetrinaRail(input: z.input<typeof PublishSchema>): Promise<VetrinaResult<RailWriteResult>> {
   const parsed = PublishSchema.safeParse(input);
   if (!parsed.success) return { ok: false, code: "invalid", error: parsed.error.issues[0]?.message ?? "Dati non validi." };
-  const res = await attempt(() => publishRail(parsed.data));
-  // The catalog's homepage marks (badges, "In homepage", a product's places) follow at once.
-  if (res.ok) forgetHomepagePresence();
-  return res;
+  // The screens showing the homepage (the catalog's marks included) read it again: publishRail forgets it.
+  return attempt(() => publishRail(parsed.data));
 }
 
 const PublishBlockSchema = z.object({
@@ -82,4 +85,29 @@ export async function publishVetrinaBlock(input: z.input<typeof PublishBlockSche
   const parsed = PublishBlockSchema.safeParse(input);
   if (!parsed.success) return { ok: false, code: "invalid", error: parsed.error.issues[0]?.message ?? "Dati non validi." };
   return attempt(() => publishBlock(parsed.data));
+}
+
+/** How long ↻ waits for the store index to catch up; a slower check finishes behind the answer. */
+const REFRESH_WAIT_MS = 6_000;
+
+/**
+ * ↻ on a Vetrina screen. The screens answer from what was read lately (the
+ * homepage, product cards, categories and brands, a preview's sizes); this
+ * forgets all of it, so the next answer reads the site and the store again.
+ * With `store`, the store index first asks the store what changed since its
+ * last look — the check that otherwise runs every five minutes.
+ */
+export async function refreshVetrina(input: { store?: boolean } = {}): Promise<void> {
+  const parsed = z.object({ store: z.boolean().optional() }).safeParse(input);
+  forgetHomepage();
+  forgetCards();
+  forgetPreviewSizes();
+  forgetScreenTrees();
+  forgetTaxonomies();
+  if (parsed.success && parsed.data.store) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<void>((resolve) => (timer = setTimeout(resolve, REFRESH_WAIT_MS)));
+    await Promise.race([checkNow().catch(() => null), late]);
+    clearTimeout(timer);
+  }
 }

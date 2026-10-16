@@ -14,6 +14,7 @@ import { planProductSanitize, type ProductSanitizeOps } from "@/server/store-jso
 import { planFeedTakeover } from "@/server/store-json/takeover-plan";
 import { variationSizeLabel } from "@/server/store-json/match";
 import { gsOwnedProducts } from "@/server/feeds/owner";
+import { forgetCards } from "@/server/vetrina/card-cache";
 import { getOverrides } from "@/server/overrides/repo";
 import { forgetVariations, noteStoreEdits, recordPriceWrites, type LedgerWrite } from "@/server/sync/ledger";
 import type { StoreProductModel, StoreVariation } from "@/server/store-json/model";
@@ -598,6 +599,8 @@ export async function applySync(options: ApplyOptions): Promise<ApplyOutcome> {
     goneIds: number[],
     sizeWrites: LedgerWrite[] = [],
   ): Promise<void> {
+    // The Vetrina's card for it (price, stock) is asked for again.
+    if (writes.length > 0 || goneIds.length > 0 || sizeWrites.length > 0) forgetCards([productId]);
     try {
       keptListed += await recordLedger(productById.get(productId), writes, keptEdits, goneIds, sizeWrites);
     } catch (e) {

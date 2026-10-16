@@ -31,7 +31,8 @@ import { collectionsByTerm, freshen } from "@/server/collections/service";
 import { demoMode, storeClient, storeReady } from "@/server/collections/store";
 import { lockedPriceCounts } from "@/server/overrides/model";
 import { getOverrides } from "@/server/overrides/repo";
-import { readHome } from "./service";
+import { termsChangedAt } from "@/server/woo/taxonomy-cache";
+import { cachedHomepage, forgetHomepage, lastHomepage } from "./home-cache";
 import { VetrinaError } from "./source";
 
 /**
@@ -475,39 +476,23 @@ export function presenceOf(home: Homepage): HomepagePresence {
   return out;
 }
 
-/** The catalog asks on every screen; the homepage changes rarely, and costs a site request. */
-const PRESENCE_TTL_MS = 60_000;
 /**
- * The longest an answer waits for the homepage when nothing is remembered
- * yet. A slow or unreachable site must not hold the catalog's own data back:
- * past this the answer goes out without sections, and the read carries on
- * for the next one.
+ * The longest an answer waits for the homepage when what is known is not
+ * recent enough (none yet, or forgotten after a change). A slow or
+ * unreachable site must not hold the catalog's own data back: past this the
+ * answer goes out with the sections last seen (or none), and the read
+ * carries on for the next one.
  */
 const PRESENCE_WAIT_MS = 2_500;
 
 const NO_PRESENCE: HomepagePresence = { terms: new Map(), products: new Map() };
 
-interface PresenceCache {
-  /** When the newest read started. */
-  at: number;
-  /** The newest read. A homepage that cannot be read settles as no sections, never as an error. */
-  reading: Promise<HomepagePresence>;
-  /** What the newest settled read found: answered while a newer read is on its way. */
-  settled: HomepagePresence | null;
-}
-
-// One copy per process, like the scheduler's state: the server actions and
-// the instrumentation bundle each get their own copy of this module.
-const g = globalThis as { __vetrinaCatalogPresence?: PresenceCache };
-
-function readPresence(previous: HomepagePresence | null): PresenceCache {
-  const cache: PresenceCache = { at: Date.now(), reading: Promise.resolve(NO_PRESENCE), settled: previous };
-  cache.reading = (async () => presenceOf((await readHome()).home))()
-    // A site that fails once (a timeout, a 502) has not emptied its homepage:
-    // what was known stays until a read succeeds.
-    .catch(() => previous ?? NO_PRESENCE)
-    .then((presence) => (cache.settled = presence));
-  return cache;
+// Worked out once per homepage read, not on every catalog answer.
+const presences = new WeakMap<Homepage, HomepagePresence>();
+function presenceFor(home: Homepage): HomepagePresence {
+  let presence = presences.get(home);
+  if (!presence) presences.set(home, (presence = presenceOf(home)));
+  return presence;
 }
 
 async function atMost<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
@@ -523,22 +508,23 @@ async function atMost<T>(promise: Promise<T>, ms: number, fallback: T): Promise<
 }
 
 /**
- * The homepage's sections by term and by product: read at most once a
- * minute, and once read, answered at once — a newer read only replaces them
- * when it is done. Best-effort, never an error.
+ * The homepage's sections by term and by product, from the homepage the
+ * screens share (home-cache.ts): answered at once while it is recent, and
+ * never waiting long for the site. Best-effort, never an error.
  */
 export async function homepagePresence(): Promise<HomepagePresence> {
-  let cache = g.__vetrinaCatalogPresence;
-  if (!cache || Date.now() - cache.at >= PRESENCE_TTL_MS) {
-    cache = readPresence(cache?.settled ?? null);
-    g.__vetrinaCatalogPresence = cache;
-  }
-  return cache.settled ?? atMost(cache.reading, PRESENCE_WAIT_MS, NO_PRESENCE);
+  const last = lastHomepage();
+  const known = last ? presenceFor(last) : NO_PRESENCE;
+  return atMost(
+    cachedHomepage().then(presenceFor, () => known),
+    PRESENCE_WAIT_MS,
+    known,
+  );
 }
 
-/** Forget the sections (after a section is published): the next answer waits for the homepage as it is now. */
+/** The sections changed (a section published, an action that moved products): the next answer reads the homepage again. */
 export function forgetHomepagePresence(): void {
-  delete g.__vetrinaCatalogPresence;
+  forgetHomepage();
 }
 
 /* ---------------------------------------------------------------- *
@@ -555,7 +541,7 @@ interface CatalogContext extends CatalogTrees {
 /** Everything around the index an answer needs, read side by side. */
 async function loadContext(): Promise<CatalogContext> {
   const [trees, collections, presence] = await Promise.all([
-    readCatalogTrees(),
+    screenTrees(),
     // Best-effort, like the homepage's: a Hub without the table still browses.
     collectionsByTerm().catch(() => ({})),
     homepagePresence(),
@@ -580,6 +566,61 @@ export async function readCatalogTrees(): Promise<CatalogTrees> {
   return { category: termTree(categories), brand: termTree(brands) };
 }
 
+/** How long a screen takes the term trees as they are; past this they are read again, behind the answer. */
+const TREES_FRESH_MS = 5 * 60_000;
+/** Past this a screen waits for new trees rather than show older ones. */
+const TREES_STALE_MAX_MS = 30 * 60_000;
+
+interface ScreenTrees {
+  /** The last trees read, and when that read started. */
+  settled: { trees: CatalogTrees; at: number } | null;
+  reading: { promise: Promise<CatalogTrees>; at: number } | null;
+}
+const shown = globalThis as { __vetrinaScreenTrees?: ScreenTrees };
+
+/**
+ * The trees for what a screen shows: the last ones at once, newer ones read
+ * behind them every five minutes, so an expired term list never holds a
+ * screen up. Trees read before the Hub created a term (a new automatic
+ * category opens its screen at once) are read again first. What an action
+ * acts on reads readCatalogTrees, never this.
+ */
+async function screenTrees(): Promise<CatalogTrees> {
+  const c = (shown.__vetrinaScreenTrees ??= { settled: null, reading: null });
+  const changed = termsChangedAt();
+  const read = (): Promise<CatalogTrees> => {
+    if (c.reading && c.reading.at > changed) return c.reading.promise;
+    const at = Date.now();
+    const promise = readCatalogTrees().then((trees) => {
+      if (!c.settled || c.settled.at < at) c.settled = { trees, at };
+      return trees;
+    });
+    const mine = { promise, at };
+    c.reading = mine;
+    promise
+      .catch(() => undefined)
+      .finally(() => {
+        if (c.reading === mine) c.reading = null;
+      });
+    return promise;
+  };
+  const s = c.settled;
+  if (s && s.at > changed) {
+    const age = Date.now() - s.at;
+    if (age < TREES_FRESH_MS) return s.trees;
+    if (age < TREES_STALE_MAX_MS) {
+      read().catch(() => undefined);
+      return s.trees;
+    }
+  }
+  return read();
+}
+
+/** ↻: the screens read the store's categories and brands again. */
+export function forgetScreenTrees(): void {
+  delete shown.__vetrinaScreenTrees;
+}
+
 /**
  * A term's products as its screen counts them, sub-terms included, and
  * which of them are hidden and which on sale: read with the term's actions,
@@ -589,7 +630,7 @@ export async function readTermProducts(
   taxonomy: CatalogTaxonomy,
   id: number,
 ): Promise<{ count: number; hidden: number[]; onSale: number[] }> {
-  const [facts, trees] = await Promise.all([readIndexFacts(), readCatalogTrees()]);
+  const [facts, trees] = await Promise.all([readIndexFacts(), screenTrees()]);
   const term = withDescendants(id, trees[taxonomy].children);
   const own = facts.filter((f) => holdsAny(f, taxonomy, term));
   return {

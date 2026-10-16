@@ -1,9 +1,10 @@
 import "server-only";
 import { storeClient } from "@/server/collections/store";
 import type { VetrinaOperationRow } from "@/server/db/schema";
+import { forgetCards } from "@/server/vetrina/card-cache";
 import { forgetHomepagePresence } from "@/server/vetrina/catalog";
 import { VetrinaError } from "@/server/vetrina/source";
-import { messageOf } from "./live";
+import { forgetPreviewSizes, messageOf } from "./live";
 import * as repo from "./repo";
 import { words } from "./words";
 import { runOperation, runUndo, sweepTermHides, type RunCtx, type Tally } from "./writes";
@@ -69,21 +70,29 @@ export function recover(): Promise<void> {
   return s.recovered;
 }
 
-function enqueue(id: string, job: () => Promise<void>): void {
+/** A job answers false when it changed nothing on the store; anything else may have. */
+function enqueue(id: string, job: () => Promise<boolean | void>): void {
   const s = state();
   s.queued.push(id);
   s.chain = s.chain.then(async () => {
     s.queued.splice(s.queued.indexOf(id), 1);
     s.running = id;
+    let changed = true;
     try {
-      await job();
+      changed = (await job()) !== false;
     } catch (e) {
       console.error(`[vetrina-ops] ${id}: ${messageOf(e)}`);
     } finally {
       s.running = null;
-      // What the homepage's sections show may have moved (a product hidden,
-      // put in a category, pinned): the catalog's marks follow at once.
-      forgetHomepagePresence();
+      // What the screens show may have moved (a product hidden, put on sale,
+      // in a category, pinned): the homepage, its marks in the catalog, the
+      // product cards and the sale previews are read again. A sweep that hid
+      // nothing — the scheduler asks for one every few minutes — leaves them be.
+      if (changed) {
+        forgetHomepagePresence();
+        forgetCards();
+        forgetPreviewSizes();
+      }
     }
   });
 }
@@ -123,6 +132,7 @@ export function queueSweep(): Promise<void> {
       await recover();
       const hidden = await sweepTermHides(await storeClient());
       if (hidden > 0) console.log(`[vetrina-ops] ${hidden} product(s) that joined a hidden category or brand hidden with it`);
+      return hidden > 0;
     } finally {
       done();
     }

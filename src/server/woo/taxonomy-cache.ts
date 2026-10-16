@@ -38,7 +38,22 @@ async function thenForget<T>(key: string, write: () => Promise<T>): Promise<T> {
     return await write();
   } finally {
     cache.delete(key);
+    noteTermsChanged();
   }
+}
+
+// When the Hub last created a term (or ↻ was tapped): a copy of the term lists
+// read before this — the Vetrina screens keep one — is read again.
+const changed = ((globalThis as { __storeHubTermsChangedAt?: { at: number } }).__storeHubTermsChangedAt ??= { at: 0 });
+
+/** When the Hub last created a term, or ↻ asked for the lists again (epoch ms). */
+export function termsChangedAt(): number {
+  return changed.at;
+}
+
+/** A term was created (through a client this cache does not wrap, like the demo shop's): copies read before now are old. */
+export function noteTermsChanged(): void {
+  changed.at = Date.now();
 }
 
 /** The client, with its taxonomy reads remembered (and its term writes dropping them). */
@@ -72,4 +87,10 @@ export function withTaxonomyCache(client: WooClient): WooClient {
       return typeof value === "function" ? value.bind(target) : value;
     },
   });
+}
+
+/** ↻ in the Vetrina: the next listing of every taxonomy reads the store again. */
+export function forgetTaxonomies(): void {
+  cache.clear();
+  noteTermsChanged();
 }

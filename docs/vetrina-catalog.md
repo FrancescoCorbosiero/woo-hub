@@ -310,6 +310,29 @@ As built (phase 3, `src/components/vetrina/catalog/act/`):
 - **Thumbnails**: never the full-size photo on mobile data: the storefront's
   own `woocommerce_thumbnail` through the existing `wc-gh/v1/products` cards
   (one request per page of rows, as the section editor does).
+- **What the screens remember** (the site and the store are slow; what they
+  show changes rarely). Every write still reads the store or the page again
+  first, so a screen a little behind can never cause a wrong write — at worst
+  a preview shows a change the write then skips, or a publish is refused as
+  "changed meanwhile":
+  - the homepage (`home-cache.ts`), shared by the Homepage tab, the catalog's
+    marks and the pin sheet: read at most once a minute, then answered at
+    once while a new read runs behind (never more than ten minutes old); a
+    failed read is not retried for half a minute;
+  - product cards (`card-cache.ts`): ten minutes each;
+  - the categories and brands the screens show: five minutes, then answered
+    at once while new ones are read (half an hour at most); actions read
+    them through the five-minute term cache, as before;
+  - a sale preview's live sizes: one minute;
+  - the product sheet's tags come from the index (saving applies only the
+    sheet's change, over the tags read live).
+
+  Forgotten at once by what the Hub itself changes: a published section or
+  block (the homepage), a finished action (the homepage, every card, the
+  previews), a sync's write or a change the 5-minute check learns of (that
+  product's card), a term the Hub creates (the screens' categories). **↻**
+  forgets all of it, and on Catalogo first asks the store what changed
+  (waited for up to six seconds).
 - **Writes** (`src/server/vetrina/operations/`): WooCommerce's batch
   endpoints, in a background runner — one action at a time, in order, in the
   server process; it outlives the request, writes its progress as it goes,

@@ -15,7 +15,7 @@ import { railKeyToParam } from "@/lib/vetrina/order";
 import { skuKey } from "@/lib/skus";
 import type { FieldValues, HomeBlock, RailSummary } from "@/lib/vetrina/types";
 import type { VetrinaHome, VetrinaResult } from "@/server/vetrina/service";
-import { publishVetrinaBlock } from "@/server/actions/vetrina";
+import { publishVetrinaBlock, refreshVetrina } from "@/server/actions/vetrina";
 import { ErrorState } from "./ErrorState";
 import { railHealth } from "./rail-health";
 import { FieldsSheet } from "./FieldsSheet";
@@ -44,6 +44,13 @@ function staticFields(block: HomeBlock): string[] {
 export function HomeScreen({ result }: { result: VetrinaResult<VetrinaHome> }) {
   const { t } = useI18n();
   const router = useRouter();
+  // ↻: the homepage is remembered for a minute (home-cache.ts); this reads it from the site again.
+  const [refreshing, startRefresh] = React.useTransition();
+  const refresh = () =>
+    startRefresh(async () => {
+      await refreshVetrina().catch(() => undefined);
+      startRefresh(() => router.refresh());
+    });
   const v = t.vetrina;
   // An action that ended — or its "Annulla", from the log this tab opens — may have moved the page:
   // a pin (a new revision of the homepage, so a block saved from the old one would be refused), a
@@ -82,8 +89,8 @@ export function HomeScreen({ result }: { result: VetrinaResult<VetrinaHome> }) {
       <HomeNavbar
         subtitle={result.ok && result.data.source === "fixture" ? v.demo : undefined}
         refresh={
-          <KLink iconOnly onClick={() => router.refresh()} aria-label={v.refresh}>
-            <Refresh className="h-5 w-5" />
+          <KLink iconOnly onClick={refresh} aria-label={v.refresh}>
+            {refreshing ? <Preloader className="!h-5 !w-5" /> : <Refresh className="h-5 w-5" />}
           </KLink>
         }
         right={<ActivityLink />}

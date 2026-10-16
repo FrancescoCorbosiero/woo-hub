@@ -22,7 +22,7 @@ const mocks = vi.hoisted(() => ({
   brands: [] as Term[],
   collections: {} as Record<number, unknown>,
   collectionsFail: false,
-  readHome: vi.fn(),
+  homepage: vi.fn(),
   freshen: vi.fn(),
   overrides: null as unknown,
   runner: { running: null as string | null, queued: [] as string[] },
@@ -44,7 +44,10 @@ vi.mock("@/server/collections/service", () => ({
   },
 }));
 vi.mock("@/server/collections/runner", () => ({ getRunnerStatus: () => mocks.runner }));
-vi.mock("./service", () => ({ readHome: mocks.readHome }));
+vi.mock("./source", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./source")>()),
+  getVetrinaSource: async () => ({ kind: "wordpress", homepage: mocks.homepage }),
+}));
 vi.mock("@/server/overrides/repo", () => ({ getOverrides: async () => mocks.overrides }));
 
 const load = async () => ({
@@ -249,7 +252,7 @@ const ids = (list: { id: number }[]) => list.map((x) => x.id);
 
 describe.skipIf(!enabled)("the Vetrina catalog's reads (real SQL)", () => {
   beforeEach(async () => {
-    const { db, storeIndex, upsertIndexRows, forgetHomepagePresence } = await load();
+    const { db, storeIndex, upsertIndexRows } = await load();
     await db.delete(storeIndex);
     await upsertIndexRows(SHOP);
     mocks.categories = CATEGORIES;
@@ -261,12 +264,14 @@ describe.skipIf(!enabled)("the Vetrina catalog's reads (real SQL)", () => {
       products: {},
       variations: { "DD1391-100::42": { manualPrice: 150 }, "DD1391-100::43": { manualPrice: 155 }, "CW2288-111::40": {} },
     };
-    mocks.readHome.mockReset();
-    mocks.readHome.mockResolvedValue({ home: HOME, locks: {}, collections: {}, source: "wordpress" });
+    mocks.homepage.mockReset();
+    mocks.homepage.mockResolvedValue(HOME);
     mocks.freshen.mockReset();
     mocks.freshen.mockResolvedValue(undefined);
     mocks.runner = { running: null, queued: [] };
-    forgetHomepagePresence();
+    // What the screens remember lives for the whole process: each test starts from none.
+    delete (globalThis as { __vetrinaHomepage?: unknown }).__vetrinaHomepage;
+    delete (globalThis as { __vetrinaScreenTrees?: unknown }).__vetrinaScreenTrees;
   });
 
   it("reads the light columns as plain numbers and ids", async () => {
@@ -351,7 +356,7 @@ describe.skipIf(!enabled)("the Vetrina catalog's reads (real SQL)", () => {
     const { readOverview, readPage } = await load();
     mocks.freshen.mockRejectedValue(new Error("connection refused"));
     mocks.collectionsFail = true;
-    mocks.readHome.mockRejectedValue(new Error("Il sito non risponde"));
+    mocks.homepage.mockRejectedValue(new Error("Il sito non risponde"));
     const overview = await readOverview();
     expect(overview.categories.find((c) => c.id === 13)).toMatchObject({ count: 1, automatic: null });
     expect(overview.categories.find((c) => c.id === 11)?.sections).toEqual([]);
@@ -363,10 +368,25 @@ describe.skipIf(!enabled)("the Vetrina catalog's reads (real SQL)", () => {
     const { readOverview, readPage, forgetHomepagePresence } = await load();
     await readOverview();
     await readPage({ view: "onsale" });
-    expect(mocks.readHome).toHaveBeenCalledTimes(1);
+    expect(mocks.homepage).toHaveBeenCalledTimes(1);
     forgetHomepagePresence();
     await readPage({ view: "onsale" });
-    expect(mocks.readHome).toHaveBeenCalledTimes(2);
+    expect(mocks.homepage).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows a category the Hub creates at once, and one made elsewhere within minutes", async () => {
+    const { readOverview } = await load();
+    const { noteTermsChanged } = await import("@/server/woo/taxonomy-cache");
+    expect((await readOverview()).categories.map((c) => c.id)).not.toContain(40);
+    // Made in WordPress: the screens answer with the categories they know, and read the store behind.
+    mocks.categories = [...CATEGORIES, { id: 40, name: "Estive", slug: "estive", parent: 0 }];
+    expect((await readOverview()).categories.map((c) => c.id)).not.toContain(40);
+    // Made by the Hub (a new automatic category opens its own screen next): read before answering.
+    mocks.categories = [...mocks.categories, { id: 41, name: "Autunno", slug: "autunno", parent: 0 }];
+    await new Promise((r) => setTimeout(r, 2));
+    noteTermsChanged();
+    await new Promise((r) => setTimeout(r, 2));
+    expect((await readOverview()).categories.map((c) => c.id)).toEqual(expect.arrayContaining([40, 41]));
   });
 
   it("opens a term with its ancestors and its sub-terms, and says when it is gone", async () => {
