@@ -1619,7 +1619,7 @@ export const it = {
       members: (n: number) => (n === 1 ? "1 prodotto nella categoria" : `${n} prodotti nella categoria`),
       make: "Rendi automatica",
       makeHint:
-        "La sezione si riempie da sola con i prodotti che rispettano una regola: per esempio tutti quelli col tag «saldi».",
+        "La sezione si riempie da sola con i prodotti che rispettano una regola: per esempio le Nike in saldo, o gli arrivi degli ultimi 30 giorni.",
       menu: "Regola automatica",
       sheetNew: (name: string) => `«${name}» automatica`,
       sheetEdit: (name: string) => `Regola di «${name}»`,
@@ -1650,7 +1650,7 @@ export const it = {
     },
     tags: {
       title: "Tag",
-      hint: "Le categorie automatiche leggono i tag: cambiali qui e le sezioni si aggiornano da sole.",
+      hint: "Le categorie automatiche possono leggere anche i tag: cambiali qui e le sezioni si aggiornano da sole.",
       none: "Nessun tag.",
       add: "Aggiungi",
       placeholder: "Nuovo tag, es. saldi",

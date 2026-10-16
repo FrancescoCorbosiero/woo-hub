@@ -1570,7 +1570,7 @@ export const en: Dictionary = {
       cardPaused: "Rule paused: the category stays as it is.",
       members: (n) => (n === 1 ? "1 product in the category" : `${n} products in the category`),
       make: "Make it automatic",
-      makeHint: "The section fills itself with the products that meet a rule: for example all those tagged \"sale\".",
+      makeHint: "The section fills itself with the products that meet a rule: for example Nike on sale, or what arrived in the last 30 days.",
       menu: "Automatic rule",
       sheetNew: (name) => `"${name}", automatic`,
       sheetEdit: (name) => `Rule of "${name}"`,
@@ -1594,7 +1594,7 @@ export const en: Dictionary = {
     },
     tags: {
       title: "Tags",
-      hint: "Automatic categories read the tags: change them here and the sections follow on their own.",
+      hint: "Automatic categories can read tags too: change them here and the sections follow on their own.",
       none: "No tags.",
       add: "Add",
       placeholder: "New tag, e.g. sale",
