@@ -93,8 +93,9 @@ unchecked.
 Without a session, Authelia lets through only the home-screen app's install
 files: the manifest and the icons. Phones fetch them without cookies, and they
 hold no data. The app ignores any identity sent with them. The Hub's
-`/api/cron/*` endpoints stay behind the sign-in unless you open them (see
-[External scheduler](#external-scheduler)).
+`/api/cron/*` and `/api/v1/*` endpoints stay behind the sign-in unless you
+open them (see [External scheduler](#external-scheduler) and
+[Programmatic API](#programmatic-api)).
 
 ### The sign-in page
 
@@ -212,6 +213,15 @@ The Hub schedules its own syncs. If you turn that off and call `/api/cron/*`
 from outside instead (`SCHEDULER=off` and `CRON_SECRET`, see the README),
 uncomment the cron rule in Authelia's `config/configuration.yml`: those calls
 carry `CRON_SECRET`, not a session.
+
+## Programmatic API
+
+`/api/v1/*` ([api.md](api.md)) is for scripts: its calls carry
+`Authorization: Bearer $HUB_API_TOKEN`, not a session. To reach it from
+outside, add a bypass rule for `^/api/v1/` on the Hub's address in Authelia's
+`config/configuration.yml`, next to the cron one. The app still refuses any
+call without the token (and answers 503 while `HUB_API_TOKEN` is unset); on
+the Vetrina's address the API does not exist.
 
 ## Moving from the shared password
 

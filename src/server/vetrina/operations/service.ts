@@ -69,8 +69,9 @@ export async function startOperation(input: OperationInput): Promise<OperationVi
   // In demo mode the log of this demo shop starts no later than its first action.
   await logSince();
   const assessment = await assess(input, { live: false });
-  if (assessment.total === 0) throw new VetrinaError("invalid", words().error.empty, 400);
+  // The refusal first: it says why ("Sono già in quest'ordine"), where "nothing chosen" would not.
   if (assessment.refusal) throw new VetrinaError("invalid", assessment.refusal, 400);
+  if (assessment.total === 0) throw new VetrinaError("invalid", words().error.empty, 400);
   const row = await repo.insertOperation({
     kind: input.kind,
     input,

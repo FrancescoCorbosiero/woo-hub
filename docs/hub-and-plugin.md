@@ -113,7 +113,7 @@ Letters follow `docs/02-FEATURES.md` there. **Hub ✓** = in the Hub today;
 | Feature | Where | Notes |
 |---|---|---|
 | Filter & Act, bulk actions | Hub → | `store_index` already holds every product's facets |
-| Sorter (`menu_order`) | Hub → | As an order for automatic categories, next to the Vetrina's pins |
+| Sorter (`menu_order`) | Hub ✓ | "Ordina" / "Riordina" on a category's or brand's screen, and `/api/v1/catalog/order` ([api.md](api.md)) |
 | Inline editor | Split | Price, stock and tags in the Hub (drawer, Vetrina); the full product form stays WordPress's own editor |
 | Taxonomy rules | Hub ✓ | Taxonomies tab |
 | Smart taxonomy | Hub ✓ | Automatic categories, better than the plan: persisted rules, held changes, a log |

@@ -135,6 +135,13 @@ export const OperationInputSchema = z.discriminatedUnion("kind", [
     termId: z.number({ message: problem("term") }).int(problem("term")).positive(problem("term")),
     percent: MarginPercent,
   }),
+  z.object({
+    kind: z.literal("order"),
+    target: TargetSchema,
+    term: z.object({ taxonomy: z.enum(["category", "brand"], { message: problem("term") }), id: Id }),
+    position: z.number().int().min(1).max(1_000_000).nullable(),
+    reorder: z.literal(true).optional(),
+  }),
 ]);
 
 /** A problem met, in the owner's words: ours by key, zod's own as "Richiesta non valida". */

@@ -51,6 +51,11 @@ export const opsIt = {
     pin: (count: number, section: string) => `${agreed(count, "prodotto fissato", "prodotti fissati")} in ${section}`,
     /** A category's or brand's margin; no percent: its own margin taken away (back to the one above it, or the standard). */
     margin: (percent: number | null, what: string) => (percent == null ? `Ricarico tolto · ${what}` : `Ricarico ${percent}% · ${what}`),
+    /** Products placed in a category's or brand's order; position null: at the end. */
+    order: (count: number, term: string, position: number | null) =>
+      `${agreed(count, "prodotto", "prodotti")} ${position === 1 ? "in cima" : position == null ? "in fondo" : `alla posizione ${n(position)}`} · ${term}`,
+    /** Products dragged to places apart in a category's or brand's order ("Riordina"). */
+    reorder: (count: number, term: string) => `Nuovo ordine · ${term}: ${agreed(count, "prodotto spostato", "prodotti spostati")}`,
   },
 
   /** Why a preview leaves products as they are, agreeing with how many ("Già nascosto · 1", "Già nascosti · 3"). */
@@ -79,6 +84,8 @@ export const opsIt = {
     /** A rule more specific than the term's decides them: a SKU's, a deeper category's or brand's. */
     otherRule: (count: number): string => (count === 1 ? "ha un ricarico più specifico" : "hanno un ricarico più specifico"),
     noQuote: (_count: number): string => "nessun prezzo di mercato",
+    notInTerm: (count: number, term: string): string => (count === 1 ? `non è in «${term}»` : `non sono in «${term}»`),
+    inPlace: (count: number): string => (count === 1 ? "già al suo posto" : "già al loro posto"),
   },
 
   /** A product's state, before → after, in a preview's sample. */
@@ -100,9 +107,23 @@ export const opsIt = {
     until: (day: string) => `fino al ${longDay(day)}`,
     noEnd: "senza fine",
     addedTo: (category: string) => `In «${category}», poi fissato`,
+    /** A product's place in a category's or brand's order. */
+    place: (position: number) => `#${n(position)}`,
   },
 
   warning: {
+    /** The shop's order is one number per product: a product moved here moves in its other categories and brands too. */
+    orderElsewhere: (count: number, names: string[], total: number) =>
+      `L'ordine del negozio è uno per prodotto: ${count === 1 ? "1 è" : `${n(count)} sono`} anche in ${nameList(names, total)}, e lì ${count === 1 ? "cambia" : "cambiano"} posto con lo stesso criterio.`,
+    /** Products renumbered to make room: their place does not change. */
+    orderRoom: (count: number) =>
+      `Per fare spazio cambio il numero d'ordine di ${count === 1 ? "1 altro prodotto: il suo posto resta lo stesso." : `altri ${n(count)} prodotti: il loro posto resta lo stesso.`}`,
+    /** A homepage section shows this category: its pins come first on the category's page. */
+    orderPins: (sections: string[]) =>
+      `Sulla pagina della categoria vengono prima i prodotti fissati in ${nameList(sections.map((s) => `«${s}»`))}, poi quest'ordine.`,
+    /** The storefront's default sort is not the shop's own order: the order is saved, but the pages do not follow it. */
+    orderNotUsed: (sort: string) =>
+      `Il negozio ordina le pagine per «${sort}», non per l'ordine personalizzato: l'ordine viene salvato ma le pagine non lo seguono finché in WooCommerce › Impostazioni › Prodotti l'ordinamento predefinito non è «Ordinamento personalizzato + nome».`,
     alsoElsewhere: (count: number, names: string[], total: number) =>
       `${count === 1 ? "1 è" : `${n(count)} sono`} anche in ${nameList(names, total)}: ${count === 1 ? "sparisce" : "spariscono"} anche lì.`,
     sectionsLose: (sections: string[]) => `La homepage perde prodotti in ${nameList(sections)}.`,
@@ -168,6 +189,9 @@ export const opsIt = {
     termTooBig: (total: number) =>
       `Sono ${n(total)} prodotti: più di quanti il catalogo ne tiene (${n(MAX_TERM_PRODUCTS)}). Agisci su una sottocategoria alla volta.`,
     empty: "Nessun prodotto scelto.",
+    /** "Ordina" with nothing to move. */
+    inOrder: "Sono già in quest'ordine.",
+    notInTerm: (term: string) => `Nessuno di questi prodotti è in «${term}».`,
     alreadyHidden: (term: string) => `I prodotti di «${term}» sono già nascosti: per rimetterli in vista usa «Mostra».`,
     automatic: (category: string) => `«${category}» è automatica: i suoi prodotti li decide la regola.`,
     categoryGone: "Questa categoria non c'è più nel negozio.",

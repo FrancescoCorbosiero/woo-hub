@@ -10,15 +10,16 @@ import type { RailCollection } from "@/lib/collections/types";
 import type { CatalogTerm } from "@/lib/vetrina/catalog";
 import { Funnel } from "../../icons";
 import { ruleState } from "../rule-state";
+import { ChipRow, NavChip } from "../term/FilterChips";
 import { House, SortArrows } from "../term/glyphs";
 import { termHref } from "../term/list-model";
-import { byLetter, statsLine, topLevel, type TermOrder } from "./model";
+import { byLetter, statsLine, subTerms, topLevel, type TermOrder } from "./model";
 import { CountAfter, NextLinkTag, Tile } from "./ui";
 
 /**
  * The catalog home's two lists. Categories: the ones behind a homepage
  * section, the automatic ones, then every top-level category (a tap opens it,
- * its sub-categories inside), the empty ones folded away. Brands: A to Z
+ * its sub-categories in chips under its row), the empty ones folded away. Brands: A to Z
  * under sticky letters, like the phone's contacts.
  */
 
@@ -29,6 +30,7 @@ export function TermRow({
   text,
   media,
   homeMark = false,
+  dividers,
 }: {
   term: CatalogTerm;
   /** The name by default; a path ("Saldi › Nike") where the parent matters. */
@@ -38,6 +40,8 @@ export function TermRow({
   media?: ReactNode;
   /** A house before the count when a homepage section shows it. */
   homeMark?: boolean;
+  /** The line under the row; off when its sub-terms follow, which draw it themselves. */
+  dividers?: boolean;
 }) {
   const { t, locale } = useI18n();
   const h = t.vetrinaCatalog.home;
@@ -48,6 +52,7 @@ export function TermRow({
       linkComponent={NextLinkTag}
       href={termHref(term.taxonomy, term.id)}
       strongTitle={false}
+      dividers={dividers}
       media={media}
       title={<span className={term.count === 0 ? "opacity-45" : undefined}>{title ?? term.name}</span>}
       text={line || undefined}
@@ -76,6 +81,7 @@ export function CategoryGroups({
   const h = t.vetrinaCatalog.home;
   const [showEmpty, setShowEmpty] = React.useState(false);
   const { filled, empty } = React.useMemo(() => topLevel(categories, order), [categories, order]);
+  const byId = React.useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories]);
   // The overview comes sorted by path, which reads as the tree: kept as is.
   const inHomepage = categories.filter((c) => c.sections.length > 0);
   const automatic = categories.filter((c): c is CatalogTerm & { automatic: RailCollection } => c.automatic != null);
@@ -139,16 +145,38 @@ export function CategoryGroups({
         </button>
       </BlockTitle>
       <List strong inset>
-        {filled.map((term) => (
-          <TermRow key={term.id} term={term} homeMark />
+        {[...filled, ...(showEmpty ? empty : [])].map((term) => (
+          <CategoryRow key={term.id} term={term} subs={subTerms(term, byId, order)} />
         ))}
-        {showEmpty && empty.map((term) => <TermRow key={term.id} term={term} homeMark />)}
         {empty.length > 0 && (
           <ListButton onClick={() => setShowEmpty((v) => !v)}>
             {showEmpty ? h.hideEmpty : h.showEmpty(empty.length)}
           </ListButton>
         )}
       </List>
+    </>
+  );
+}
+
+/**
+ * A top-level category and, when it has some, its sub-categories as chips
+ * right under it (as on its own screen): one tap to any of them from here.
+ * The chips scroll sideways inside the row; the row's line moves under them.
+ */
+function CategoryRow({ term, subs }: { term: CatalogTerm; subs: CatalogTerm[] }) {
+  const { t } = useI18n();
+  if (subs.length === 0) return <TermRow term={term} homeMark />;
+  const label = `${t.vetrinaCatalog.term.children.category}: ${term.name}`;
+  return (
+    <>
+      <TermRow term={term} homeMark dividers={false} />
+      <li className="relative -mt-2.5 pb-1.5 hairline-b after:!left-4 after:!w-[calc(100%-1rem)]">
+        <ChipRow label={label}>
+          {subs.map((sub) => (
+            <NavChip key={sub.id} href={termHref(sub.taxonomy, sub.id)} label={sub.name} count={sub.count} />
+          ))}
+        </ChipRow>
+      </li>
     </>
   );
 }

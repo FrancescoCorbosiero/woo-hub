@@ -37,6 +37,8 @@ import { CollectionSheet } from "../../CollectionSheet";
 import { ErrorState } from "../../ErrorState";
 import { EyeOff, Funnel, More } from "../../icons";
 import { ActSheets, type ActRequest } from "../act/ActSheets";
+import type { OrderTerm } from "../act/OrderSheet";
+import { ReorderSheet } from "../act/ReorderSheet";
 import { call } from "../act/call";
 import { Eye, Percent } from "../act/icons";
 import { formatDay, formatTime, queryTarget } from "../act/model";
@@ -131,6 +133,7 @@ function Term({
   const selection = useProductSelection();
   const [ruleOpen, setRuleOpen] = React.useState(false);
   const [menuOpen, setMenuOpen] = React.useState(false);
+  const [reorderOpen, setReorderOpen] = React.useState(false);
   const [newRule, setNewRule] = React.useState<NewCategoryRequest | null>(null);
   // Bumped when a rule moved products: the list reads its rows again.
   const [version, setVersion] = React.useState(0);
@@ -140,6 +143,12 @@ function Term({
     [term.taxonomy, term.id, q, sort, filter],
   );
   const searching = controls.text.trim() !== "";
+  // Its order is the one its page on the shop follows: placed by "Ordina" (a selection) or "Riordina" (dragged).
+  const orderTerm = React.useMemo<OrderTerm>(
+    () => ({ taxonomy: term.taxonomy, id: term.id, name: term.name, count: term.count }),
+    [term.taxonomy, term.id, term.name, term.count],
+  );
+  const openReorder = term.count > 0 ? () => setReorderOpen(true) : undefined;
   const back = backTarget(detail);
   const subtitle = [ancestors.map((a) => a.name).join(" › "), v.products(term.count)].filter(Boolean).join(" · ");
   const refreshCounts = React.useCallback(() => router.refresh(), [router]);
@@ -218,12 +227,13 @@ function Term({
             initial={initial}
             demo={detail.demo}
             onFacets={controls.setFacets}
-            toolbar={<SortActions sort={sort} onChange={controls.setSort} />}
+            toolbar={<SortActions sort={sort} onChange={controls.setSort} onReorder={openReorder} />}
             onClearFilters={hasFilters(filter) ? () => setFilter(NO_FILTER) : undefined}
             onProductsChanged={refreshCounts}
             version={version}
             selection={selection}
             listName={term.name}
+            orderTerm={orderTerm}
           />
         </>
       ) : (
@@ -246,6 +256,16 @@ function Term({
       <Actions opened={menuOpen} onBackdropClick={() => setMenuOpen(false)}>
         <ActionsGroup>
           <ActionsLabel>{term.name}</ActionsLabel>
+          {openReorder && (
+            <ActionsButton
+              onClick={() => {
+                setMenuOpen(false);
+                openReorder();
+              }}
+            >
+              {v.menu.reorder}
+            </ActionsButton>
+          )}
           <ActionsButton onClick={saveAsRule}>{v.menu.saveRule}</ActionsButton>
           <ActionsButton
             onClick={() => {
@@ -264,6 +284,7 @@ function Term({
       </Actions>
 
       <NewCategorySheet request={newRule} onClose={() => setNewRule(null)} />
+      <ReorderSheet term={reorderOpen ? orderTerm : null} onClose={() => setReorderOpen(false)} />
     </Page>
   );
 }

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { getDictionary } from "@/i18n/dictionary";
 import {
   addDays,
+  movedCount,
+  movedPrefix,
   refusedText,
   clearPicked,
   comingSunday,
@@ -263,5 +265,23 @@ describe("Cambia lo sconto", () => {
       for (const change of ["endAdded", "endMoved", "endRemoved"] as const) expect(words[change]).toBeTruthy();
     }
     expect(getDictionary("it").vetrinaCatalog.act.sale.endChange.endMoved).toBe("Sposta la fine del saldo");
+  });
+});
+
+describe("movedPrefix", () => {
+  it("is the rows down to the last that moved", () => {
+    expect(movedPrefix([1, 2, 3, 4, 5], [1, 4, 2, 3, 5])).toEqual([1, 4, 2, 3]);
+    expect(movedPrefix([1, 2, 3], [3, 1, 2])).toEqual([3, 1, 2]);
+  });
+  it("is empty when nothing moved", () => {
+    expect(movedPrefix([1, 2, 3], [1, 2, 3])).toEqual([]);
+  });
+});
+
+describe("movedCount", () => {
+  it("counts the row dragged, not the rows it pushed along", () => {
+    expect(movedCount([1, 2, 3, 4, 5, 6], [1, 6, 2, 3, 4, 5])).toBe(1);
+    expect(movedCount([1, 2, 3, 4], [4, 3, 2, 1])).toBe(3);
+    expect(movedCount([1, 2, 3], [1, 2, 3])).toBe(0);
   });
 });

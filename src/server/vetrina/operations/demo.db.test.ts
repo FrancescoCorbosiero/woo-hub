@@ -94,6 +94,52 @@ describe.skipIf(!enabled)("the catalog's actions on the demo shop", () => {
     expect(back).toMatchObject({ onSale: false, price: regular });
   });
 
+  it("puts products at the top of a category's order — the store's order follows — and «Annulla» puts it back", async () => {
+    const { demoShop, DEMO_TERM_IDS } = await load();
+    const { readTermOrder } = await import("./order");
+    const outlet = DEMO_TERM_IDS["saldi-sneakers-outlet"];
+    const before = (await readTermOrder("category", outlet)).members.map((m) => m.id);
+    const [a, b] = [before[before.length - 1], before[Math.floor(before.length / 2)]];
+    const numbers = new Map(demoShop().products.map((p) => [p.id, p.menuOrder]));
+
+    const op = await run({ kind: "order", target: { kind: "ids", ids: [a, b] }, term: { taxonomy: "category", id: outlet }, position: 1 });
+    expect(op).toMatchObject({ status: "done", label: "2 prodotti in cima · Saldi outlet" });
+    const after = (await readTermOrder("category", outlet)).members.map((m) => m.id);
+    expect(after.slice(0, 2)).toEqual([a, b]);
+    expect(after.slice(2)).toEqual(before.filter((id) => id !== a && id !== b));
+
+    await undo(op.id);
+    expect(demoShop().products.every((p) => p.menuOrder === numbers.get(p.id))).toBe(true);
+    expect((await readTermOrder("category", outlet)).members.map((m) => m.id)).toEqual(before);
+  });
+
+  it("a drag in «Riordina» moves only the product dragged, and says where", async () => {
+    const { DEMO_TERM_IDS, previewOperation } = await load();
+    const { readTermOrder } = await import("./order");
+    const outlet = DEMO_TERM_IDS["saldi-sneakers-outlet"];
+    const before = (await readTermOrder("category", outlet)).members.map((m) => m.id);
+    const window = before.slice(0, 5);
+    const [dragged] = window.splice(4, 1);
+    window.splice(2, 0, dragged);
+    const input = { kind: "order" as const, target: { kind: "ids" as const, ids: window }, term: { taxonomy: "category" as const, id: outlet }, position: 1, reorder: true as const };
+    const preview = await previewOperation(input);
+    expect(preview.changes).toBe(1);
+    expect(preview.sample).toMatchObject([{ id: dragged, before: "#5", after: "#3" }]);
+    const op = await run(input);
+    expect(op.label).toBe("Nuovo ordine · Saldi outlet: 1 prodotto spostato");
+    expect((await readTermOrder("category", outlet)).members.map((m) => m.id).slice(0, 5)).toEqual(window);
+  });
+
+  it("refuses to order products already in that order", async () => {
+    const { DEMO_TERM_IDS, previewOperation } = await load();
+    const { readTermOrder } = await import("./order");
+    const outlet = DEMO_TERM_IDS["saldi-sneakers-outlet"];
+    const [first] = (await readTermOrder("category", outlet)).members;
+    const preview = await previewOperation({ kind: "order", target: { kind: "ids", ids: [first.id] }, term: { taxonomy: "category", id: outlet }, position: 1 });
+    expect(preview.changes).toBe(0);
+    expect(preview.warnings[0]).toBe("Sono già in quest'ordine.");
+  });
+
   it("ends a demo sale and puts it back", async () => {
     const { demoShop } = await load();
     const p = demoShop().products.find((x) => x.onSale)!;

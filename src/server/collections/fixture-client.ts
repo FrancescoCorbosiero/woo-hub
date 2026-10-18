@@ -82,6 +82,7 @@ function touch(p: DemoProduct): void {
  */
 function applyFields(p: DemoProduct, body: Record<string, unknown>): void {
   if (typeof body.catalog_visibility === "string") p.visibility = body.catalog_visibility;
+  if (typeof body.menu_order === "number") p.menuOrder = body.menu_order;
   if ("sale_price" in body) {
     const sale = Number.parseFloat(String(body.sale_price ?? ""));
     p.salePrice = Number.isFinite(sale) && sale > 0 && sale < p.regularPrice ? Math.round(sale * 100) / 100 : null;
@@ -168,6 +169,11 @@ export function fixtureClient(): WooClient {
       if (!p) throw Object.assign(new Error("Invalid ID."), { status: 404 });
       applyFields(p, body);
       touch(p);
+    },
+
+    // The demo storefront follows the shop's own order.
+    async getDefaultCatalogOrderby() {
+      return "menu_order";
     },
 
     // No product of the demo has sizes.

@@ -47,6 +47,7 @@ export const actIt = {
       tag: "Tag",
       category: "Categoria",
       pin: "Homepage",
+      order: "Ordina",
     },
   },
 
@@ -208,6 +209,37 @@ export const actIt = {
     plain: "Fissa in cima",
   },
 
+  /** "Ordina": the chosen products placed in the category's or brand's order — the one its page on the shop follows. */
+  order: {
+    title: (term: string) => `Ordina in «${term}»`,
+    intro: "Decidi dove vanno nella pagina del negozio, nell'ordine della lista.",
+    modes: { top: "In cima", position: "Posizione", bottom: "In fondo" },
+    positionLabel: "Posizione",
+    positionHint: (total: number) => `Da 1 a ${n(total)}`,
+    start: (count: number) => (count === 1 ? "Sposta 1 prodotto" : `Sposta ${n(count)} prodotti`),
+    plain: "Sposta",
+  },
+
+  /** "Riordina": a category's or brand's first products, dragged into the order its page shows. */
+  reorder: {
+    title: "Riordina",
+    subtitle: (term: string, shown: number, total: number) =>
+      shown < total ? `${term} · i primi ${n(shown)} di ${n(total)}` : term,
+    intro: "Trascina dalla maniglia: è l'ordine della pagina della categoria nel negozio. Gli altri prodotti seguono, come sono.",
+    loading: "Carico i prodotti…",
+    failed: "Non riesco a leggere i prodotti.",
+    empty: "Nessun prodotto da ordinare.",
+    dragHandle: "Trascina per spostare",
+    toTop: "Porta in cima",
+    soldOut: "Esaurito",
+    hidden: "Nascosto",
+    reset: "Ripristina",
+    moved: (count: number) => (count === 1 ? "1 prodotto spostato" : `${n(count)} prodotti spostati`),
+    save: "Salva l'ordine",
+    nothing: "Trascina un prodotto per cambiare l'ordine.",
+    back: "Torna all'ordine",
+  },
+
   activity: {
     title: "Attività",
     open: "Attività",
@@ -242,6 +274,7 @@ export const actIt = {
       uncategorize: "Tolgo dalla categoria",
       pin: "Fisso in homepage",
       margin: "Cambio il ricarico",
+      order: "Riordino",
     },
     undoing: "Annullo…",
     progress: (what: string, done: number, total: number) => `${what} · ${n(done)}/${n(total)}`,

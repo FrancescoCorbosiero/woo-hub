@@ -429,6 +429,10 @@ export interface LabelNames {
   section?: string;
   /** A term's sale at the percent it already had: only its end moves. */
   endsOnly?: boolean;
+  /** "Ordina": where the products land (null: at the bottom). */
+  position?: number | null;
+  /** "Ordina": products moved to places apart (dragged), not one block. */
+  reordered?: boolean;
 }
 
 /** An action's label as the log keeps it: what it is, and the names it needs. */
@@ -458,6 +462,13 @@ export function labelParams(input: OperationInput, names: LabelNames): Operation
     case "margin":
       // No percent: the term went back to the standard margin.
       return { ...base, term: names.term ?? null, ...(input.percent != null ? { percent: input.percent } : {}) };
+    case "order":
+      return {
+        ...base,
+        term: names.term ?? null,
+        position: names.position === undefined ? input.position : names.position,
+        ...(names.reordered ? { reordered: true } : {}),
+      };
   }
 }
 
@@ -485,6 +496,8 @@ export function labelText(p: OperationLabelParams, w: Words = words()): string {
       return w.label.pin(p.count, p.section ?? "");
     case "margin":
       return w.label.margin(p.percent ?? null, what);
+    case "order":
+      return p.reordered ? w.label.reorder(p.count, p.term ?? "") : w.label.order(p.count, p.term ?? "", p.position ?? null);
   }
 }
 

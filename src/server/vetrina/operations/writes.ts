@@ -32,6 +32,7 @@ import {
   type SizePlan,
 } from "./plan";
 import { repriceMoved, runMargin, undoMargin, type TermMove } from "./margin";
+import { runOrder, undoOrder } from "./order";
 import { findTag } from "./preview";
 import * as repo from "./repo";
 import { pinnable, railFill, sectionMembers } from "./sections";
@@ -496,6 +497,8 @@ export async function runOperation(ctx: RunCtx): Promise<void> {
   const input: OperationInput = ctx.op.input;
   // A margin is a pricing rule and a reprice, not writes product by product (margin.ts).
   if (input.kind === "margin") return runMargin(ctx, input);
+  // An order is placed over its term's whole order, not product by product over the target (order.ts).
+  if (input.kind === "order") return runOrder(ctx, input);
   const { ids, trees } = await resolveTarget(input.target, { wholeTerm: wholeTermAction(input) });
   ctx.tally.total = ids.length;
   await ctx.step();
@@ -755,7 +758,7 @@ export async function runUndo(ctx: RunCtx, items: Item[], section: OperationSect
   const out: UndoTally = { restored: new Set(), kept: new Set(), failed: new Set(), held: new Set() };
   const of = (field: Item["field"]) => items.filter((i) => i.field === field);
   ctx.tally.done = 0;
-  ctx.tally.total = (["visibility", "tags", "categories", "sale"] as const).reduce((n, f) => n + productsOf(of(f)).length, 0);
+  ctx.tally.total = (["visibility", "tags", "categories", "sale", "menu_order"] as const).reduce((n, f) => n + productsOf(of(f)).length, 0);
   await ctx.step();
   // The section first: its pins are what a "Metti in homepage" was about; the categories it added follow.
   if (section) await undoSection(section);
@@ -763,6 +766,7 @@ export async function runUndo(ctx: RunCtx, items: Item[], section: OperationSect
   await undoTerms(ctx, of("tags"), "tags", out);
   await undoTerms(ctx, of("categories"), "categories", out);
   await undoSales(ctx, of("sale"), out);
+  await undoOrder(ctx, of("menu_order"), out);
   return {
     restored: out.restored.size,
     kept: out.kept.size,

@@ -88,6 +88,25 @@ export type OperationInput =
       termId: number;
       /** The term's margin on the market price, MARGIN_PERCENT_MIN-MAX %; null hands the term back to the standard margin. */
       percent: number | null;
+    }
+  /**
+   * "Ordina": these products, in the order given, at a place in a category's
+   * or a brand's own order — the shop's order (WooCommerce's menu_order, then
+   * the name), which the storefront's category and brand pages follow. One
+   * number per product, shared by all its categories: the plan rewrites only
+   * the products it must (src/server/vetrina/operations/order-plan.ts).
+   */
+  | {
+      kind: "order";
+      target: OperationTarget;
+      term: { taxonomy: CatalogTaxonomy; id: number };
+      /** Where the first of them lands, 1-based among the term's other products; null = after all of them. */
+      position: number | null;
+      /**
+       * The rows of "Riordina" (dragged), down to the last that moved, at the
+       * top: the log says how many moved, not that they all went to the top.
+       */
+      reorder?: true;
     };
 
 export type OperationKind = OperationInput["kind"];

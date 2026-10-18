@@ -73,6 +73,7 @@ describe("the Vetrina's own address", () => {
     expect(tab.status).toBe(307);
     expect(redirectedTo(tab)).toBe("/");
     expect((await proxy(request(VETRINA, "/api/cron/pull-store", { method: "POST" }))).status).toBe(404);
+    expect((await proxy(request(VETRINA, "/api/v1/catalog/order", { method: "POST" }))).status).toBe(404);
   });
 
   it("leaves the Hub's own address exactly as it was", async () => {
@@ -133,6 +134,8 @@ describe("the sign-in, done by Authelia in front of the app", () => {
       expect(passed(await proxy(request(VETRINA, path, { secret: SECRET })))).toBe(true);
     }
     expect(passed(await proxy(request(HUB, "/api/cron/pull-store", { method: "POST", secret: SECRET })))).toBe(true);
+    // The programmatic API checks its own token (HUB_API_TOKEN), past the sign-in.
+    expect(passed(await proxy(request(HUB, "/api/v1/catalog/order", { method: "POST", secret: SECRET })))).toBe(true);
 
     // Authelia let these through without a session, so a Remote-User on them
     // came from the client (old Caddy versions pass it on): never trusted.

@@ -79,6 +79,7 @@ export const termEn: typeof termIt = {
   menu: {
     open: "More actions",
     saveRule: "Save as an automatic category",
+    reorder: "Reorder the products",
     activity: "Activity",
     cancel: "Cancel",
   },
@@ -108,6 +109,7 @@ export const termEn: typeof termIt = {
       priceDesc: "Price, high to low",
       name: "Name",
     },
+    reorder: "Reorder by hand…",
     short: {
       shop: "Shop",
       newest: "Newest",
