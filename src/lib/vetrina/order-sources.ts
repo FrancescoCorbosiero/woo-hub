@@ -60,7 +60,28 @@ export interface OrderSourceCheck extends SourceMatchSummary {
   origin: string | null;
   /** Items left out because an earlier one is the same product. */
   duplicates: number;
+  /** JSON answers read one after another and joined (1 for any other text). */
+  parts: number;
+  /** The last answer stops before its end — an LLM's length limit: read up to its last whole product. */
+  truncated: boolean;
 }
 
 /** Why a source's text could not be read. */
 export type SourceParseError = "empty" | "invalidJson" | "noItems" | "tooMany";
+
+/**
+ * A link to a shop's homepage — no path, or only a language ("/", "/it",
+ * "/en-us") — rather than to one of its collections or categories: a shop's
+ * order is read on those pages, not on its homepage.
+ */
+export function looksLikeHomepage(link: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(link.trim());
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return false;
+  const path = url.pathname.replace(/\/+$/, "");
+  return path === "" || /^\/[a-z]{2}(-[a-z]{2})?$/i.test(path);
+}

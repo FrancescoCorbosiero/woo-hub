@@ -7,11 +7,13 @@ import { MAX_SOURCE_ITEMS, type OrderSourceItem, type SourceParseError } from "@
  *     "items": [ { "sku": "DD1391-100", "name": "Nike Dunk Low Panda" }, … ] }
  *
  * — and what an LLM or a person is likely to hand over instead: the JSON in a
- * ```json fence or after a sentence, a trailing comma, a bare list of items
- * or of strings, a CSV with a "sku"/"name" header, or one product per line
- * ("1. DD1391-100 Nike Dunk Low"). Items keep the text's order (or their
- * "rank", when every one has it); the same product twice counts once. Pure:
- * order-sources.test.ts pins it down.
+ * ```json fence or after a sentence, a trailing comma, several answers pasted
+ * one after another (merged in that order), the last one cut short by the
+ * LLM's length limit (read up to its last whole product), a bare list of
+ * items or of strings, a CSV with a "sku"/"name" header, or one product per
+ * line ("1. DD1391-100 Nike Dunk Low"). Items keep the text's order (or their
+ * "rank", when every one has its own); the same product twice counts once.
+ * Pure: order-sources.test.ts pins it down.
  */
 
 export interface ParsedSource {
@@ -20,6 +22,10 @@ export interface ParsedSource {
   items: OrderSourceItem[];
   /** Items left out: the same SKU, or the same name, as an earlier one. */
   duplicates: number;
+  /** JSON answers read one after another (1 for any other text). */
+  parts: number;
+  /** The last answer stops before its end (an LLM's length limit): read up to its last whole product. */
+  truncated: boolean;
 }
 
 export type ParseResult = { ok: true; source: ParsedSource } | { ok: false; error: SourceParseError };
@@ -94,26 +100,128 @@ function itemOf(value: unknown): { item: OrderSourceItem; rank: number | null } 
   };
 }
 
-/** The JSON inside a fence, or between the first bracket and the last: an LLM's sentence around it is left out. */
-function jsonCandidates(text: string): string[] {
-  const out: string[] = [];
-  const fence = /```[a-zA-Z]*\s*\n?([\s\S]*?)```/.exec(text);
-  if (fence) out.push(fence[1].trim());
-  out.push(text);
-  const first = text.search(/[[{]/);
-  const last = Math.max(text.lastIndexOf("}"), text.lastIndexOf("]"));
-  if (first >= 0 && last > first) out.push(text.slice(first, last + 1));
+/**
+ * Where to look for JSON, in turn: inside the ```json fences, when there are
+ * fences — a bracket in the sentences around them is no JSON — then the
+ * whole text. Each is a list of the JSON values written at its top level, in
+ * order: an LLM's answers pasted one after another (one per page of a
+ * collection, or after "continua"), and the last value even when the text
+ * stops inside it (`cut`: an answer that reached the LLM's length limit).
+ */
+function jsonSegmentSets(text: string): { text: string; cut: boolean }[][] {
+  const fences = [...text.matchAll(/```[a-zA-Z]*[ \t]*\n?([\s\S]*?)(?:```|$)/g)].map((m) => m[1]);
+  return fences.length > 0 ? [fences.flatMap((inner) => valuesIn(inner)), valuesIn(text)] : [valuesIn(text)];
+}
+
+function valuesIn(text: string): { text: string; cut: boolean }[] {
+  const out: { text: string; cut: boolean }[] = [];
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (start < 0) {
+      if (c === "{" || c === "[") {
+        start = i;
+        depth = 1;
+        inString = false;
+        escaped = false;
+      }
+      continue;
+    }
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (c === "\\") escaped = true;
+      else if (c === '"') inString = false;
+    } else if (c === '"') inString = true;
+    else if (c === "{" || c === "[") depth += 1;
+    else if (c === "}" || c === "]") {
+      depth -= 1;
+      if (depth === 0) {
+        out.push({ text: text.slice(start, i + 1), cut: false });
+        start = -1;
+      }
+    }
+  }
+  if (start >= 0) out.push({ text: text.slice(start), cut: true });
   return out;
 }
 
-/** JSON as written, or with the trailing commas and // comments an LLM leaves. */
+/** JSON with the trailing commas and // comment lines an LLM leaves taken out. */
+const relaxed = (text: string) => text.replace(/^\s*\/\/.*$/gm, "").replace(/,\s*([}\]])/g, "$1");
+
 function parseJson(text: string): unknown {
   try {
     return JSON.parse(text);
   } catch {
-    const relaxed = text.replace(/^\s*\/\/.*$/gm, "").replace(/,\s*([}\]])/g, "$1");
-    return JSON.parse(relaxed);
+    return JSON.parse(relaxed(text));
   }
+}
+
+/** The brackets still open at the end of a JSON text, closed; null when it ends inside a string. */
+function closers(text: string): string | null {
+  const open: string[] = [];
+  let inString = false;
+  let escaped = false;
+  for (const c of text) {
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (c === "\\") escaped = true;
+      else if (c === '"') inString = false;
+    } else if (c === '"') inString = true;
+    else if (c === "{" || c === "[") open.push(c);
+    else if (c === "}" || c === "]") open.pop();
+  }
+  if (inString) return null;
+  return open
+    .reverse()
+    .map((c) => (c === "{" ? "}" : "]"))
+    .join("");
+}
+
+/**
+ * A JSON value the text stops inside, read up to its last whole element:
+ * back to the last bracket that closes one, then every bracket still open
+ * closed. The products after that one are lost — the answer did not have
+ * them in full.
+ */
+function parseCut(text: string): unknown {
+  let end = text.length;
+  for (let tries = 0; tries < 500; tries++) {
+    const at = Math.max(text.lastIndexOf("}", end - 1), text.lastIndexOf("]", end - 1));
+    if (at <= 0) break;
+    const prefix = text.slice(0, at + 1);
+    const close = closers(prefix);
+    if (close != null) {
+      try {
+        return JSON.parse(relaxed(prefix + close));
+      } catch {
+        // Not a whole element there: further back.
+      }
+    }
+    end = at;
+  }
+  throw new Error("unreadable");
+}
+
+/** A JSON value as a source's part: its list of items (an object's, or the list itself), name and origin. */
+function partOf(data: unknown): { list: unknown[]; name: string | null; origin: string | null } | null {
+  let list: unknown = data;
+  let name: string | null = null;
+  let origin: string | null = null;
+  if (data && typeof data === "object" && !Array.isArray(data)) {
+    const obj = data as Record<string, unknown>;
+    name = str(pick(obj, NAME_KEYS));
+    origin = str(pick(obj, ORIGIN_KEYS));
+    // Under its usual key, or the one list it holds ({ "sneakers": [ … ] }).
+    list = pick(obj, ITEMS_KEYS) ?? Object.values(obj).find((v) => Array.isArray(v));
+  }
+  if (!Array.isArray(list)) return null;
+  // A bare list of products holds objects or words: "[1]" in a sentence is no list of products.
+  const bare = list === data;
+  if (bare && !list.some((v) => (typeof v === "object" && v != null) || (typeof v === "string" && v.trim().length > 1))) return null;
+  return { list, name, origin };
 }
 
 /** One CSV line into fields: commas, semicolons or tabs, "quoted, fields" kept whole. */
@@ -193,39 +301,40 @@ export function parseOrderSource(text: string): ParseResult {
   let name: string | null = null;
   let origin: string | null = null;
   let raw: { item: OrderSourceItem; rank: number | null }[] | null = null;
+  let parts = 0;
+  let truncated = false;
 
-  const looksJson = /^[[{]/.test(body) || /```(json)?\s*\n?\s*[[{]/i.test(body) || /^[^[{]{0,200}[[{]/.test(body);
-  if (looksJson) {
-    for (const candidate of jsonCandidates(body)) {
+  for (const segments of jsonSegmentSets(body)) {
+    for (const segment of segments) {
       let data: unknown;
       try {
-        data = parseJson(candidate);
+        data = segment.cut ? parseCut(segment.text) : parseJson(segment.text);
       } catch {
         continue;
       }
-      let list: unknown = data;
-      if (data && typeof data === "object" && !Array.isArray(data)) {
-        const obj = data as Record<string, unknown>;
-        name = str(pick(obj, NAME_KEYS));
-        origin = str(pick(obj, ORIGIN_KEYS));
-        // Under its usual key, or the one list it holds ({ "sneakers": [ … ] }).
-        list = pick(obj, ITEMS_KEYS) ?? Object.values(obj).find((v) => Array.isArray(v));
-      }
-      if (Array.isArray(list)) {
-        raw = list.flatMap((value) => {
+      const part = partOf(data);
+      if (!part) continue;
+      parts += 1;
+      truncated ||= segment.cut;
+      name ??= part.name;
+      origin ??= part.origin;
+      raw = [
+        ...(raw ?? []),
+        ...part.list.flatMap((value) => {
           const one = itemOf(value);
           return one ? [one] : [];
-        });
-        break;
-      }
+        }),
+      ];
     }
-    // Brackets but no JSON in them that reads: said so, rather than taking each line for a product.
-    if (raw == null && /^\s*(```[a-z]*\s*)?[[{]/i.test(body)) return { ok: false, error: "invalidJson" };
+    if (raw != null) break;
   }
+  // Brackets but no JSON in them that reads: said so, rather than taking each line for a product.
+  if (raw == null && /^\s*(```[a-z]*\s*)?[[{]/i.test(body)) return { ok: false, error: "invalidJson" };
   raw ??= linesOf(body);
 
-  // A rank on every item orders them; otherwise the text's order is the order.
-  if (raw.length > 0 && raw.every((r) => r.rank != null)) {
+  // A rank on every item, each its own, orders them; otherwise the text's order is the order
+  // (answers pasted one after another each count from 1).
+  if (raw.length > 0 && raw.every((r) => r.rank != null) && new Set(raw.map((r) => r.rank)).size === raw.length) {
     raw = raw.map((r, i) => ({ ...r, i })).sort((a, b) => a.rank! - b.rank! || a.i - b.i);
   }
 
@@ -252,6 +361,8 @@ export function parseOrderSource(text: string): ParseResult {
       origin: origin ? clip(origin, 500) : null,
       items,
       duplicates,
+      parts: Math.max(parts, 1),
+      truncated,
     },
   };
 }
