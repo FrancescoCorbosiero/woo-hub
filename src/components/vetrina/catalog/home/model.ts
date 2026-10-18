@@ -39,6 +39,15 @@ export function topLevel(terms: readonly CatalogTerm[], order: TermOrder): { fil
   return { filled: top.filter((t) => t.count > 0), empty: top.filter((t) => t.count === 0) };
 }
 
+/**
+ * A term's direct sub-terms, in the order asked, the empty ones last: the
+ * chips under its row. A child the overview does not list is skipped.
+ */
+export function subTerms(term: CatalogTerm, byId: ReadonlyMap<number, CatalogTerm>, order: TermOrder): CatalogTerm[] {
+  const children = term.children.flatMap((id) => byId.get(id) ?? []).sort(order === "count" ? byCount : byName);
+  return [...children.filter((c) => c.count > 0), ...children.filter((c) => c.count === 0)];
+}
+
 /** "12 esauriti · 3 nascosti": only the parts that are not zero; "" when all is well. */
 export function statsLine(
   term: Pick<CatalogTerm, "soldOut" | "hidden">,

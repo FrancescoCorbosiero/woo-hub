@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CatalogTerm } from "@/lib/vetrina/catalog";
 import { withParams } from "../term/list-model";
-import { byLetter, letterOf, readParams, statsLine, topLevel } from "./model";
+import { byLetter, letterOf, readParams, statsLine, subTerms, topLevel } from "./model";
 
 const term = (id: number, name: string, extra: Partial<CatalogTerm> = {}): CatalogTerm => ({
   taxonomy: "category",
@@ -96,5 +96,24 @@ describe("letterOf / byLetter", () => {
     expect(groups.map((g) => g.letter)).toEqual(["A", "N", "#"]);
     expect(groups[0].terms.map((t) => t.name)).toEqual(["adidas", "Asics"]);
     expect(groups[1].terms.map((t) => t.name)).toEqual(["New Balance", "Nike"]);
+  });
+});
+
+describe("subTerms", () => {
+  const kids = [
+    term(11, "Nike Travis Scott", { parent: 1, count: 47 }),
+    term(12, "Jordan 4", { parent: 1, count: 0 }),
+    term(13, "Adidas Samba", { parent: 1, count: 3 }),
+  ];
+  const byId = new Map(kids.map((k) => [k.id, k]));
+  const parent = term(1, "Sneakers", { children: [11, 12, 13, 99] });
+
+  it("lists the direct sub-terms in the order asked, the empty ones last", () => {
+    expect(subTerms(parent, byId, "name").map((t) => t.id)).toEqual([13, 11, 12]);
+    expect(subTerms(parent, byId, "count").map((t) => t.id)).toEqual([11, 13, 12]);
+  });
+
+  it("is empty for a term with no sub-terms", () => {
+    expect(subTerms(term(2, "Accessori"), byId, "name")).toEqual([]);
   });
 });
