@@ -35,6 +35,8 @@ export const opsEn: typeof opsIt = {
     uncategorize: (category: string, count: number) => `Category “${category}” off ${products(count)}`,
     pin: (count: number, section: string) => `${count === 1 ? "1 product pinned" : `${n(count)} products pinned`} in ${section}`,
     margin: (percent: number | null, what: string) => (percent == null ? `Own margin removed · ${what}` : `Margin ${percent}% · ${what}`),
+    order: (count: number, term: string, position: number | null) =>
+      `${products(count)} ${position === 1 ? "to the top" : position == null ? "to the bottom" : `to position ${n(position)}`} · ${term}`,
   },
 
   untouched: {
@@ -58,6 +60,8 @@ export const opsEn: typeof opsIt = {
     storeOnly: (_count: number) => "priced in the shop, not by the Hub",
     otherRule: (count: number) => (count === 1 ? "has a more specific margin" : "have a more specific margin"),
     noQuote: (_count: number) => "no market price",
+    notInTerm: (_count: number, term: string) => `not in “${term}”`,
+    inPlace: (count: number) => (count === 1 ? "already in its place" : "already in their place"),
   },
 
   state: {
@@ -78,9 +82,18 @@ export const opsEn: typeof opsIt = {
     until: (day: string) => `until ${longDay(day)}`,
     noEnd: "no end",
     addedTo: (category: string) => `In “${category}”, then pinned`,
+    place: (position: number) => `#${n(position)}`,
   },
 
   warning: {
+    orderElsewhere: (count: number, names: string[], total: number) =>
+      `The shop's order is one number per product: ${count === 1 ? "1 is" : `${n(count)} are`} also in ${nameList(names, total)}, and ${count === 1 ? "moves" : "move"} there by the same rule.`,
+    orderRoom: (count: number) =>
+      `To make room, ${count === 1 ? "1 other product gets" : `${n(count)} other products get`} a new order number: ${count === 1 ? "its" : "their"} place stays the same.`,
+    orderPins: (sections: string[]) =>
+      `On the category's page the products pinned in ${nameList(sections.map((s) => `“${s}”`))} come first, then this order.`,
+    orderNotUsed: (sort: string) =>
+      `The shop sorts its pages by “${sort}”, not by the custom order: the order is saved, but the pages follow it only once WooCommerce › Settings › Products sets the default sorting to “Custom ordering + name”.`,
     alsoElsewhere: (count: number, names: string[], total: number) =>
       `${count === 1 ? "1 is" : `${n(count)} are`} also in ${nameList(names, total)}: ${count === 1 ? "it disappears" : "they disappear"} there too.`,
     sectionsLose: (sections: string[]) => `The homepage loses products in ${nameList(sections)}.`,
@@ -136,6 +149,8 @@ export const opsEn: typeof opsIt = {
     termTooBig: (total: number) =>
       `That's ${n(total)} products: more than the catalog holds (${n(MAX_TERM_PRODUCTS)}). Act on one sub-category at a time.`,
     empty: "No product chosen.",
+    inOrder: "They are already in this order.",
+    notInTerm: (term: string) => `None of these products is in “${term}”.`,
     alreadyHidden: (term: string) => `The products of “${term}” are already hidden: use “Show” to bring them back.`,
     automatic: (category: string) => `“${category}” is automatic: its rule decides its products.`,
     categoryGone: "This category is no longer in the shop.",

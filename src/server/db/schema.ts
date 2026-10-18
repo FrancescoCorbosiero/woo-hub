@@ -638,6 +638,8 @@ export interface OperationLabelParams {
    * on every other action.
    */
   endsOnly?: { endsOn: string | null };
+  /** "Ordina": where the products went in the term's order (1 = the top), null = the bottom. */
+  position?: number | null;
 }
 
 /**
@@ -707,7 +709,7 @@ export const vetrinaOperationItems = pgTable(
     // hide found already hidden — nothing to put back, but no newcomer to the
     // term either (operations/standing.ts). The column is plain text: the
     // list is TypeScript's only.
-    field: text("field", { enum: ["visibility", "tags", "categories", "sale", "margin", "member"] }).notNull(),
+    field: text("field", { enum: ["visibility", "tags", "categories", "sale", "margin", "member", "menu_order"] }).notNull(),
     before: jsonb("before").$type<unknown>(),
     after: jsonb("after").$type<unknown>(),
   },

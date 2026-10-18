@@ -335,6 +335,25 @@ export class WooClient {
     return z.looseObject({ id: z.number() }).parse(raw);
   }
 
+  /**
+   * How the storefront sorts a category's page by default
+   * (WooCommerce › Settings › Products: "menu_order" is "Custom ordering +
+   * name", the shop's own order). Null when the key may not read settings.
+   */
+  async getDefaultCatalogOrderby(): Promise<string | null> {
+    try {
+      const raw = await requestJson(
+        this.apiUrl("settings/products/woocommerce_default_catalog_orderby"),
+        { method: "GET", headers: this.headers() },
+        this.retry,
+      );
+      const value = z.looseObject({ value: z.unknown() }).parse(raw).value;
+      return typeof value === "string" ? value : null;
+    } catch {
+      return null;
+    }
+  }
+
   /** Global attribute taxonomies (to bind pa_taglia by id when a parent lacks it). */
   async getAttributeTaxonomies(): Promise<{ id: number; name: string; slug: string }[]> {
     const raw = await requestJson(
