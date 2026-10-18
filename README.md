@@ -383,6 +383,19 @@ crontab line:
 30 4 * * *  APP_BASE_URL=https://host CRON_SECRET=... /path/to/scripts/trigger-cron.sh sync-goldensneakers
 ```
 
+## Programmatic API
+
+`/api/v1/*`, with `Authorization: Bearer $HUB_API_TOKEN`: a category's or
+brand's products in the shop's order (the one its page on the shop follows),
+products placed in it — previewed, logged, undoable like the Vetrina's own
+"Ordina" — and the progress and undo of the catalog's actions. See
+[docs/api.md](docs/api.md).
+
+```bash
+curl -H "Authorization: Bearer $HUB_API_TOKEN" -H "Content-Type: application/json" \
+  -d '{"id":12,"skus":["DD1391-100"],"position":"top","dryRun":true}' https://host/api/v1/catalog/order
+```
+
 ## Core
 
 - `core/core-spine.ts`, `core/config.ts` — domain model, pricing engine

@@ -48,6 +48,10 @@ const EnvSchema = z.object({
   // Shared secret for the scheduled endpoints (/api/cron/*). Unset = disabled.
   CRON_SECRET: z.string().optional(),
 
+  // Bearer token of the Hub's programmatic API (/api/v1/*: the catalog's
+  // order, its actions' progress and undo). Unset = the API is disabled.
+  HUB_API_TOKEN: z.string().min(24).optional(),
+
   // Automatic self-repair inside the daily scheduler: put back missing
   // pictures / brand / category on products already online. OFF by default —
   // it is the only pass that WRITES to the live store unattended, and arming

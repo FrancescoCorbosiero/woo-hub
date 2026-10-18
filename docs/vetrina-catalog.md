@@ -54,13 +54,16 @@ things:
   pattern, and the catalog uses those endpoints **as they are**. No change to
   it is planned.
 
-What that rules out, for now: an order of its own for a category that no
-homepage section shows (only WordPress can apply an order to a category page),
-and pointing a homepage section at a different category. The first keeps the
-shop's default order, with "sold out last" (the storefront already does it);
-the second has a woo-hub answer: make that section's category automatic with
-the rule you want — from the section editor or the category's screen, in the
-rule's own sheet ([§5](#5-homepage--catalog)).
+What that rules out, for now: an order **per category** for the same
+product (a category page follows WooCommerce's `menu_order`, one number per
+product, unless WordPress applies another), and pointing a homepage section at
+a different category. The first has a woo-hub answer within WooCommerce's
+rule: **"Ordina"** sets the shop's own order from a category's or brand's
+screen, writing as few `menu_order` values as it can, so the other categories
+keep their order but for the products moved ([§4.1](#41-the-shops-order-ordina));
+the second: make that section's category automatic with the rule you want —
+from the section editor or the category's screen, in the rule's own sheet
+([§5](#5-homepage--catalog)).
 
 Ideas taken from golden-hive-plugin, and what we do differently:
 
@@ -69,7 +72,7 @@ Ideas taken from golden-hive-plugin, and what we do differently:
 | Filter & Act: conditions → select all → act | A term's screen with its chips (stock, visibility, sale, the other taxonomy's terms) and search, "Seleziona tutti" over what they match, then act; the screen's filters can be saved as a new automatic category, whose rule language is richer (tags, price, age). A tag, a price or a date is not a list filter yet |
 | Bulk sale % / remove sale / rounding | Saldo and Togli saldo, with a preview and "Annulla" ([§3.4](#34-the-catalogs-price-actions)) |
 | "Saldo fittizio" (raise the regular price, sell at the old one) | **Not ported**: art. 17-bis of the Codice del Consumo measures an announced discount from the lowest price of the previous 30 days |
-| A sorter writing one global `menu_order` | Not ported: one number per product, shared by every category, last sort wins |
+| A sorter writing one global `menu_order` renumbering everything | **"Ordina"**: the same `menu_order`, but only the products that must change are written (a move usually writes one), previewed, logged and undoable; the preview says when the products moved are in other categories too ([§4.1](#41-the-shops-order-ordina)) |
 | No undo; snapshots without restore | Every bulk action logged with the previous values; "Annulla" restores them |
 | Smart taxonomy that only adds | Automatic categories add **and** remove, with a safety net |
 | hive-sync's hide with memory (`catalog_visibility`, previous state kept) | The model for "Nascondi categoria" |
@@ -276,6 +279,39 @@ As built (phase 3, `src/components/vetrina/catalog/act/`):
   shows is edited in its own sheet, from the section editor or the
   category's screen.
 
+### 4.1 The shop's order ("Ordina")
+
+The storefront's category and brand pages show their products in the shop's
+own order when WooCommerce › Settings › Products › "Default product sorting" is
+**Custom ordering + name**: `menu_order` ascending, then the name. The catalog's
+"Ordina: Negozio" is that order. The storefront adds two things the catalog
+does not: a homepage section's pins first on its category's page, and sold-out
+products last.
+
+- **From a selection** — the action bar's "Ordina" on a category's or brand's
+  list: the chosen products, in the list's order, at the top, at a position or
+  at the bottom.
+- **By dragging** — "Riordina i prodotti" (the ⋯ menu, or "Riordina a mano…"
+  under "Ordina: Negozio"): the first products in the shop's order (100 at a
+  time, more on request), dragged by the handle or sent to the top, then
+  saved as one "Ordina" over the rows down to the last that moved.
+- **From a script** — `POST /api/v1/catalog/order` ([api.md](api.md)).
+
+How it writes (`src/server/vetrina/operations/order-plan.ts`, `order.ts`):
+the new order is fixed by the move; the plan keeps the largest set of products
+whose `menu_order` can stay as it is and renumbers only the others, spread
+10 apart where there is room, so a later move between them writes one product.
+Ties keep reading by name, as WooCommerce reads them. The run reads the
+products to write live first (a number changed in WordPress since makes it
+plan again), writes them through `products/batch` and files each one; "Annulla"
+puts a number back only where the store still shows the one written.
+
+`menu_order` is one number per product: a product moved in "Sneakers" moves
+the same way in "Nike" and in "Saldi" if it is there too. The preview names
+those other categories and brands, says when a homepage section's pins come
+first on the page, and warns when the store's default sorting is not the
+custom order (the order is saved, the pages ignore it).
+
 ## 5. Homepage ↔ catalog
 
 | Link | Through |
@@ -356,6 +392,7 @@ As built (phase 3, `src/components/vetrina/catalog/act/`):
 | 1 · Foundations | The Hub's Catalog tab removed (drawer on every page); the store index fresh whatever the rules, with photo, visibility, order and sales; every live price write reads the store first | **Done** |
 | 2 · Browse | The tab bar; Catalogo; a category's and a brand's screen; search; quick views; the product sheet extended; homepage ↔ catalog links | **Done** |
 | 3 · Act | Selection and bulk actions; the operations log and "Annulla"; new automatic category, filter → category; Saldo and Togli saldo (§3.4); hide and show a whole category or brand | **Done** |
+| 4.1 · Order | "Ordina" and "Riordina" on a category's or brand's screen, and the programmatic API (`/api/v1/*`, [api.md](api.md)) | **Done** |
 | 4 · Margins | A margin rule per store category or brand, previewed, applied by the engine: the "Ricarico" row and sheet (`src/components/vetrina/catalog/margins/`), the action (`src/server/vetrina/operations/margin*.ts`), store terms read for every price (`src/server/pricing/store-terms.ts`), the Hub's Margins tab editing the same rules under one lock (`src/server/config/rule-list.ts`) | **Done** |
 
 ## 8. Open questions

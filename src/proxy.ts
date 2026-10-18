@@ -16,8 +16,9 @@ import { isVetrinaHost, requestHost, servedOnVetrinaHost } from "@/lib/vetrina-h
  *
  * Without a session: the sign-in page (SIGN_IN_PATH, which Caddy serves at
  * /authelia/), the home-screen app's install files (Authelia lets them
- * through, see PUBLIC_APP_FILES) and /api/cron/* (headless schedulers send
- * CRON_SECRET instead). Without the secret either: /api/health, the
+ * through, see PUBLIC_APP_FILES), /api/cron/* (headless schedulers send
+ * CRON_SECRET instead) and /api/v1/* (the programmatic API sends
+ * HUB_API_TOKEN). Without the secret either: /api/health, the
  * container's health check, which calls the app directly. Unset secret =
  * open app (local development).
  *
@@ -110,7 +111,11 @@ export async function proxy(req: NextRequest) {
   }
 
   const anonymous =
-    health || pathname === SIGN_IN_PATH || PUBLIC_APP_FILES.has(pathname) || pathname.startsWith("/api/cron/");
+    health ||
+    pathname === SIGN_IN_PATH ||
+    PUBLIC_APP_FILES.has(pathname) ||
+    pathname.startsWith("/api/cron/") ||
+    pathname.startsWith("/api/v1/");
   if (!secret || anonymous) return pass(req, onVetrina, false);
 
   if (!req.headers.get("remote-user")) {
