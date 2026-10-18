@@ -113,6 +113,23 @@ describe.skipIf(!enabled)("the catalog's actions on the demo shop", () => {
     expect((await readTermOrder("category", outlet)).members.map((m) => m.id)).toEqual(before);
   });
 
+  it("a drag in «Riordina» moves only the product dragged, and says where", async () => {
+    const { DEMO_TERM_IDS, previewOperation } = await load();
+    const { readTermOrder } = await import("./order");
+    const outlet = DEMO_TERM_IDS["saldi-sneakers-outlet"];
+    const before = (await readTermOrder("category", outlet)).members.map((m) => m.id);
+    const window = before.slice(0, 5);
+    const [dragged] = window.splice(4, 1);
+    window.splice(2, 0, dragged);
+    const input = { kind: "order" as const, target: { kind: "ids" as const, ids: window }, term: { taxonomy: "category" as const, id: outlet }, position: 1, reorder: true as const };
+    const preview = await previewOperation(input);
+    expect(preview.changes).toBe(1);
+    expect(preview.sample).toMatchObject([{ id: dragged, before: "#5", after: "#3" }]);
+    const op = await run(input);
+    expect(op.label).toBe("Nuovo ordine · Saldi outlet: 1 prodotto spostato");
+    expect((await readTermOrder("category", outlet)).members.map((m) => m.id).slice(0, 5)).toEqual(window);
+  });
+
   it("refuses to order products already in that order", async () => {
     const { DEMO_TERM_IDS, previewOperation } = await load();
     const { readTermOrder } = await import("./order");

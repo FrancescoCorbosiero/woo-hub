@@ -3,6 +3,7 @@
 import * as React from "react";
 import type { OperationTarget, OperationView, SaleRounding, TermKey } from "@/lib/vetrina/catalog-ops";
 import { CategorySheet } from "./CategorySheet";
+import { OrderSheet, type OrderTerm } from "./OrderSheet";
 import { useLastShown } from "./parts";
 import { PinSheet } from "./PinSheet";
 import { SaleSheet } from "./SaleSheet";
@@ -13,10 +14,10 @@ import { VisibilitySheet } from "./VisibilitySheet";
  * Every action sheet behind one state: a screen (or the selection bar) says
  * which one to open on what, and closes it. The sheets themselves can also
  * be used one by one (SaleSheet, VisibilitySheet, TagSheet, CategorySheet,
- * PinSheet).
+ * PinSheet, OrderSheet).
  */
 
-export type ActSheetKind = "sale" | "unsale" | "hide" | "show" | "tag" | "untag" | "category" | "uncategorize" | "pin";
+export type ActSheetKind = "sale" | "unsale" | "hide" | "show" | "tag" | "untag" | "category" | "uncategorize" | "pin" | "order";
 
 export interface ActRequest {
   /** Which sheet, in which mode: "sale"/"unsale" open the Saldo sheet, "tag"/"untag" the Tag sheet, and so on. */
@@ -40,6 +41,8 @@ export interface ActRequest {
   change?: boolean;
   /** Categoria only: the categories the product is in already (one product, from its sheet). */
   has?: readonly number[];
+  /** Ordina only: the category or brand whose order it is. */
+  term?: OrderTerm;
 }
 
 export function ActSheets({
@@ -88,6 +91,7 @@ export function ActSheets({
         has={shown?.has}
       />
       <PinSheet {...common} target={at("pin")} />
+      <OrderSheet {...common} target={at("order")} term={shown?.term ?? null} />
     </>
   );
 }

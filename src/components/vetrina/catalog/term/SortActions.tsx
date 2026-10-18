@@ -10,9 +10,19 @@ import { Check, SortArrows } from "./glyphs";
  * "Ordina: Negozio" above a list, and the action sheet it opens. "Negozio" is
  * the store's own order (menu_order, then name). The storefront adds to it:
  * sold-out products last, and on a category a homepage section shows, that
- * section's pins first — neither is applied here.
+ * section's pins first — neither is applied here. On a category's or
+ * brand's list, "Riordina a mano…" sets that order.
  */
-export function SortActions({ sort, onChange }: { sort: CatalogSort; onChange: (sort: CatalogSort) => void }) {
+export function SortActions({
+  sort,
+  onChange,
+  onReorder,
+}: {
+  sort: CatalogSort;
+  onChange: (sort: CatalogSort) => void;
+  /** A category's or brand's list: "Riordina a mano…" opens the editor of the shop's order. */
+  onReorder?: () => void;
+}) {
   const { t } = useI18n();
   const s = t.vetrinaCatalog.term.sort;
   const [open, setOpen] = React.useState(false);
@@ -46,6 +56,18 @@ export function SortActions({ sort, onChange }: { sort: CatalogSort; onChange: (
             </ActionsButton>
           ))}
         </ActionsGroup>
+        {onReorder && (
+          <ActionsGroup>
+            <ActionsButton
+              onClick={() => {
+                setOpen(false);
+                onReorder();
+              }}
+            >
+              {s.reorder}
+            </ActionsButton>
+          </ActionsGroup>
+        )}
         <ActionsGroup>
           <ActionsButton bold onClick={() => setOpen(false)}>
             {s.cancel}

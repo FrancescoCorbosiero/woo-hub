@@ -640,6 +640,8 @@ export interface OperationLabelParams {
   endsOnly?: { endsOn: string | null };
   /** "Ordina": where the products went in the term's order (1 = the top), null = the bottom. */
   position?: number | null;
+  /** "Ordina": products dragged to places apart, not one block. */
+  reordered?: boolean;
 }
 
 /**

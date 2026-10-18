@@ -102,3 +102,21 @@ export function Arrow({ className }: IconProps) {
     </svg>
   );
 }
+
+/** To the top: an arrow up under a bar. */
+export function ToTop({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className} {...stroke}>
+      <path d="M5 4h14M12 20V9M7 13l5-5 5 5" />
+    </svg>
+  );
+}
+
+/** An order: lines of decreasing length with an arrow. */
+export function OrderLines({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className} {...stroke}>
+      <path d="M4 6h10M4 12h7M4 18h4M18 5v14M15 16l3 3 3-3" />
+    </svg>
+  );
+}

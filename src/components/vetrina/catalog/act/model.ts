@@ -313,3 +313,38 @@ export function refusedText(
 ): string {
   return kind === "margin" ? words.sizes(count) : words.products(count);
 }
+
+/**
+ * "Riordina": the rows down to the last one that moved, in their new order —
+ * what "Ordina" places at the top of the term (the rows below keep their
+ * order); empty when nothing moved.
+ */
+export function movedPrefix(original: readonly number[], now: readonly number[]): number[] {
+  let last = -1;
+  for (let i = 0; i < now.length; i++) if (now[i] !== original[i]) last = i;
+  return now.slice(0, last + 1);
+}
+
+/**
+ * "Riordina": how many rows were moved — those that left their place among
+ * the others, not the ones only pushed along: the rows minus the longest
+ * run still in their old order.
+ */
+export function movedCount(original: readonly number[], now: readonly number[]): number {
+  const was = new Map(original.map((id, i) => [id, i]));
+  // Patience sorting: tails[k] is the smallest old place ending a run of k + 1.
+  const tails: number[] = [];
+  for (const id of now) {
+    const place = was.get(id);
+    if (place == null) continue;
+    let lo = 0;
+    let hi = tails.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (tails[mid] < place) lo = mid + 1;
+      else hi = mid;
+    }
+    tails[lo] = place;
+  }
+  return now.length - tails.length;
+}

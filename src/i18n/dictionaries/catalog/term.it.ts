@@ -94,6 +94,7 @@ export const termIt = {
   menu: {
     open: "Altre azioni",
     saveRule: "Salva come categoria automatica",
+    reorder: "Riordina i prodotti",
     activity: "Attività",
     cancel: "Annulla",
   },
@@ -123,6 +124,8 @@ export const termIt = {
       priceDesc: "Prezzo decrescente",
       name: "Nome",
     },
+    /** The order the shop's page follows, set by hand. */
+    reorder: "Riordina a mano…",
     /** On the list's button, beside the count and "Seleziona": short, so the count keeps its room on a phone. */
     short: {
       shop: "Negozio",

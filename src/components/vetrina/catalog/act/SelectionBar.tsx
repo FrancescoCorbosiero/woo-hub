@@ -10,7 +10,8 @@ import { EyeOff } from "../../icons";
 import { Folder, House, Tag } from "../term/glyphs";
 import { ActSheets, type ActRequest, type ActSheetKind } from "./ActSheets";
 import { useHoldBottomBar } from "./bottom-bar";
-import { Eye, Percent } from "./icons";
+import { Eye, OrderLines, Percent } from "./icons";
+import type { OrderTerm } from "./OrderSheet";
 import { selectedCount, selectionTarget, visibilityAction, type PickedProduct } from "./model";
 import type { ProductSelection } from "./selection";
 
@@ -18,7 +19,8 @@ import type { ProductSelection } from "./selection";
  * While selecting: the action bar in the tab bar's place (which steps aside)
  * — how many are chosen, "Seleziona tutti (N)" for everything the list's
  * query matches, "Annulla" to leave; then Saldo, Nascondi or Mostra, Tag,
- * Categoria, Homepage, each opening its sheet on the selection. Starting an
+ * Categoria, Homepage — and Ordina on a category's or brand's list — each
+ * opening its sheet on the selection. Starting an
  * action leaves selection: the progress pill and the toast take it from
  * there.
  */
@@ -30,6 +32,7 @@ export function SelectionBar({
   onScreen,
   listName,
   narrowed = false,
+  orderTerm,
   onStarted,
 }: {
   selection: ProductSelection;
@@ -45,6 +48,8 @@ export function SelectionBar({
   listName?: string;
   /** The list is not a whole term (a quick view, a search, a chip): "all" is what it found — "I 12 prodotti trovati in «Nike»". */
   narrowed?: boolean;
+  /** A category's or brand's list: "Ordina" places the chosen products in its order. None: no "Ordina". */
+  orderTerm?: OrderTerm;
   onStarted?: (view: OperationView) => void;
 }) {
   const { t } = useI18n();
@@ -70,7 +75,7 @@ export function SelectionBar({
       query,
       onScreen.map((p) => p.id),
     );
-    if (target && canAct) setRequest({ kind, target, label });
+    if (target && canAct) setRequest({ kind, target, label, ...(kind === "order" && orderTerm ? { term: orderTerm } : {}) });
   }
 
   const countText = tooMany
@@ -89,6 +94,7 @@ export function SelectionBar({
     { kind: "tag", label: b.actions.tag, icon: <Tag className={ICON} /> },
     { kind: "category", label: b.actions.category, icon: <Folder className={ICON} /> },
     { kind: "pin", label: b.actions.pin, icon: <House className={ICON} /> },
+    ...(orderTerm ? [{ kind: "order" as const, label: b.actions.order, icon: <OrderLines className={ICON} /> }] : []),
   ];
 
   return (

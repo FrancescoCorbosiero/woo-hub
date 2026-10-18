@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ORDER_STEP, planOrder, type OrderMember, type OrderPlan } from "./order-plan";
+import { movedTargets, ORDER_STEP, planOrder, type OrderMember, type OrderPlan } from "./order-plan";
 
 /** Products 1..n, in this order, with these numbers. */
 const term = (values: number[]): OrderMember[] => values.map((menuOrder, i) => ({ id: i + 1, menuOrder }));
@@ -102,5 +102,22 @@ describe("planOrder", () => {
       const plan = planOrder(members, targets, position);
       expect(storeOrder(members, plan)).toEqual(plan.order);
     }
+  });
+});
+
+describe("movedTargets", () => {
+  const members = term([0, 0, 0, 0, 0, 0]);
+  it("names the product dragged, not those it pushed along", () => {
+    expect(movedTargets(members, [1, 5, 2, 3, 4, 6], [1, 5, 2, 3, 4])).toEqual([{ id: 5, from: 5, to: 2 }]);
+  });
+  it("names every target placed as a block, in the order given", () => {
+    expect(movedTargets(members, [6, 2, 4, 1, 3, 5], [6, 2, 4])).toEqual([
+      { id: 6, from: 6, to: 1 },
+      // Still second: not said to move.
+      { id: 4, from: 4, to: 3 },
+    ]);
+  });
+  it("leaves out a target already at its place", () => {
+    expect(movedTargets(members, [1, 4, 2, 3, 5, 6], [1, 4])).toEqual([{ id: 4, from: 4, to: 2 }]);
   });
 });

@@ -37,6 +37,7 @@ export const opsEn: typeof opsIt = {
     margin: (percent: number | null, what: string) => (percent == null ? `Own margin removed · ${what}` : `Margin ${percent}% · ${what}`),
     order: (count: number, term: string, position: number | null) =>
       `${products(count)} ${position === 1 ? "to the top" : position == null ? "to the bottom" : `to position ${n(position)}`} · ${term}`,
+    reorder: (count: number, term: string) => `New order · ${term}: ${count === 1 ? "1 product moved" : `${n(count)} products moved`}`,
   },
 
   untouched: {

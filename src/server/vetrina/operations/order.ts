@@ -17,7 +17,7 @@ import type { VetrinaOperationItemRow } from "@/server/db/schema";
 import type { WooClient } from "@/server/woo/client";
 import { chunks, resolveTarget, rowsInOrder, termKeyOf, termName } from "./context";
 import { readFresh, settleBatch } from "./live";
-import { planOrder, type OrderMember, type OrderPlan } from "./order-plan";
+import { movedTargets, planOrder, type OrderMember, type OrderPlan } from "./order-plan";
 import { bump, labelParams, otherTerms, reasonCounts, undoVerdict, type Reason } from "./plan";
 import type { Assessment } from "./preview";
 import * as repo from "./repo";
@@ -69,13 +69,6 @@ async function planNow(input: OrderInput, targets: number[]): Promise<{ plan: Or
   return { plan: planOrder(order.members, targets, input.position), order };
 }
 
-/** The targets whose place in the order changes, from where to where (1-based), in their new order. */
-function moved(members: readonly OrderMember[], plan: OrderPlan, targets: readonly number[]): { id: number; from: number; to: number }[] {
-  const was = new Map(members.map((m, i) => [m.id, i + 1]));
-  const asked = new Set(targets);
-  return plan.order.flatMap((id, i) => (asked.has(id) && was.get(id) !== i + 1 ? [{ id, from: was.get(id)!, to: i + 1 }] : []));
-}
-
 /**
  * Of these products, the other categories and brands they show in — not
  * the term itself, its sub-terms or the terms above it, whose pages follow
@@ -109,13 +102,16 @@ export async function assessOrder(input: OrderInput, opts: { live: boolean }): P
   const { ids } = await resolveTarget(input.target);
   const { plan, order } = await planNow(input, ids);
   const term = termName(order.trees, keyOf(input));
-  const moves = moved(order.members, plan, ids);
-  const others = plan.writes.length - moves.length;
+  const moves = movedTargets(order.members, plan.order, ids);
+  const others = plan.writes.filter((x) => !moves.some((m) => m.id === x.id)).length;
+  const inTerm = new Set(ids).size - plan.outside.length;
+  // The rows of "Riordina": the term's order changed where they were dragged, not a block put in one place.
+  const reordered = input.reorder === true;
 
   const refusal = plan.position == null ? w.error.notInTerm(term) : plan.writes.length === 0 ? w.error.inOrder : null;
   const untouched = new Map<Reason, number>();
   bump(untouched, (count) => w.untouched.notInTerm(count, term), plan.outside.length);
-  if (plan.position != null) bump(untouched, w.untouched.inPlace, new Set(ids).size - plan.outside.length - moves.length);
+  if (plan.position != null) if (plan.position != null && !reordered) bump(untouched, w.untouched.inPlace, inTerm - moves.length);
 
   const warnings: string[] = [];
   if (others > 0) warnings.push(w.warning.orderRoom(others));
@@ -147,7 +143,12 @@ export async function assessOrder(input: OrderInput, opts: { live: boolean }): P
       })),
       warnings: refusal ? [refusal, ...warnings] : warnings,
     },
-    label: labelParams(input, { count: moves.length, term, position: input.position == null ? null : plan.position }),
+    label: labelParams(input, {
+      count: moves.length,
+      term,
+      position: input.position == null ? null : plan.position,
+      reordered,
+    }),
     termKey: null,
     total: plan.writes.length,
     refusal,

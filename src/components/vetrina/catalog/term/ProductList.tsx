@@ -11,6 +11,7 @@ import { SELECTION_BAR_EXTRA } from "../act/bottom-bar";
 import { canLeaveOneOut, isPicked, type PickedProduct } from "../act/model";
 import { useOperationSettled } from "../act/operations-context";
 import { SelectButton } from "../act/SelectButton";
+import type { OrderTerm } from "../act/OrderSheet";
 import { SelectionBar } from "../act/SelectionBar";
 import type { ProductSelection } from "../act/selection";
 import { Search, Stack } from "./glyphs";
@@ -50,6 +51,8 @@ export interface ProductListProps {
   selectButton?: boolean;
   /** The list's name ("Nike", "Esauriti"), for the sheets' "Tutti i 120 prodotti di «Nike»". */
   listName?: string;
+  /** A category's or brand's list: the selection can be placed in its order ("Ordina"). */
+  orderTerm?: OrderTerm;
 }
 
 /** A list that is not a whole term: a quick view, or a term searched or narrowed by a chip. */
@@ -77,6 +80,7 @@ export function ProductList({
   selection,
   selectButton = true,
   listName,
+  orderTerm,
 }: ProductListProps) {
   const { t } = useI18n();
   const l = t.vetrinaCatalog.term.list;
@@ -216,6 +220,7 @@ export function ProductList({
           onScreen={onScreen}
           listName={listName}
           narrowed={narrowed(query)}
+          orderTerm={orderTerm}
         />
       )}
 

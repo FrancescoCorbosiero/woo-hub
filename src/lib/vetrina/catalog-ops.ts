@@ -102,6 +102,11 @@ export type OperationInput =
       term: { taxonomy: CatalogTaxonomy; id: number };
       /** Where the first of them lands, 1-based among the term's other products; null = after all of them. */
       position: number | null;
+      /**
+       * The rows of "Riordina" (dragged), down to the last that moved, at the
+       * top: the log says how many moved, not that they all went to the top.
+       */
+      reorder?: true;
     };
 
 export type OperationKind = OperationInput["kind"];

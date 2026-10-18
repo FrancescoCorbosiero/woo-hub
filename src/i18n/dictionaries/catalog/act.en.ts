@@ -39,6 +39,7 @@ export const actEn: typeof actIt = {
       tag: "Tag",
       category: "Category",
       pin: "Homepage",
+      order: "Order",
     },
   },
 
@@ -166,6 +167,35 @@ export const actEn: typeof actIt = {
       remove: (category: string, count: number) => `Remove ${products(count)} from “${category}”`,
     },
     plain: { add: "Add to the category", remove: "Remove from the category" },
+  },
+
+  order: {
+    title: (term: string) => `Order in “${term}”`,
+    intro: "Choose where they go on the shop's page, in the list's order.",
+    modes: { top: "Top", position: "Position", bottom: "Bottom" },
+    positionLabel: "Position",
+    positionHint: (total: number) => `From 1 to ${n(total)}`,
+    start: (count: number) => (count === 1 ? "Move 1 product" : `Move ${n(count)} products`),
+    plain: "Move",
+  },
+
+  reorder: {
+    title: "Reorder",
+    subtitle: (term: string, shown: number, total: number) =>
+      shown < total ? `${term} · the first ${n(shown)} of ${n(total)}` : term,
+    intro: "Drag by the handle: this is the order of the category's page on the shop. The other products follow, as they are.",
+    loading: "Loading the products…",
+    failed: "Cannot read the products.",
+    empty: "No product to order.",
+    dragHandle: "Drag to move",
+    toTop: "Move to the top",
+    soldOut: "Sold out",
+    hidden: "Hidden",
+    reset: "Reset",
+    moved: (count: number) => (count === 1 ? "1 product moved" : `${n(count)} products moved`),
+    save: "Save the order",
+    nothing: "Drag a product to change the order.",
+    back: "Back to the order",
   },
 
   pin: {

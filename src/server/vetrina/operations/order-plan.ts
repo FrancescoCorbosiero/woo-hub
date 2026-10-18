@@ -119,3 +119,51 @@ function numbers(seq: readonly { menuOrder: number; rank: number }[]): number[] 
   for (let i = keep[keep.length - 1] + 1; i < n; i++) out[i] = out[i - 1] + ORDER_STEP;
   return out;
 }
+
+/**
+ * The targets an order moved, in words a person would use: those that left
+ * their place among the others — not the ones only pushed along. Of all the
+ * ways to read the new order as "these moved, the rest kept their order",
+ * the one that keeps the most of the other products, then of the targets
+ * (a heaviest increasing subsequence of the old places). From where to
+ * where, 1-based, in their new order; one left at its old number is not
+ * said to move.
+ */
+export function movedTargets(
+  members: readonly OrderMember[],
+  order: readonly number[],
+  targets: readonly number[],
+): { id: number; from: number; to: number }[] {
+  const was = new Map(members.map((m, i) => [m.id, i]));
+  const asked = new Set(targets);
+  const n = order.length;
+  // Fenwick tree over the old places: the heaviest chain ending below a place, and where it ends.
+  const tree = new Array<number>(n + 1).fill(0);
+  const treeAt = new Array<number>(n + 1).fill(-1);
+  const best = new Array<number>(n).fill(0);
+  const prev = new Array<number>(n).fill(-1);
+  const query = (rank: number) => {
+    let value = 0;
+    let at = -1;
+    for (let i = rank; i > 0; i -= i & -i) if (tree[i] > value) [value, at] = [tree[i], treeAt[i]];
+    return { value, at };
+  };
+  const update = (rank: number, value: number, at: number) => {
+    for (let i = rank; i <= n; i += i & -i) if (value > tree[i]) [tree[i], treeAt[i]] = [value, at];
+  };
+  let top = -1;
+  order.forEach((id, i) => {
+    const rank = was.get(id)!;
+    // Another product kept counts more than a target: a target is what is said to move.
+    const weight = asked.has(id) ? 1 : n + 1;
+    const below = query(rank);
+    best[i] = below.value + weight;
+    prev[i] = below.at;
+    update(rank + 1, best[i], i);
+    if (top < 0 || best[i] > best[top]) top = i;
+  });
+  const kept = new Set<number>();
+  for (let i = top; i >= 0; i = prev[i]) kept.add(order[i]);
+  // One whose place is the same number as before (the others moved around it) reads as not moved.
+  return order.flatMap((id, i) => (asked.has(id) && !kept.has(id) && was.get(id) !== i ? [{ id, from: was.get(id)! + 1, to: i + 1 }] : []));
+}

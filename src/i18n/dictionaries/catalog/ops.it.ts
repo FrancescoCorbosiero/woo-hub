@@ -54,6 +54,8 @@ export const opsIt = {
     /** Products placed in a category's or brand's order; position null: at the end. */
     order: (count: number, term: string, position: number | null) =>
       `${agreed(count, "prodotto", "prodotti")} ${position === 1 ? "in cima" : position == null ? "in fondo" : `alla posizione ${n(position)}`} · ${term}`,
+    /** Products dragged to places apart in a category's or brand's order ("Riordina"). */
+    reorder: (count: number, term: string) => `Nuovo ordine · ${term}: ${agreed(count, "prodotto spostato", "prodotti spostati")}`,
   },
 
   /** Why a preview leaves products as they are, agreeing with how many ("Già nascosto · 1", "Già nascosti · 3"). */
@@ -115,7 +117,7 @@ export const opsIt = {
       `L'ordine del negozio è uno per prodotto: ${count === 1 ? "1 è" : `${n(count)} sono`} anche in ${nameList(names, total)}, e lì ${count === 1 ? "cambia" : "cambiano"} posto con lo stesso criterio.`,
     /** Products renumbered to make room: their place does not change. */
     orderRoom: (count: number) =>
-      `Per fare spazio cambio il numero d'ordine di ${count === 1 ? "1 altro prodotto" : `altri ${n(count)} prodotti`}: il loro posto resta lo stesso.`,
+      `Per fare spazio cambio il numero d'ordine di ${count === 1 ? "1 altro prodotto: il suo posto resta lo stesso." : `altri ${n(count)} prodotti: il loro posto resta lo stesso.`}`,
     /** A homepage section shows this category: its pins come first on the category's page. */
     orderPins: (sections: string[]) =>
       `Sulla pagina della categoria vengono prima i prodotti fissati in ${nameList(sections.map((s) => `«${s}»`))}, poi quest'ordine.`,
