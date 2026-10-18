@@ -18,6 +18,7 @@ import type { CollectionCondition, HoldReason, IndexedAttribute, IndexedTerm } f
 import type { Plan, PlanItem, ApplyResult, SourceProduct } from "@core/core-spine";
 import type { StoreOverrides } from "@/server/overrides/model";
 import type { OperationInput, OperationKind, OperationView } from "@/lib/vetrina/catalog-ops";
+import type { OrderSourceItem } from "@/lib/vetrina/order-sources";
 import type { MediaImage } from "@/server/woo/media-plan";
 
 /**
@@ -642,6 +643,8 @@ export interface OperationLabelParams {
   position?: number | null;
   /** "Ordina": products dragged to places apart, not one block. */
   reordered?: boolean;
+  /** "Usa l'ordine di «X»": the order source's name. */
+  source?: string;
 }
 
 /**
@@ -719,6 +722,33 @@ export const vetrinaOperationItems = pgTable(
 );
 
 export type VetrinaOperationItemRow = typeof vetrinaOperationItems.$inferSelect;
+
+/**
+ * Order sources ("fonti d'ordine", src/server/vetrina/order-sources): a
+ * ranking of the shop's products from somewhere else — a reference shop's
+ * page, a marketplace's best sellers — uploaded by hand in the agreed format
+ * (docs/order-sources.md), for "Usa l'ordine di «…»" on a category, a brand
+ * or the whole catalog. The items are kept as uploaded: they are matched to
+ * the shop's products each time they are used, so products published later
+ * find their place.
+ */
+export const vetrinaOrderSources = pgTable(
+  "vetrina_order_sources",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    // Where it comes from: a page's address, or words.
+    origin: text("origin"),
+    // In the source's order: { sku, name } each, either may be null.
+    items: jsonb("items").$type<OrderSourceItem[]>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  // One source per name, whatever its case: the API replaces a source by its name.
+  (t) => [uniqueIndex("vetrina_order_sources_name_idx").on(sql`lower(${t.name})`)],
+);
+
+export type VetrinaOrderSourceRow = typeof vetrinaOrderSources.$inferSelect;
 
 export type ConfigRow = typeof config.$inferSelect;
 export type VariantMappingRow = typeof variantMappings.$inferSelect;

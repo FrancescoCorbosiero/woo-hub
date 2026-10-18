@@ -13,7 +13,7 @@ import type { OperationLabelParams } from "@/server/db/schema";
 import { mapLimit, parseTermKey, resolveTarget, rowsInOrder, termName, wholeTermAction } from "./context";
 import { readSizes } from "./live";
 import { assessMargin, marginChanges } from "./margin";
-import { assessOrder } from "./order";
+import { assessOrder, assessSourceOrder } from "./order";
 import {
   bump,
   labelParams,
@@ -426,6 +426,7 @@ async function assessPin(ctx: Ctx, input: Extract<OperationInput, { kind: "pin" 
 export async function assess(input: OperationInput, opts: { live: boolean }): Promise<Assessment> {
   if (input.kind === "margin") return assessMargin(input, opts);
   if (input.kind === "order") return assessOrder(input, opts);
+  if (input.kind === "sourceOrder") return assessSourceOrder(input, opts);
   const target = await resolveTarget(input.target, { wholeTerm: wholeTermAction(input) });
   const { rows, missing } = await rowsInOrder(target.ids);
   const ctx: Ctx = { ids: target.ids, rows, missing, trees: target.trees, live: opts.live, w: words() };

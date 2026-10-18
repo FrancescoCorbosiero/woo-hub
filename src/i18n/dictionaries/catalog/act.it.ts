@@ -275,6 +275,7 @@ export const actIt = {
       pin: "Fisso in homepage",
       margin: "Cambio il ricarico",
       order: "Riordino",
+      sourceOrder: "Applico l'ordine",
     },
     undoing: "Annullo…",
     progress: (what: string, done: number, total: number) => `${what} · ${n(done)}/${n(total)}`,

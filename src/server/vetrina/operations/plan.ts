@@ -433,6 +433,8 @@ export interface LabelNames {
   position?: number | null;
   /** "Ordina": products moved to places apart (dragged), not one block. */
   reordered?: boolean;
+  /** "Usa l'ordine di «X»": the source's name. */
+  source?: string;
 }
 
 /** An action's label as the log keeps it: what it is, and the names it needs. */
@@ -469,6 +471,8 @@ export function labelParams(input: OperationInput, names: LabelNames): Operation
         position: names.position === undefined ? input.position : names.position,
         ...(names.reordered ? { reordered: true } : {}),
       };
+    case "sourceOrder":
+      return { ...base, term: names.term ?? null, source: names.source ?? "" };
   }
 }
 
@@ -498,6 +502,8 @@ export function labelText(p: OperationLabelParams, w: Words = words()): string {
       return w.label.margin(p.percent ?? null, what);
     case "order":
       return p.reordered ? w.label.reorder(p.count, p.term ?? "") : w.label.order(p.count, p.term ?? "", p.position ?? null);
+    case "sourceOrder":
+      return w.label.sourceOrder(p.count, p.source ?? "", p.term || w.source.wholeCatalog);
   }
 }
 

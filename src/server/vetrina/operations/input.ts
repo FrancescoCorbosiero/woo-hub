@@ -142,6 +142,11 @@ export const OperationInputSchema = z.discriminatedUnion("kind", [
     position: z.number().int().min(1).max(1_000_000).nullable(),
     reorder: z.literal(true).optional(),
   }),
+  z.object({
+    kind: z.literal("sourceOrder"),
+    sourceId: z.uuid(),
+    term: z.object({ taxonomy: z.enum(["category", "brand"], { message: problem("term") }), id: Id }).nullable(),
+  }),
 ]);
 
 /** A problem met, in the owner's words: ours by key, zod's own as "Richiesta non valida". */

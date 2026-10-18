@@ -252,6 +252,7 @@ export const actEn: typeof actIt = {
       pin: "Pinning on the homepage",
       margin: "Changing the margin",
       order: "Reordering",
+      sourceOrder: "Applying the order",
     },
     undoing: "Undoing…",
     progress: (what: string, done: number, total: number) => `${what} · ${n(done)}/${n(total)}`,

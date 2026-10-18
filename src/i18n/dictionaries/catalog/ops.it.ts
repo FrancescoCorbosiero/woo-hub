@@ -56,6 +56,9 @@ export const opsIt = {
       `${agreed(count, "prodotto", "prodotti")} ${position === 1 ? "in cima" : position == null ? "in fondo" : `alla posizione ${n(position)}`} · ${term}`,
     /** Products dragged to places apart in a category's or brand's order ("Riordina"). */
     reorder: (count: number, term: string) => `Nuovo ordine · ${term}: ${agreed(count, "prodotto spostato", "prodotti spostati")}`,
+    /** "Usa l'ordine di «X»" on a term, or on the whole catalog (`what`). */
+    sourceOrder: (count: number, source: string, what: string) =>
+      `Ordine di «${source}» · ${what}: ${agreed(count, "prodotto spostato", "prodotti spostati")}`,
   },
 
   /** Why a preview leaves products as they are, agreeing with how many ("Già nascosto · 1", "Già nascosti · 3"). */
@@ -86,6 +89,9 @@ export const opsIt = {
     noQuote: (_count: number): string => "nessun prezzo di mercato",
     notInTerm: (count: number, term: string): string => (count === 1 ? `non è in «${term}»` : `non sono in «${term}»`),
     inPlace: (count: number): string => (count === 1 ? "già al suo posto" : "già al loro posto"),
+    /** A term's products a source does not rank: after the ranked ones, in their order. */
+    notRanked: (count: number, source: string): string =>
+      `${count === 1 ? "non è" : "non sono"} in «${source}»: ${count === 1 ? "resta dopo, al suo posto" : "restano dopo, nel loro ordine"}`,
   },
 
   /** A product's state, before → after, in a preview's sample. */
@@ -121,6 +127,9 @@ export const opsIt = {
     /** A homepage section shows this category: its pins come first on the category's page. */
     orderPins: (sections: string[]) =>
       `Sulla pagina della categoria vengono prima i prodotti fissati in ${nameList(sections.map((s) => `«${s}»`))}, poi quest'ordine.`,
+    /** Items of a source no product of the shop matched (used on the whole catalog). */
+    sourceUnmatched: (count: number, total: number) =>
+      `${count === 1 ? "1 prodotto" : `${n(count)} prodotti`} della fonte su ${n(total)} non ${count === 1 ? "corrisponde" : "corrispondono"} a nessun prodotto del negozio: ${count === 1 ? "è ignorato" : "sono ignorati"}.`,
     /** The storefront's default sort is not the shop's own order: the order is saved, but the pages do not follow it. */
     orderNotUsed: (sort: string) =>
       `Il negozio ordina le pagine per «${sort}», non per l'ordine personalizzato: l'ordine viene salvato ma le pagine non lo seguono finché in WooCommerce › Impostazioni › Prodotti l'ordinamento predefinito non è «Ordinamento personalizzato + nome».`,
@@ -231,6 +240,26 @@ export const opsIt = {
     /** The rule is saved; the prices could not all be written now. */
     repriceFailed: (message: string) =>
       `Ricarico salvato, ma i prezzi non si sono aggiornati tutti (${message}): il prossimo aggiornamento dei prezzi li allinea.`,
+  },
+
+  /** Order sources ("fonti d'ordine"): what the server says of one. */
+  source: {
+    /** The whole shop, where a source's order is used on all of it. */
+    wholeCatalog: "tutto il catalogo",
+    parse: {
+      empty: "Il testo è vuoto: incolla la classifica o carica il file.",
+      invalidJson: "Il JSON non si legge: controlla parentesi e virgolette (o incolla la risposta dell'LLM così com'è).",
+      noItems: "Non trovo prodotti nel testo: servono un elenco «items» con «sku» e/o «name», o un prodotto per riga.",
+      tooMany: (max: number) => `Sono più di ${n(max)} prodotti: dividili in più fonti.`,
+    },
+    nameMissing: "Dai un nome alla fonte.",
+    nameTaken: (name: string) => `Esiste già una fonte «${name}»: scegli un altro nome, o sostituisci quella.`,
+    tooManySources: (max: number) => `Ci sono già ${n(max)} fonti, il massimo: eliminane una.`,
+    gone: "Questa fonte non c'è più.",
+    /** None of the term's products is in the source. */
+    noneInTerm: (term: string, source: string) => `Nessun prodotto di «${term}» è nella fonte «${source}».`,
+    noneInShop: (source: string) => `Nessun prodotto della fonte «${source}» è nel negozio.`,
+    inOrder: (source: string) => `È già nell'ordine di «${source}».`,
   },
 
   /** What the screens sent, checked before anything runs: the problems the owner can fix, in his words. */

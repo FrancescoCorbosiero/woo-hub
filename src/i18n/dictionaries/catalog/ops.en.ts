@@ -38,6 +38,8 @@ export const opsEn: typeof opsIt = {
     order: (count: number, term: string, position: number | null) =>
       `${products(count)} ${position === 1 ? "to the top" : position == null ? "to the bottom" : `to position ${n(position)}`} · ${term}`,
     reorder: (count: number, term: string) => `New order · ${term}: ${count === 1 ? "1 product moved" : `${n(count)} products moved`}`,
+    sourceOrder: (count: number, source: string, what: string) =>
+      `Order of “${source}” · ${what}: ${count === 1 ? "1 product moved" : `${n(count)} products moved`}`,
   },
 
   untouched: {
@@ -63,6 +65,8 @@ export const opsEn: typeof opsIt = {
     noQuote: (_count: number) => "no market price",
     notInTerm: (_count: number, term: string) => `not in “${term}”`,
     inPlace: (count: number) => (count === 1 ? "already in its place" : "already in their place"),
+    notRanked: (count: number, source: string) =>
+      `not in “${source}”: ${count === 1 ? "stays after, in its place" : "stay after, in their order"}`,
   },
 
   state: {
@@ -93,6 +97,8 @@ export const opsEn: typeof opsIt = {
       `To make room, ${count === 1 ? "1 other product gets" : `${n(count)} other products get`} a new order number: ${count === 1 ? "its" : "their"} place stays the same.`,
     orderPins: (sections: string[]) =>
       `On the category's page the products pinned in ${nameList(sections.map((s) => `“${s}”`))} come first, then this order.`,
+    sourceUnmatched: (count: number, total: number) =>
+      `${count === 1 ? "1 product" : `${n(count)} products`} of the source out of ${n(total)} ${count === 1 ? "matches" : "match"} no product of the shop: ${count === 1 ? "it is" : "they are"} left out.`,
     orderNotUsed: (sort: string) =>
       `The shop sorts its pages by “${sort}”, not by the custom order: the order is saved, but the pages follow it only once WooCommerce › Settings › Products sets the default sorting to “Custom ordering + name”.`,
     alsoElsewhere: (count: number, names: string[], total: number) =>
@@ -183,6 +189,23 @@ export const opsEn: typeof opsIt = {
     marginChanged: (term: string) => `The margin of “${term}” changed since: change it again from here.`,
     repriceFailed: (message: string) =>
       `Margin saved, but not every price was updated (${message}): the next price update aligns them.`,
+  },
+
+  source: {
+    wholeCatalog: "the whole catalog",
+    parse: {
+      empty: "The text is empty: paste the ranking or upload the file.",
+      invalidJson: "The JSON cannot be read: check brackets and quotes (or paste the LLM's answer as it is).",
+      noItems: "No products in the text: it needs an «items» list with «sku» and/or «name», or one product per line.",
+      tooMany: (max: number) => `More than ${n(max)} products: split them into several sources.`,
+    },
+    nameMissing: "Give the source a name.",
+    nameTaken: (name: string) => `There is already a source “${name}”: pick another name, or replace that one.`,
+    tooManySources: (max: number) => `There are already ${n(max)} sources, the most: delete one.`,
+    gone: "This source is gone.",
+    noneInTerm: (term: string, source: string) => `None of the products of “${term}” is in the source “${source}”.`,
+    noneInShop: (source: string) => `None of the products of the source “${source}” is in the shop.`,
+    inOrder: (source: string) => `It is already in the order of “${source}”.`,
   },
 
   input: {
