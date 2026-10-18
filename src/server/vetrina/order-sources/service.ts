@@ -71,6 +71,11 @@ export async function listSources(): Promise<OrderSourceSummary[]> {
   return rows.map((row) => summary(row, facts));
 }
 
+/** Every source's id and name, without matching it: what a list's sort sheet offers. */
+export async function listSourceNames(): Promise<{ id: string; name: string }[]> {
+  return repo.listSourceNames();
+}
+
 export async function getSource(id: string): Promise<VetrinaOrderSourceRow> {
   const row = await repo.getSourceRow(id);
   if (!row) throw new VetrinaError("not_found", words().source.gone, 404);

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Block, Button, Link as KLink, Navbar, Page, Preloader, Segmented, SegmentedButton } from "konsta/react";
+import { Block, Button, Link as KLink, List, ListItem, Navbar, Page, Preloader, Segmented, SegmentedButton } from "konsta/react";
 import { useI18n } from "@/i18n/provider";
 import type { CatalogOverview } from "@/lib/vetrina/catalog";
 import type { VetrinaResult } from "@/server/vetrina/service";
@@ -11,9 +11,11 @@ import { ChevronLeft, Refresh } from "../../icons";
 import { SEGMENTED_COLORS } from "../../segmented";
 import { useStandalone } from "../../sheet-mount";
 import { ActivityLink } from "../act/ActivityLink";
-import { Plus } from "../act/icons";
+import { OrderLines, Plus } from "../act/icons";
 import { useOperationSettled } from "../act/operations-context";
 import { NewCategorySheet, type NewCategoryRequest } from "../rules/NewCategorySheet";
+import { useOrderSourceSheets } from "../sources/SourceOrderSheet";
+import { useOrderSourceNames } from "../sources/use-order-sources";
 import { TabbarSpacer } from "../TabbarSpacer";
 import { rememberTerms, replaceAddress, SearchField } from "../term/browse";
 import { searchWords } from "../term/list-model";
@@ -21,6 +23,7 @@ import { readParams, type HomeTab, type TermOrder } from "./model";
 import { QuickViewChips } from "./QuickViewChips";
 import { SearchResults, revalidateSearches } from "./SearchResults";
 import { BrandIndex, CategoryGroups } from "./TermGroups";
+import { Tile } from "./ui";
 
 /** How long typing must pause before the words are searched. */
 const SEARCH_PAUSE_MS = 200;
@@ -54,6 +57,7 @@ export function CatalogHome({ result }: { result: VetrinaResult<CatalogOverview>
   const pageRef = useTopOnSwap(searching);
   const overview = result.ok ? result.data : null;
   const [newRule, setNewRule] = React.useState<NewCategoryRequest | null>(null);
+  const sourceSheets = useOrderSourceSheets();
 
   // An action ended (a hide, a sale…): the counts and the quick views follow.
   useOperationSettled(() => refresh());
@@ -114,18 +118,31 @@ export function CatalogHome({ result }: { result: VetrinaResult<CatalogOverview>
       ) : result.data.indexProducts === 0 ? (
         <FirstRead refreshing={refreshing} onRetry={refresh} />
       ) : (
-        <Lists overview={result.data} tab={tab} order={order} />
+        <Lists overview={result.data} tab={tab} order={order} onSources={sourceSheets.manage} />
       )}
 
       <TabbarSpacer />
       <NewCategorySheet request={newRule} onClose={() => setNewRule(null)} />
+      {sourceSheets.sheets}
     </Page>
   );
 }
 
-function Lists({ overview, tab, order }: { overview: CatalogOverview; tab: HomeTab; order: TermOrder }) {
+function Lists({
+  overview,
+  tab,
+  order,
+  onSources,
+}: {
+  overview: CatalogOverview;
+  tab: HomeTab;
+  order: TermOrder;
+  /** "Fonti d'ordine": the sheet of the order sources. */
+  onSources: () => void;
+}) {
   const { t } = useI18n();
   const h = t.vetrinaCatalog.home;
+  const sources = useOrderSourceNames();
   const choose = (next: HomeTab) => {
     if (next !== tab) replaceAddress({ tab: next === "brand" ? "brand" : null });
   };
@@ -145,6 +162,24 @@ function Lists({ overview, tab, order }: { overview: CatalogOverview; tab: HomeT
       <div className="pt-2">
         <QuickViewChips views={overview.views} />
       </div>
+      {/* The order sources: rankings from elsewhere, used on a category, a brand or all of the catalog. */}
+      <List strong inset className="!mb-2 !mt-4">
+        <ListItem
+          link
+          linkComponent="button"
+          linkProps={{ type: "button", onClick: onSources, "aria-haspopup": "dialog" }}
+          contentClassName="w-full text-start"
+          strongTitle={false}
+          media={
+            <Tile tone="ink">
+              <OrderLines className="h-[18px] w-[18px]" />
+            </Tile>
+          }
+          title={t.vetrinaCatalog.sources.title}
+          after={sources.data && sources.data.length > 0 ? t.vetrinaCatalog.sources.row(sources.data.length) : undefined}
+          text={sources.data && sources.data.length > 0 ? undefined : t.vetrinaCatalog.sources.row(0)}
+        />
+      </List>
       {tab === "brand" ? (
         <BrandIndex brands={overview.brands} />
       ) : (

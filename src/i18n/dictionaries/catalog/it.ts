@@ -4,6 +4,7 @@ import { marginsIt } from "./margins.it";
 import { opsIt } from "./ops.it";
 import { rulesIt } from "./rules.it";
 import { sheetIt } from "./sheet.it";
+import { sourcesIt } from "./sources.it";
 import { termIt } from "./term.it";
 
 /**
@@ -22,4 +23,5 @@ export const catalogIt = {
   rules: rulesIt,
   ops: opsIt,
   margins: marginsIt,
+  sources: sourcesIt,
 };

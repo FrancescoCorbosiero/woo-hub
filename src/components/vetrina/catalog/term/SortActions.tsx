@@ -11,20 +11,35 @@ import { Check, SortArrows } from "./glyphs";
  * the store's own order (menu_order, then name). The storefront adds to it:
  * sold-out products last, and on a category a homepage section shows, that
  * section's pins first — neither is applied here. On a category's or
- * brand's list, "Riordina a mano…" sets that order.
+ * brand's list, "Riordina a mano…" sets that order, and "Usa l'ordine di
+ * «X»" takes an order source's (the first few sources; "Fonti d'ordine…"
+ * lists them all, and adds one).
  */
+
+/** Sources offered by name in the sheet; the others are a tap away in "Fonti d'ordine…". */
+const SOURCES_SHOWN = 4;
+
 export function SortActions({
   sort,
   onChange,
   onReorder,
+  sources = [],
+  onUseSource,
+  onManageSources,
 }: {
   sort: CatalogSort;
   onChange: (sort: CatalogSort) => void;
   /** A category's or brand's list: "Riordina a mano…" opens the editor of the shop's order. */
   onReorder?: () => void;
+  /** The order sources, by name: "Usa l'ordine di «X»" for each (with onUseSource). */
+  sources?: readonly { id: string; name: string }[];
+  onUseSource?: (source: { id: string; name: string }) => void;
+  /** "Fonti d'ordine…": the sheet that lists and adds them. */
+  onManageSources?: () => void;
 }) {
   const { t } = useI18n();
   const s = t.vetrinaCatalog.term.sort;
+  const src = t.vetrinaCatalog.sources;
   const [open, setOpen] = React.useState(false);
 
   function choose(next: CatalogSort) {
@@ -56,16 +71,40 @@ export function SortActions({
             </ActionsButton>
           ))}
         </ActionsGroup>
-        {onReorder && (
+        {(onReorder || onManageSources) && (
           <ActionsGroup>
-            <ActionsButton
-              onClick={() => {
-                setOpen(false);
-                onReorder();
-              }}
-            >
-              {s.reorder}
-            </ActionsButton>
+            {onReorder && (
+              <ActionsButton
+                onClick={() => {
+                  setOpen(false);
+                  onReorder();
+                }}
+              >
+                {s.reorder}
+              </ActionsButton>
+            )}
+            {onUseSource &&
+              sources.slice(0, SOURCES_SHOWN).map((source) => (
+                <ActionsButton
+                  key={source.id}
+                  onClick={() => {
+                    setOpen(false);
+                    onUseSource(source);
+                  }}
+                >
+                  <span className="truncate px-2">{src.use(source.name)}</span>
+                </ActionsButton>
+              ))}
+            {onManageSources && (
+              <ActionsButton
+                onClick={() => {
+                  setOpen(false);
+                  onManageSources();
+                }}
+              >
+                {src.manage}
+              </ActionsButton>
+            )}
           </ActionsGroup>
         )}
         <ActionsGroup>

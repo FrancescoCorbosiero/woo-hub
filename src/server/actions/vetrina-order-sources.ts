@@ -50,6 +50,11 @@ export async function loadOrderSources(): Promise<VetrinaResult<OrderSourceSumma
   return answer(() => attempt(() => sources.listSources()));
 }
 
+/** Every source's id and name, light: the "Usa l'ordine di «…»" of a list's sort sheet. */
+export async function loadOrderSourceNames(): Promise<VetrinaResult<{ id: string; name: string }[]>> {
+  return answer(() => attempt(() => sources.listSourceNames()));
+}
+
 /** One source, matched to the shop now (the products it names that the shop does not have, first of all). */
 export async function loadOrderSource(input: { id: string }): Promise<VetrinaResult<OrderSourceSummary>> {
   return answer(async () => {

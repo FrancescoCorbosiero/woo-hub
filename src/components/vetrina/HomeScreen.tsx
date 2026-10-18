@@ -21,9 +21,10 @@ import { railHealth } from "./rail-health";
 import { FieldsSheet } from "./FieldsSheet";
 import { ActivityLink } from "./catalog/act/ActivityLink";
 import { useOperationSettled } from "./catalog/act/operations-context";
-import { Warning } from "./catalog/act/icons";
+import { OrderLines, Warning } from "./catalog/act/icons";
 import { railCatalogHref } from "./catalog/sheet/links";
 import { TabbarSpacer } from "./catalog/TabbarSpacer";
+import { useOrderSourceSheets } from "./catalog/sources/SourceOrderSheet";
 import { Stack } from "./catalog/term/glyphs";
 import { useStandalone } from "./sheet-mount";
 import { ChevronLeft, ChevronRight, External, Funnel, Lock, Pin, Refresh } from "./icons";
@@ -55,6 +56,8 @@ export function HomeScreen({ result }: { result: VetrinaResult<VetrinaHome> }) {
   const editing = result.ok
     ? (result.data.home.blocks.find((b): b is StaticBlock => b.kind === "static" && b.path === editingPath) ?? null)
     : null;
+  // The catalog's order sources are reached from here too: the Vetrina's first screen.
+  const sourceSheets = useOrderSourceSheets();
   const blockLabel = (block: HomeBlock) =>
     blockConfig(block.name).label ?? v.blocks[block.name] ?? v.blocks.other;
 
@@ -86,7 +89,14 @@ export function HomeScreen({ result }: { result: VetrinaResult<VetrinaHome> }) {
             <Refresh className="h-5 w-5" />
           </KLink>
         }
-        right={<ActivityLink />}
+        right={
+          <>
+            <KLink iconOnly onClick={sourceSheets.manage} aria-label={t.vetrinaCatalog.sources.open} aria-haspopup="dialog">
+              <OrderLines className="h-6 w-6" />
+            </KLink>
+            <ActivityLink />
+          </>
+        }
       />
 
       {!result.ok ? (
@@ -129,6 +139,7 @@ export function HomeScreen({ result }: { result: VetrinaResult<VetrinaHome> }) {
         onSubmit={(fields) => (editing ? saveBlock(editing, fields) : true)}
         onClose={() => setEditingPath(null)}
       />
+      {sourceSheets.sheets}
     </Page>
   );
 }
@@ -186,7 +197,14 @@ export function HomeScreenSkeleton() {
             <Preloader className="!h-5 !w-5" />
           </KLink>
         }
-        right={<ActivityLink />}
+        right={
+          <>
+            <KLink iconOnly aria-label={t.vetrinaCatalog.sources.open}>
+              <OrderLines className="h-6 w-6" />
+            </KLink>
+            <ActivityLink />
+          </>
+        }
       />
       <div aria-hidden className="space-y-3 px-4 pb-1 pt-1 motion-safe:animate-pulse">
         <div className="space-y-2 px-1 py-0.5">

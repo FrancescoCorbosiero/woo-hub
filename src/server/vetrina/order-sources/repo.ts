@@ -10,6 +10,14 @@ export async function listSourceRows(): Promise<VetrinaOrderSourceRow[]> {
   return db.select().from(vetrinaOrderSources).orderBy(asc(sql`lower(${vetrinaOrderSources.name})`));
 }
 
+/** Every source's id and name only: the lists' "Usa l'ordine di «…»". */
+export async function listSourceNames(): Promise<{ id: string; name: string }[]> {
+  return db
+    .select({ id: vetrinaOrderSources.id, name: vetrinaOrderSources.name })
+    .from(vetrinaOrderSources)
+    .orderBy(asc(sql`lower(${vetrinaOrderSources.name})`));
+}
+
 export async function countSources(): Promise<number> {
   const [row] = await db.select({ n: sql<number>`count(*)::int` }).from(vetrinaOrderSources);
   return row?.n ?? 0;

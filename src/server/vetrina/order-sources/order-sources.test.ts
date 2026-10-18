@@ -165,3 +165,19 @@ describe("matchSource — which product each item is", () => {
     });
   });
 });
+
+describe("the LLM's instructions", () => {
+  it("are the ones docs/order-sources.md shows, and ask for the format the reader reads", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { sourcesIt } = await import("@/i18n/dictionaries/catalog/sources.it");
+    const { sourcesEn } = await import("@/i18n/dictionaries/catalog/sources.en");
+    const doc = readFileSync(new URL("../../../../docs/order-sources.md", import.meta.url), "utf8");
+    expect(doc).toContain(sourcesIt.llmPrompt);
+    // The example inside the instructions, filled in, is a source the reader takes.
+    for (const prompt of [sourcesIt.llmPrompt, sourcesEn.llmPrompt]) {
+      const example = prompt.slice(prompt.indexOf("{"), prompt.lastIndexOf("}") + 1).replace(/<[^>]+>/g, "X1234-100");
+      const res = parseOrderSource(example);
+      expect(res.ok && res.source.items).toEqual([{ sku: "X1234-100", name: "X1234-100" }]);
+    }
+  });
+});
