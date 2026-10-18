@@ -169,6 +169,13 @@
       "when": 1791983687312,
       "tag": "0023_thick_titania",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1792291061738,
+      "tag": "0024_colossal_darkstar",
+      "breakpoints": true
     }
   ]
 }

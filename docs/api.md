@@ -4,7 +4,9 @@ The catalog's actions for a script or another service: the same code the
 Vetrina's screens run (`src/server/vetrina/operations/`), with the same
 preview, the same log and the same "Annulla". Today it covers **the shop's
 order**: reading a category's (or brand's) products in the order its page on
-the shop shows them, and placing products in it.
+the shop shows them, placing products in it, and **order sources** —
+rankings from elsewhere, uploaded and used with "Usa l'ordine di «…»"
+([order-sources.md](order-sources.md)).
 
 ## Setup
 
@@ -126,6 +128,13 @@ Already in that order answers `400` ("Sono già in quest'ordine.").
 To set a whole order (say the first 50 products from your own ranking), send
 those products with `"position": "top"`: everything after them keeps its
 order, and only the products whose number must change are written.
+
+### Order sources
+
+`GET`/`POST /api/v1/order-sources`, `GET`/`DELETE /api/v1/order-sources/{id}`,
+`POST /api/v1/order-sources/{id}/apply`: uploading a ranking (the agreed
+format, an LLM's answer as it came, a CSV…) and using it on a category, a
+brand or the whole catalog. See [order-sources.md](order-sources.md#the-api).
 
 ### `GET /api/v1/operations/{id}`
 

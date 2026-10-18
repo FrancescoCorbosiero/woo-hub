@@ -295,7 +295,12 @@ products last.
   under "Ordina: Negozio"): the first products in the shop's order (100 at a
   time, more on request), dragged by the handle or sent to the top, then
   saved as one "Ordina" over the rows down to the last that moved.
-- **From a script** — `POST /api/v1/catalog/order` ([api.md](api.md)).
+- **From an order source** — "Usa l'ordine di «X»" (under "Ordina: Negozio",
+  or "Usa su tutto il catalogo" from the source): a ranking from elsewhere —
+  a reference shop's page read by an LLM, say — uploaded in the agreed format,
+  its products first in its order ([order-sources.md](order-sources.md)).
+- **From a script** — `POST /api/v1/catalog/order`, or an order source
+  uploaded and applied through `/api/v1/order-sources` ([api.md](api.md)).
 
 How it writes (`src/server/vetrina/operations/order-plan.ts`, `order.ts`):
 the new order is fixed by the move; the plan keeps the largest set of products
@@ -392,7 +397,7 @@ custom order (the order is saved, the pages ignore it).
 | 1 · Foundations | The Hub's Catalog tab removed (drawer on every page); the store index fresh whatever the rules, with photo, visibility, order and sales; every live price write reads the store first | **Done** |
 | 2 · Browse | The tab bar; Catalogo; a category's and a brand's screen; search; quick views; the product sheet extended; homepage ↔ catalog links | **Done** |
 | 3 · Act | Selection and bulk actions; the operations log and "Annulla"; new automatic category, filter → category; Saldo and Togli saldo (§3.4); hide and show a whole category or brand | **Done** |
-| 4.1 · Order | "Ordina" and "Riordina" on a category's or brand's screen, and the programmatic API (`/api/v1/*`, [api.md](api.md)) | **Done** |
+| 4.1 · Order | "Ordina" and "Riordina" on a category's or brand's screen; order sources and "Usa l'ordine di «X»" ([order-sources.md](order-sources.md)); the programmatic API (`/api/v1/*`, [api.md](api.md)) | **Done** |
 | 4 · Margins | A margin rule per store category or brand, previewed, applied by the engine: the "Ricarico" row and sheet (`src/components/vetrina/catalog/margins/`), the action (`src/server/vetrina/operations/margin*.ts`), store terms read for every price (`src/server/pricing/store-terms.ts`), the Hub's Margins tab editing the same rules under one lock (`src/server/config/rule-list.ts`) | **Done** |
 
 ## 8. Open questions

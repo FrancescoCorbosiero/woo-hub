@@ -5,6 +5,7 @@ import { marginsEn } from "./margins.en";
 import { opsEn } from "./ops.en";
 import { rulesEn } from "./rules.en";
 import { sheetEn } from "./sheet.en";
+import { sourcesEn } from "./sources.en";
 import { termEn } from "./term.en";
 
 export const catalogEn: typeof catalogIt = {
@@ -15,4 +16,5 @@ export const catalogEn: typeof catalogIt = {
   rules: rulesEn,
   ops: opsEn,
   margins: marginsEn,
+  sources: sourcesEn,
 };

@@ -107,6 +107,18 @@ export type OperationInput =
        * top: the log says how many moved, not that they all went to the top.
        */
       reorder?: true;
+    }
+  /**
+   * "Usa l'ordine di «X»": the products an order source ranks (its items
+   * matched to the shop's products when it runs), in its order, first in a
+   * category's or a brand's order — or in the whole catalog's (term null) —
+   * and the others after them, in their order. The same numbers as "Ordina",
+   * written the same way (the fewest that must change), undone the same way.
+   */
+  | {
+      kind: "sourceOrder";
+      sourceId: string;
+      term: { taxonomy: CatalogTaxonomy; id: number } | null;
     };
 
 export type OperationKind = OperationInput["kind"];

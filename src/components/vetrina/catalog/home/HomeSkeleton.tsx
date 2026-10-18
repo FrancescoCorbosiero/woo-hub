@@ -71,6 +71,13 @@ export function CatalogHomeSkeleton() {
             <div key={width} className={`h-[34px] shrink-0 ${bar}`} style={{ width }} />
           ))}
         </div>
+        {/* The order sources' row. */}
+        <List strong inset className="!mb-2 !mt-4">
+          <ListItem
+            media={<span className="block h-[30px] w-[30px] rounded-[8px] bg-black/[0.08] dark:bg-white/[0.12]" />}
+            title={<span className={`block h-3.5 w-32 ${bar}`} />}
+          />
+        </List>
         <div className={`mx-4 mt-8 h-4 w-32 ${bar}`} />
         {/* Rows like the first group's: a tile, the name, its sections, the count. */}
         <List strong inset className="!mt-3">

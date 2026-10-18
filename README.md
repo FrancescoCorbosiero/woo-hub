@@ -388,8 +388,10 @@ crontab line:
 `/api/v1/*`, with `Authorization: Bearer $HUB_API_TOKEN`: a category's or
 brand's products in the shop's order (the one its page on the shop follows),
 products placed in it — previewed, logged, undoable like the Vetrina's own
-"Ordina" — and the progress and undo of the catalog's actions. See
-[docs/api.md](docs/api.md).
+"Ordina" — order sources (a ranking from elsewhere, e.g. an LLM's reading of
+a reference shop's page, used with "Usa l'ordine di «…»":
+[docs/order-sources.md](docs/order-sources.md)), and the progress and undo of
+the catalog's actions. See [docs/api.md](docs/api.md).
 
 ```bash
 curl -H "Authorization: Bearer $HUB_API_TOKEN" -H "Content-Type: application/json" \

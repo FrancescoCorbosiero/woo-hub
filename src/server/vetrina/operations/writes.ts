@@ -32,7 +32,7 @@ import {
   type SizePlan,
 } from "./plan";
 import { repriceMoved, runMargin, undoMargin, type TermMove } from "./margin";
-import { runOrder, undoOrder } from "./order";
+import { runOrder, runSourceOrder, undoOrder } from "./order";
 import { findTag } from "./preview";
 import * as repo from "./repo";
 import { pinnable, railFill, sectionMembers } from "./sections";
@@ -499,6 +499,7 @@ export async function runOperation(ctx: RunCtx): Promise<void> {
   if (input.kind === "margin") return runMargin(ctx, input);
   // An order is placed over its term's whole order, not product by product over the target (order.ts).
   if (input.kind === "order") return runOrder(ctx, input);
+  if (input.kind === "sourceOrder") return runSourceOrder(ctx, input);
   const { ids, trees } = await resolveTarget(input.target, { wholeTerm: wholeTermAction(input) });
   ctx.tally.total = ids.length;
   await ctx.step();

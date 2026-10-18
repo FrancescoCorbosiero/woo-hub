@@ -39,6 +39,8 @@ import { EyeOff, Funnel, More } from "../../icons";
 import { ActSheets, type ActRequest } from "../act/ActSheets";
 import type { OrderTerm } from "../act/OrderSheet";
 import { ReorderSheet } from "../act/ReorderSheet";
+import { useOrderSourceSheets } from "../sources/SourceOrderSheet";
+import { useOrderSourceNames } from "../sources/use-order-sources";
 import { call } from "../act/call";
 import { Eye, Percent } from "../act/icons";
 import { formatDay, formatTime, queryTarget } from "../act/model";
@@ -149,6 +151,9 @@ function Term({
     [term.taxonomy, term.id, term.name, term.count],
   );
   const openReorder = term.count > 0 ? () => setReorderOpen(true) : undefined;
+  // "Usa l'ordine di «X»": the order sources by name, and their sheets.
+  const sourceNames = useOrderSourceNames();
+  const sourceSheets = useOrderSourceSheets();
   const back = backTarget(detail);
   const subtitle = [ancestors.map((a) => a.name).join(" › "), v.products(term.count)].filter(Boolean).join(" · ");
   const refreshCounts = React.useCallback(() => router.refresh(), [router]);
@@ -227,7 +232,16 @@ function Term({
             initial={initial}
             demo={detail.demo}
             onFacets={controls.setFacets}
-            toolbar={<SortActions sort={sort} onChange={controls.setSort} onReorder={openReorder} />}
+            toolbar={
+              <SortActions
+                sort={sort}
+                onChange={controls.setSort}
+                onReorder={openReorder}
+                sources={sourceNames.data}
+                onUseSource={term.count > 0 ? (source) => sourceSheets.apply(source, orderTerm) : undefined}
+                onManageSources={sourceSheets.manage}
+              />
+            }
             onClearFilters={hasFilters(filter) ? () => setFilter(NO_FILTER) : undefined}
             onProductsChanged={refreshCounts}
             version={version}
@@ -285,6 +299,7 @@ function Term({
 
       <NewCategorySheet request={newRule} onClose={() => setNewRule(null)} />
       <ReorderSheet term={reorderOpen ? orderTerm : null} onClose={() => setReorderOpen(false)} />
+      {sourceSheets.sheets}
     </Page>
   );
 }
