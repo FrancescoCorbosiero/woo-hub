@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { nameKey, parseOrderSource, skuKey } from "./format";
+import { looksLikeHomepage } from "@/lib/vetrina/order-sources";
 import { matchSource, matchSummary, type MatchProduct } from "./match";
 
 const items = (text: string) => {
@@ -29,6 +30,8 @@ describe("parseOrderSource — the agreed format", () => {
           { sku: "IE3437", name: null },
         ],
         duplicates: 0,
+        parts: 1,
+        truncated: false,
       },
     });
   });
@@ -78,6 +81,43 @@ describe("parseOrderSource — the agreed format", () => {
     const res = parseOrderSource('[{"sku":"DD1391-100"},{"sku":"dd1391 100"},{"name":"Samba OG"},{"name":"samba og"}]');
     expect(res.ok && res.source.items.length).toBe(2);
     expect(res.ok && res.source.duplicates).toBe(2);
+  });
+
+  it("joins answers pasted one after another — one per page of a collection — in that order", () => {
+    const page1 = '```json\n{"name":"Kith — Nike Dunk","origin":"https://kith.com/collections/nike-dunk","items":[{"sku":"AAA111","rank":1},{"sku":"BBB222","rank":2}]}\n```';
+    const page2 = 'Ecco la pagina 2:\n```json\n{"name":"Kith — Nike Dunk","items":[{"sku":"BBB222","rank":1},{"sku":"CCC333","rank":2}]}\n```';
+    const res = parseOrderSource(`${page1}\n\n${page2}`);
+    expect(res.ok && res.source).toMatchObject({
+      name: "Kith — Nike Dunk",
+      origin: "https://kith.com/collections/nike-dunk",
+      parts: 2,
+      truncated: false,
+      duplicates: 1,
+    });
+    // Each answer counts its ranks from 1: the text's order holds.
+    expect(items(`${page1}\n${page2}`).map((i) => i.sku)).toEqual(["AAA111", "BBB222", "CCC333"]);
+    // Without fences too.
+    expect(items('Pagina 1: {"items":[{"sku":"AAA111"}]} Pagina 2: {"items":[{"sku":"CCC333"}]}').map((i) => i.sku)).toEqual([
+      "AAA111",
+      "CCC333",
+    ]);
+  });
+
+  it("reads an answer cut short by the LLM's limit up to its last whole product, and says so", () => {
+    const cut = '```json\n{"name":"Lunga","items":[{"sku":"AAA111","name":"Uno"},{"sku":"BBB222","name":"Due"},{"sku":"CCC3';
+    const res = parseOrderSource(cut);
+    expect(res.ok && res.source).toMatchObject({ name: "Lunga", truncated: true, parts: 1 });
+    expect(items(cut).map((i) => i.sku)).toEqual(["AAA111", "BBB222"]);
+    // Cut inside a name, with no fence.
+    expect(items('{"items":[{"sku":"AAA111"},{"name":"Nike Dunk Lo').map((i) => i.sku)).toEqual(["AAA111"]);
+    // A whole answer, then a cut one: both read.
+    expect(items('{"items":[{"sku":"AAA111"}]}\n{"items":[{"sku":"BBB222"},{"sku":"CC').map((i) => i.sku)).toEqual(["AAA111", "BBB222"]);
+  });
+
+  it("takes no bracket of the sentences around the JSON for a product", () => {
+    expect(items('Ho letto [1] pagina di [Kith](https://kith.com): {"items":[{"sku":"AAA111"}]}').map((i) => i.sku)).toEqual(["AAA111"]);
+    // A fence that holds no JSON: the JSON outside it is read.
+    expect(items('```\nnota\n```\n{"items":[{"sku":"AAA111"}]}').map((i) => i.sku)).toEqual(["AAA111"]);
   });
 
   it("says why it cannot read a text", () => {
@@ -178,6 +218,23 @@ describe("the LLM's instructions", () => {
       const example = prompt.slice(prompt.indexOf("{"), prompt.lastIndexOf("}") + 1).replace(/<[^>]+>/g, "X1234-100");
       const res = parseOrderSource(example);
       expect(res.ok && res.source.items).toEqual([{ sku: "X1234-100", name: "X1234-100" }]);
+    }
+  });
+});
+
+describe("looksLikeHomepage — a shop's order is on its collections' pages", () => {
+  it("tells a homepage from a collection or a category", () => {
+    for (const link of ["https://kith.com", "https://kith.com/", "https://www.shop.it/it/", "https://shop.com/en-us"]) {
+      expect(looksLikeHomepage(link)).toBe(true);
+    }
+    for (const link of [
+      "https://kith.com/collections/nike-dunk",
+      "https://shop.it/categoria-prodotto/sneakers/",
+      "https://shop.com/c/sneakers?page=2",
+      "StockX, più venduti",
+      "",
+    ]) {
+      expect(looksLikeHomepage(link)).toBe(false);
     }
   });
 });

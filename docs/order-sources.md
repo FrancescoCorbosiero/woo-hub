@@ -1,16 +1,37 @@
 # Order sources ("Fonti d'ordine")
 
-An **order source** is a ranking of the shop's products taken from somewhere
-else: a reference shop's page, a marketplace's best sellers, a list someone
+An **order source** is another shop's order of its products — usually one of
+its **collections** (Shopify) or **categories** — or any ranking someone
 keeps. It is uploaded once (by hand, from the Vetrina or the API) in the
 format below, and then used with one tap: **"Usa l'ordine di «X»"** puts the
 products it ranks first — in its order — on a category, a brand or the whole
 catalog. The other products follow, in the order they had.
 
-The typical way to make one: give an LLM the page whose order you want (its
-link, its text or screenshots) together with the instructions in
+The typical way to make one: give an LLM the link of the collection or
+category page whose order you want, together with the instructions in
 [The LLM's instructions](#the-llms-instructions), and paste its answer into
 the Vetrina as it is.
+
+## Which page: a collection or a category, not the homepage
+
+A shop's order lives on its **listing pages**: a Shopify collection
+(`https://shop.com/collections/nike-dunk`), a WooCommerce product category
+(`…/product-category/sneakers/`), any shop's category page (`…/c/sneakers`).
+Each shows its products in the order the shop chose for it — its default
+sorting ("In evidenza", "Featured", "Consigliati"). The homepage does not
+have that order: it shows a few hand-picked sections, so an LLM given the
+homepage can only guess. The instructions tell the LLM to refuse a homepage,
+a product page or a search and to ask for a collection's link; the Vetrina
+warns when the link given as the source's origin looks like a homepage.
+
+So **one source = one collection or category**: "Kith — Nike Dunk" from
+Kith's Nike Dunk collection, used on the shop's own "Nike Dunk" category (or
+brand). A ranking of the whole shop, used on the whole catalog, is the other
+way, when the reference shop has a page listing everything in its order.
+
+A collection spread over several pages (`?page=2`, "Carica altri"): the
+LLM is told to read them in order, 150 products at a time; each answer after
+"continua" is pasted after the others, and they are joined.
 
 ## In the Vetrina
 
@@ -19,12 +40,15 @@ the Vetrina as it is.
   tab (beside the clock of "Attività").
   The sheet lists the sources with how many of their products the shop has.
 - **Adding one**: "Aggiungi una fonte" → a name, where it comes from
-  (optional), and the ranking: paste the LLM's answer (or a CSV, or one
-  product per line) or upload a file. "Copia istruzioni LLM" copies the
-  instructions to give the LLM. The ranking is read as it is pasted: how many
-  products, how many the shop has, and which ones it does not find (and why,
-  when a name could be more than one product). Nothing is saved before
-  "Salva la fonte".
+  (the collection's link, optional), and the ranking: paste the LLM's answer
+  — or its answers, one after another — (or a CSV, or one product per line)
+  or upload a file. "Copia istruzioni LLM" copies the instructions to give
+  the LLM with the collection's link. The ranking is read as it is pasted: how
+  many products, how many the shop has, which ones it does not find (and why,
+  when a name could be more than one product), how many answers were joined,
+  and whether the last one stops halfway (the LLM's length limit: write
+  "continua" and paste the rest after it). Nothing is saved before "Salva la
+  fonte".
 - **Using one**:
   - on a category or a brand: its screen, "Ordina: Negozio" → **"Usa
     l'ordine di «X»"** (the first sources by name; "Fonti d'ordine…" for the
@@ -49,8 +73,8 @@ back on top.
 ```json
 {
   "format": "woo-hub.order-source/1",
-  "name": "StockX — più venduti",
-  "origin": "https://stockx.com/sneakers/most-popular",
+  "name": "Kith — Nike Dunk",
+  "origin": "https://kith.com/collections/nike-dunk",
   "items": [
     { "sku": "DD1391-100", "name": "Nike Dunk Low Retro White Black Panda" },
     { "sku": "IE3437", "name": "adidas Samba OG Cloud White Core Black" },
@@ -62,8 +86,8 @@ back on top.
 | Field | | |
 |---|---|---|
 | `format` | `"woo-hub.order-source/1"` | optional, for whoever reads the file |
-| `name` | the source's name in the Vetrina ("StockX — più venduti") | optional: the form or the API can give it |
-| `origin` | where the ranking comes from: a link, or words | optional |
+| `name` | the source's name in the Vetrina ("Kith — Nike Dunk") | optional: the form or the API can give it |
+| `origin` | where the ranking comes from: the collection's or category's link (or words) | optional |
 | `items` | the products, **in order**: the first is the first | required, at most 20,000 |
 | `items[].sku` | the maker's style code (DD1391-100, IE3437, 1203A537-100, U9060ZGB) | `sku` and/or `name` |
 | `items[].name` | the product's name: brand, model, colourway | `sku` and/or `name` |
@@ -77,13 +101,19 @@ People and LLMs rarely hand over exactly that, so the reader takes:
 
 - the JSON inside a ` ```json ` fence, or after a sentence ("Ecco il JSON: …"),
   with trailing commas;
+- **several answers pasted one after another** (one per page of a
+  collection, or after "continua"): joined in that order, a product repeated
+  at the joins counted once;
+- **an answer cut short** by the LLM's length limit: read up to its last whole
+  product, and the Vetrina says so;
 - a bare list: `[{ "sku": "…" }, …]`, or of strings `["DD1391-100", "Nike Dunk
   Low Panda"]` (a string that looks like a code — one word, with a digit — is
   a SKU, any other a name);
 - other key names: `products`/`prodotti`/`ranking` for `items`;
   `style_code`/`codice` for `sku`; `title`/`nome` for `name`; or the one list
   an object holds (`{ "sneakers": [ … ] }`);
-- a `rank`/`position` on **every** item: then the items are sorted by it;
+- a `rank`/`position` on **every** item, each its own: then the items are
+  sorted by it (answers that each count from 1 keep the text's order);
 - a CSV (comma, semicolon or tab) with a header naming `sku` and/or `name`
   (`nome`, `codice`, `rank` too), the rows in order;
 - one product per line, numbered or not: `1. DD1391-100 Nike Dunk Low Panda`,
@@ -108,17 +138,24 @@ People and LLMs rarely hand over exactly that, so the reader takes:
 ## The LLM's instructions
 
 The Vetrina's "Copia istruzioni LLM" copies these (in Italian; English when
-the Vetrina is in English). Give them to the LLM together with the page.
+the Vetrina is in English). Give them to the LLM together with the link of
+the collection or category page.
 
 ```text
-Sei un assistente che ricava l'ordine dei prodotti da una pagina di un negozio online.
+Sei un assistente che ricava l'ordine dei prodotti dalla pagina di una collezione o di una categoria di un negozio online.
 
-Ti do una pagina (link, testo copiato o screenshot) che elenca prodotti (sneakers, abbigliamento, accessori) in un certo ordine. Rispondi SOLO con un JSON valido, senza testo prima o dopo, con questa struttura:
+Ti do il link di una pagina che elenca i prodotti di UNA collezione o categoria: su Shopify è un indirizzo con /collections/… (es. https://negozio.com/collections/sneakers); sugli altri negozi è la pagina di una categoria (es. …/categoria/sneakers, …/c/sneakers). Mi serve l'ordine in cui il negozio mostra i prodotti in quella pagina con il suo ordinamento predefinito ("In evidenza", "Consigliati", "Featured"): non riordinarli tu e non scegliere un altro ordinamento.
+
+Se il link è la homepage, la pagina di un singolo prodotto o una ricerca, non darmi il JSON: rispondi con una sola frase che mi chiede il link della collezione o della categoria. La homepage non dice in che ordine il negozio mette i suoi prodotti.
+
+Se i prodotti continuano su altre pagine (?page=2, "Pagina successiva", "Carica altri"), leggile in ordine e continua l'elenco da dove eri arrivato.
+
+Con il link di una collezione o di una categoria rispondi SOLO con un JSON valido, senza testo prima o dopo, con questa struttura:
 
 {
   "format": "woo-hub.order-source/1",
-  "name": "<un nome breve per la fonte, es. Nike.com — Novità>",
-  "origin": "<il link della pagina>",
+  "name": "<negozio — collezione, es. Kith — Nike Dunk>",
+  "origin": "<il link della collezione o della categoria>",
   "items": [
     { "sku": "<codice stile del produttore>", "name": "<nome completo del prodotto>" }
   ]
@@ -130,10 +167,14 @@ Regole:
 3. "name" è il nome come scritto sulla pagina: brand, modello e colorway (es. "Nike Dunk Low Retro White Black Panda").
 4. Ogni prodotto una volta sola, anche se la pagina lo ripete.
 5. Niente prezzi, taglie o altri campi: solo "sku" e "name".
+6. Se i prodotti sono più di 150, dammi i primi 150 e chiudi il JSON; quando ti scrivo "continua", dammi un nuovo JSON con i successivi 150, e così via fino all'ultimo.
 ```
 
-A long page: ask for it in parts ("i primi 100", "dal 101 al 200") and join
-the lists, or upload several sources.
+Whether an LLM can read the page depends on the LLM: one that browses reads
+the link itself; otherwise paste the page's text, or screenshots, with the
+link. Shops that load the grid with JavaScript, or block bots, show an LLM
+less than they show a person: check the count the Vetrina gives against the
+page.
 
 ## The API
 

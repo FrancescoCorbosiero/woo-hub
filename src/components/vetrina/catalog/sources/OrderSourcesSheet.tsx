@@ -4,7 +4,7 @@ import * as React from "react";
 import { Button, Preloader } from "konsta/react";
 import { toast } from "sonner";
 import { useI18n } from "@/i18n/provider";
-import type { OrderSourceCheck, OrderSourceSummary, UnmatchedItem } from "@/lib/vetrina/order-sources";
+import { looksLikeHomepage, type OrderSourceCheck, type OrderSourceSummary, type UnmatchedItem } from "@/lib/vetrina/order-sources";
 import { checkOrderSource, deleteOrderSource, saveOrderSource } from "@/server/actions/vetrina-order-sources";
 import { ChevronLeft } from "../../icons";
 import { call } from "../act/call";
@@ -207,6 +207,17 @@ function UnmatchedCard({ unmatched, total }: { unmatched: readonly UnmatchedItem
 
 const isUrl = (text: string) => /^https?:\/\/\S+$/i.test(text.trim());
 
+/** An amber note: what is worth knowing before going on (a homepage's link, an answer cut short). */
+function Note({ children }: { children: React.ReactNode }) {
+  return (
+    // A span: it also sits inside a field's <label>.
+    <span role="note" className="flex gap-2.5 rounded-2xl bg-amber-50 px-3.5 py-3 text-[14px] font-normal leading-snug text-amber-900 dark:bg-amber-500/15 dark:text-amber-200">
+      <Warning className="mt-px h-[18px] w-[18px] shrink-0" />
+      <span className="min-w-0">{children}</span>
+    </span>
+  );
+}
+
 function SourceView({
   source,
   onBack,
@@ -257,6 +268,11 @@ function SourceView({
                 source.origin
               )}
             </p>
+            {looksLikeHomepage(source.origin) && (
+              <div className="mt-2">
+                <Note>{s.originHomepage}</Note>
+              </div>
+            )}
           </div>
         )}
         <UnmatchedCard unmatched={source.unmatched} total={source.unmatchedCount} />
@@ -433,6 +449,11 @@ function SourceForm({
             enterKeyHint="next"
             onChange={(e) => setOrigin(e.target.value)}
           />
+          {looksLikeHomepage(origin) && (
+            <span className="mt-2 block">
+              <Note>{s.originHomepage}</Note>
+            </span>
+          )}
         </label>
 
         <div>
@@ -490,8 +511,10 @@ function SourceForm({
           <section aria-live="polite" className="space-y-3">
             <p className="px-1 text-[17px] font-semibold leading-snug">
               {s.checkSummary(check.result.matched, check.result.items)}
+              {check.result.parts > 1 && <span className="block text-[14px] font-normal opacity-60">{s.parts(check.result.parts)}</span>}
               {check.result.duplicates > 0 && <span className="block text-[14px] font-normal opacity-60">{s.duplicates(check.result.duplicates)}</span>}
             </p>
+            {check.result.truncated && <Note>{s.truncated}</Note>}
             {check.result.unmatchedCount > 0 && <UnmatchedCard unmatched={check.result.unmatched} total={check.result.unmatchedCount} />}
           </section>
         )}

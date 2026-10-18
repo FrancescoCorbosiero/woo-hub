@@ -16,7 +16,7 @@ export const sourcesIt = {
   row: (count: number) =>
     count === 0 ? "Usa l'ordine di un altro negozio" : count === 1 ? "1 fonte" : `${n(count)} fonti`,
   intro:
-    "Una fonte è una classifica dei prodotti presa altrove: la pagina di un negozio, i più venduti di un marketplace. Su una categoria, un brand o tutto il catalogo, «Usa l'ordine di…» mette prima i suoi prodotti, in quell'ordine; gli altri seguono.",
+    "Una fonte è l'ordine dei prodotti di un altro negozio, preso dalla pagina di una sua collezione o categoria (non dalla homepage: lì l'ordine non c'è). Su una categoria, un brand o tutto il catalogo, «Usa l'ordine di…» mette prima i suoi prodotti, in quell'ordine; gli altri seguono.",
   empty: "Nessuna fonte, per ora.",
   add: "Aggiungi una fonte",
   loading: "Carico le fonti…",
@@ -27,7 +27,7 @@ export const sourcesIt = {
   /** One source. */
   origin: "Da dove viene",
   applyAll: "Usa su tutto il catalogo",
-  applyAllHint: "Su una sola categoria o un brand: dalla sua pagina, «Ordina» › «Usa l'ordine di…».",
+  applyAllHint: "Di solito una fonte è una collezione: usala sulla categoria che le corrisponde, dalla sua pagina: «Ordina» › «Usa l'ordine di…».",
   edit: "Modifica o sostituisci la classifica",
   remove: "Elimina la fonte",
   removeConfirm: (name: string) => `Eliminare «${name}»? Gli ordini già applicati restano come sono.`,
@@ -44,22 +44,29 @@ export const sourcesIt = {
   newTitle: "Nuova fonte",
   editTitle: "Modifica la fonte",
   name: "Nome",
-  namePlaceholder: "Es. StockX — più venduti",
+  namePlaceholder: "Es. Kith — Nike Dunk",
   originLabel: "Da dove viene",
-  originPlaceholder: "Link della pagina, o due parole (facoltativo)",
+  originPlaceholder: "Link della collezione o della categoria (facoltativo)",
+  /** The origin is a shop's homepage: its order is in its collections' pages. */
+  originHomepage: "Sembra la homepage: l'ordine dei prodotti si legge nella pagina di una collezione o di una categoria (su Shopify: /collections/…).",
   text: "Classifica",
-  textPlaceholder: "Incolla qui la risposta dell'LLM (JSON), un CSV con «sku» e «name», o un prodotto per riga…",
+  textPlaceholder: "Incolla qui la risposta dell'LLM (JSON) — più risposte, una dopo l'altra —, un CSV con «sku» e «name», o un prodotto per riga…",
   textKeep: "Lascia vuoto per tenere la classifica di adesso.",
   file: "Carica un file",
   fileFailed: "Non riesco a leggere il file.",
   promptCopy: "Copia istruzioni LLM",
-  promptCopied: "Istruzioni copiate: incollale nell'LLM con la pagina (link, testo o screenshot), poi incolla qui la sua risposta.",
+  promptCopied: "Istruzioni copiate: incollale nell'LLM con il link della collezione o della categoria, poi incolla qui la sua risposta.",
   promptFailed: "Non riesco a copiare: tieni premuto sul testo qui sotto per copiarlo.",
   promptShow: "Mostra le istruzioni",
   checking: "Leggo la classifica…",
   checkSummary: (matched: number, items: number) =>
     `${n(items)} ${items === 1 ? "prodotto" : "prodotti"} nella classifica: ${matched === items ? (items === 1 ? "è nel negozio" : "tutti nel negozio") : `${n(matched)} nel negozio`}.`,
   duplicates: (count: number) => (count === 1 ? "1 ripetuto, contato una volta." : `${n(count)} ripetuti, contati una volta.`),
+  /** Several JSON answers pasted one after another. */
+  parts: (count: number) => `${n(count)} risposte unite, nell'ordine in cui le hai incollate.`,
+  /** The last answer stops halfway: the LLM's length limit. */
+  truncated:
+    "La risposta si interrompe a metà: ho letto fino all'ultimo prodotto completo. Scrivi «continua» all'LLM e incolla qui, dopo questa, anche la sua nuova risposta.",
   save: "Salva la fonte",
   saved: (name: string) => `«${name}» salvata`,
 
@@ -75,14 +82,20 @@ export const sourcesIt = {
   },
 
   /** What an LLM is told, to write a source from a web page. */
-  llmPrompt: `Sei un assistente che ricava l'ordine dei prodotti da una pagina di un negozio online.
+  llmPrompt: `Sei un assistente che ricava l'ordine dei prodotti dalla pagina di una collezione o di una categoria di un negozio online.
 
-Ti do una pagina (link, testo copiato o screenshot) che elenca prodotti (sneakers, abbigliamento, accessori) in un certo ordine. Rispondi SOLO con un JSON valido, senza testo prima o dopo, con questa struttura:
+Ti do il link di una pagina che elenca i prodotti di UNA collezione o categoria: su Shopify è un indirizzo con /collections/… (es. https://negozio.com/collections/sneakers); sugli altri negozi è la pagina di una categoria (es. …/categoria/sneakers, …/c/sneakers). Mi serve l'ordine in cui il negozio mostra i prodotti in quella pagina con il suo ordinamento predefinito ("In evidenza", "Consigliati", "Featured"): non riordinarli tu e non scegliere un altro ordinamento.
+
+Se il link è la homepage, la pagina di un singolo prodotto o una ricerca, non darmi il JSON: rispondi con una sola frase che mi chiede il link della collezione o della categoria. La homepage non dice in che ordine il negozio mette i suoi prodotti.
+
+Se i prodotti continuano su altre pagine (?page=2, "Pagina successiva", "Carica altri"), leggile in ordine e continua l'elenco da dove eri arrivato.
+
+Con il link di una collezione o di una categoria rispondi SOLO con un JSON valido, senza testo prima o dopo, con questa struttura:
 
 {
   "format": "woo-hub.order-source/1",
-  "name": "<un nome breve per la fonte, es. Nike.com — Novità>",
-  "origin": "<il link della pagina>",
+  "name": "<negozio — collezione, es. Kith — Nike Dunk>",
+  "origin": "<il link della collezione o della categoria>",
   "items": [
     { "sku": "<codice stile del produttore>", "name": "<nome completo del prodotto>" }
   ]
@@ -93,5 +106,6 @@ Regole:
 2. "sku" è il codice stile del produttore (es. DD1391-100 per Nike, IE3437 per adidas, 1203A537-100 per ASICS, U9060ZGB per New Balance). Mettilo solo se compare sulla pagina o nel link del prodotto; se non c'è, ometti il campo: non inventarlo.
 3. "name" è il nome come scritto sulla pagina: brand, modello e colorway (es. "Nike Dunk Low Retro White Black Panda").
 4. Ogni prodotto una volta sola, anche se la pagina lo ripete.
-5. Niente prezzi, taglie o altri campi: solo "sku" e "name".`,
+5. Niente prezzi, taglie o altri campi: solo "sku" e "name".
+6. Se i prodotti sono più di 150, dammi i primi 150 e chiudi il JSON; quando ti scrivo "continua", dammi un nuovo JSON con i successivi 150, e così via fino all'ultimo.`,
 };

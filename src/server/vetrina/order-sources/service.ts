@@ -95,6 +95,8 @@ export async function checkSourceText(text: string): Promise<OrderSourceCheck> {
     name: source.name,
     origin: source.origin,
     duplicates: source.duplicates,
+    parts: source.parts,
+    truncated: source.truncated,
     ...matchSummary(source.items, matchAgainst(source.items, facts)),
   };
 }
