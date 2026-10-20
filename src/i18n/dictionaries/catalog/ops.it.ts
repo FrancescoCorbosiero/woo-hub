@@ -51,14 +51,14 @@ export const opsIt = {
     pin: (count: number, section: string) => `${agreed(count, "prodotto fissato", "prodotti fissati")} in ${section}`,
     /** A category's or brand's margin; no percent: its own margin taken away (back to the one above it, or the standard). */
     margin: (percent: number | null, what: string) => (percent == null ? `Ricarico tolto · ${what}` : `Ricarico ${percent}% · ${what}`),
-    /** Products placed in a category's or brand's order; position null: at the end. */
+    /** Products placed among a category's or brand's positions; position null: at the end. */
     order: (count: number, term: string, position: number | null) =>
       `${agreed(count, "prodotto", "prodotti")} ${position === 1 ? "in cima" : position == null ? "in fondo" : `alla posizione ${n(position)}`} · ${term}`,
-    /** Products dragged to places apart in a category's or brand's order ("Riordina"). */
-    reorder: (count: number, term: string) => `Nuovo ordine · ${term}: ${agreed(count, "prodotto spostato", "prodotti spostati")}`,
-    /** "Usa l'ordine di «X»" on a term, or on the whole catalog (`what`). */
+    /** Products dragged to places apart among a category's or brand's positions ("Disponi a mano"). */
+    reorder: (count: number, term: string) => `Disposti a mano · ${term}: ${agreed(count, "prodotto spostato", "prodotti spostati")}`,
+    /** "Disponi come «X»" on a term, or on the whole catalog (`what`). */
     sourceOrder: (count: number, source: string, what: string) =>
-      `Ordine di «${source}» · ${what}: ${agreed(count, "prodotto spostato", "prodotti spostati")}`,
+      `Come «${source}» · ${what}: ${agreed(count, "prodotto spostato", "prodotti spostati")}`,
   },
 
   /** Why a preview leaves products as they are, agreeing with how many ("Già nascosto · 1", "Già nascosti · 3"). */
@@ -91,7 +91,7 @@ export const opsIt = {
     inPlace: (count: number): string => (count === 1 ? "già al suo posto" : "già al loro posto"),
     /** A term's products a source does not rank: after the ranked ones, in their order. */
     notRanked: (count: number, source: string): string =>
-      `${count === 1 ? "non è" : "non sono"} in «${source}»: ${count === 1 ? "resta dopo, al suo posto" : "restano dopo, nel loro ordine"}`,
+      `${count === 1 ? "non è" : "non sono"} in «${source}»: ${count === 1 ? "resta dopo, al suo posto" : "restano dopo, come sono"}`,
   },
 
   /** A product's state, before → after, in a preview's sample. */
@@ -113,26 +113,26 @@ export const opsIt = {
     until: (day: string) => `fino al ${longDay(day)}`,
     noEnd: "senza fine",
     addedTo: (category: string) => `In «${category}», poi fissato`,
-    /** A product's place in a category's or brand's order. */
+    /** A product's place among a category's or brand's positions. */
     place: (position: number) => `#${n(position)}`,
   },
 
   warning: {
-    /** The shop's order is one number per product: a product moved here moves in its other categories and brands too. */
+    /** The shop's positions are one number per product: a product moved here moves in its other categories and brands too. */
     orderElsewhere: (count: number, names: string[], total: number) =>
-      `L'ordine del negozio è uno per prodotto: ${count === 1 ? "1 è" : `${n(count)} sono`} anche in ${nameList(names, total)}, e lì ${count === 1 ? "cambia" : "cambiano"} posto con lo stesso criterio.`,
+      `Nel negozio ogni prodotto ha una posizione sola: ${count === 1 ? "1 è" : `${n(count)} sono`} anche in ${nameList(names, total)}, e lì ${count === 1 ? "cambia" : "cambiano"} posto allo stesso modo.`,
     /** Products renumbered to make room: their place does not change. */
     orderRoom: (count: number) =>
-      `Per fare spazio cambio il numero d'ordine di ${count === 1 ? "1 altro prodotto: il suo posto resta lo stesso." : `altri ${n(count)} prodotti: il loro posto resta lo stesso.`}`,
+      `Per fare spazio cambio il numero di posizione di ${count === 1 ? "1 altro prodotto: il suo posto resta lo stesso." : `altri ${n(count)} prodotti: il loro posto resta lo stesso.`}`,
     /** A homepage section shows this category: its pins come first on the category's page. */
     orderPins: (sections: string[]) =>
-      `Sulla pagina della categoria vengono prima i prodotti fissati in ${nameList(sections.map((s) => `«${s}»`))}, poi quest'ordine.`,
+      `Sulla pagina della categoria vengono prima i prodotti fissati in ${nameList(sections.map((s) => `«${s}»`))}, poi queste posizioni.`,
     /** Items of a source no product of the shop matched (used on the whole catalog). */
     sourceUnmatched: (count: number, total: number) =>
-      `${count === 1 ? "1 prodotto" : `${n(count)} prodotti`} della fonte su ${n(total)} non ${count === 1 ? "corrisponde" : "corrispondono"} a nessun prodotto del negozio: ${count === 1 ? "è ignorato" : "sono ignorati"}.`,
-    /** The storefront's default sort is not the shop's own order: the order is saved, but the pages do not follow it. */
+      `${count === 1 ? "1 prodotto" : `${n(count)} prodotti`} della classifica su ${n(total)} non ${count === 1 ? "corrisponde" : "corrispondono"} a nessun prodotto del negozio: ${count === 1 ? "è ignorato" : "sono ignorati"}.`,
+    /** The storefront's default sort is not the shop's own positions: they are saved, but the pages do not follow them. */
     orderNotUsed: (sort: string) =>
-      `Il negozio ordina le pagine per «${sort}», non per l'ordine personalizzato: l'ordine viene salvato ma le pagine non lo seguono finché in WooCommerce › Impostazioni › Prodotti l'ordinamento predefinito non è «Ordinamento personalizzato + nome».`,
+      `Il negozio mostra le pagine per «${sort}», non per le posizioni scelte a mano: le posizioni vengono salvate ma le pagine non le seguono finché in WooCommerce › Impostazioni › Prodotti l'ordinamento predefinito non è «Ordinamento personalizzato + nome».`,
     alsoElsewhere: (count: number, names: string[], total: number) =>
       `${count === 1 ? "1 è" : `${n(count)} sono`} anche in ${nameList(names, total)}: ${count === 1 ? "sparisce" : "spariscono"} anche lì.`,
     sectionsLose: (sections: string[]) => `La homepage perde prodotti in ${nameList(sections)}.`,
@@ -198,8 +198,8 @@ export const opsIt = {
     termTooBig: (total: number) =>
       `Sono ${n(total)} prodotti: più di quanti il catalogo ne tiene (${n(MAX_TERM_PRODUCTS)}). Agisci su una sottocategoria alla volta.`,
     empty: "Nessun prodotto scelto.",
-    /** "Ordina" with nothing to move. */
-    inOrder: "Sono già in quest'ordine.",
+    /** "Posiziona" with nothing to move. */
+    inOrder: "Sono già in queste posizioni.",
     notInTerm: (term: string) => `Nessuno di questi prodotti è in «${term}».`,
     alreadyHidden: (term: string) => `I prodotti di «${term}» sono già nascosti: per rimetterli in vista usa «Mostra».`,
     automatic: (category: string) => `«${category}» è automatica: i suoi prodotti li decide la regola.`,
@@ -216,7 +216,7 @@ export const opsIt = {
     nothingToUndo: "Non ha cambiato niente: non c'è niente da annullare.",
     tooOld: (days: number) => `Si può annullare solo nei primi ${days} giorni.`,
     sectionChanged: (title: string) =>
-      `La sezione «${title}» è cambiata dopo: rimetti a posto l'ordine dall'editor della sezione.`,
+      `La sezione «${title}» è cambiata dopo: rimetti a posto i prodotti dall'editor della sezione.`,
     /** A request that failed on the server (a query, the store's own text): never shown, its log keeps it. */
     unexpected: "Non riuscito, per un problema del server: riprova tra poco.",
     interrupted: "Interrotta: il server si è riavviato prima della fine.",
@@ -242,24 +242,24 @@ export const opsIt = {
       `Ricarico salvato, ma i prezzi non si sono aggiornati tutti (${message}): il prossimo aggiornamento dei prezzi li allinea.`,
   },
 
-  /** Order sources ("fonti d'ordine"): what the server says of one. */
+  /** Order sources ("classifiche"): what the server says of one. */
   source: {
-    /** The whole shop, where a source's order is used on all of it. */
+    /** The whole shop, where a source's ranking is used on all of it. */
     wholeCatalog: "tutto il catalogo",
     parse: {
       empty: "Il testo è vuoto: incolla la classifica o carica il file.",
       invalidJson: "Il JSON non si legge: controlla parentesi e virgolette (o incolla la risposta dell'LLM così com'è).",
       noItems: "Non trovo prodotti nel testo: servono un elenco «items» con «sku» e/o «name», o un prodotto per riga.",
-      tooMany: (max: number) => `Sono più di ${n(max)} prodotti: dividili in più fonti.`,
+      tooMany: (max: number) => `Sono più di ${n(max)} prodotti: dividili in più classifiche.`,
     },
-    nameMissing: "Dai un nome alla fonte.",
-    nameTaken: (name: string) => `Esiste già una fonte «${name}»: scegli un altro nome, o sostituisci quella.`,
-    tooManySources: (max: number) => `Ci sono già ${n(max)} fonti, il massimo: eliminane una.`,
-    gone: "Questa fonte non c'è più.",
+    nameMissing: "Dai un nome alla classifica.",
+    nameTaken: (name: string) => `Esiste già una classifica «${name}»: scegli un altro nome, o sostituisci quella.`,
+    tooManySources: (max: number) => `Ci sono già ${n(max)} classifiche, il massimo: eliminane una.`,
+    gone: "Questa classifica non c'è più.",
     /** None of the term's products is in the source. */
-    noneInTerm: (term: string, source: string) => `Nessun prodotto di «${term}» è nella fonte «${source}».`,
-    noneInShop: (source: string) => `Nessun prodotto della fonte «${source}» è nel negozio.`,
-    inOrder: (source: string) => `È già nell'ordine di «${source}».`,
+    noneInTerm: (term: string, source: string) => `Nessun prodotto di «${term}» è nella classifica «${source}».`,
+    noneInShop: (source: string) => `Nessun prodotto della classifica «${source}» è nel negozio.`,
+    inOrder: (source: string) => `È già disposto come «${source}».`,
   },
 
   /** What the screens sent, checked before anything runs: the problems the owner can fix, in his words. */

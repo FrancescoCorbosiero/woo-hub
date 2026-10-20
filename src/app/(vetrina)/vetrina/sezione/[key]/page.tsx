@@ -6,9 +6,18 @@ import { RailEditor } from "@/components/vetrina/RailEditor";
 
 export const dynamic = "force-dynamic";
 
-/** One rail in the editor, opened by its stable key (/vetrina/sezione/category.saldi-sneakers-outlet.0). */
-export default async function RailPage({ params }: { params: Promise<{ key: string }> }) {
-  const { key: param } = await params;
+/**
+ * One rail in the editor, opened by its stable key (/vetrina/sezione/category.saldi-sneakers-outlet.0);
+ * with ?aggiungi=1 (the homepage's "Aggiungi prodotti") the catalog's picker opens at once.
+ */
+export default async function RailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ key: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const [{ key: param }, query] = await Promise.all([params, searchParams]);
   const key = paramToRailKey(param);
   if (!key) notFound();
 
@@ -25,6 +34,7 @@ export default async function RailPage({ params }: { params: Promise<{ key: stri
         maxLimit: hubConfig.vetrina.maxLimit,
         pageSize: hubConfig.vetrina.pageSize,
       }}
+      openPicker={query.aggiungi === "1"}
     />
   );
 }

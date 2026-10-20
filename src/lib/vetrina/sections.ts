@@ -98,3 +98,17 @@ export function keysAfterArrange(order: readonly string[]): Map<string, string> 
   }
   return out;
 }
+
+/** A term and every term below it, from each term's direct sub-terms: a category's section holds them all. */
+export function withDescendantIds(id: number, children: ReadonlyMap<number, readonly number[]>): Set<number> {
+  const out = new Set([id]);
+  const queue = [id];
+  while (queue.length > 0) {
+    for (const child of children.get(queue.pop()!) ?? []) {
+      if (out.has(child)) continue;
+      out.add(child);
+      queue.push(child);
+    }
+  }
+  return out;
+}

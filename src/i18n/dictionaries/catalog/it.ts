@@ -1,8 +1,10 @@
 import { actIt } from "./act.it";
 import { homeIt } from "./home.it";
 import { marginsIt } from "./margins.it";
+import { pickerIt } from "./picker.it";
 import { opsIt } from "./ops.it";
 import { rulesIt } from "./rules.it";
+import { sectionsIt } from "./sections.it";
 import { sheetIt } from "./sheet.it";
 import { sourcesIt } from "./sources.it";
 import { termIt } from "./term.it";
@@ -24,4 +26,6 @@ export const catalogIt = {
   ops: opsIt,
   margins: marginsIt,
   sources: sourcesIt,
+  sections: sectionsIt,
+  picker: pickerIt,
 };

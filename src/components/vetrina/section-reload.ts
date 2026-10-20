@@ -9,8 +9,12 @@ import type { SectionDraft } from "@/lib/vetrina/types";
  * when the owner is told the section moved under his unpublished draft.
  */
 
-/** A pin, a product hidden or shown, one put in or out of a category, a tag an automatic category reads. */
-const MOVERS = new Set<OperationKind>(["pin", "hide", "show", "categorize", "uncategorize", "tag", "untag"]);
+/**
+ * A pin, a product hidden or shown, one put in or out of a category, a tag an
+ * automatic category reads — and the shop's own positions, which a section in
+ * "Negozio" order follows after its pinned products.
+ */
+const MOVERS = new Set<OperationKind>(["pin", "hide", "show", "categorize", "uncategorize", "tag", "untag", "order", "sourceOrder"]);
 
 export function movesSection(kind: OperationKind): boolean {
   return MOVERS.has(kind);

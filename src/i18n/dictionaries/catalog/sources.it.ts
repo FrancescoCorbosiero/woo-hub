@@ -1,6 +1,8 @@
 /**
- * The Vetrina catalog's strings for order sources ("fonti d'ordine"): their
- * sheet (the list, one source, the form), "Usa l'ordine di «…»" and the
+ * The Vetrina catalog's strings for order sources ("classifiche": another
+ * shop's ranking of its products — never "ordine", which in a shop reads as
+ * a customer's order): their sheet (the list, one, the form), "Disponi come
+ * «…»" and the
  * instructions an LLM is given to write a source from a web page. Italian is
  * the source of truth (see ./it.ts). The server's own words about a source
  * are in ./ops.it.ts (source).
@@ -10,27 +12,27 @@
 const n = (count: number) => count.toLocaleString("it-IT");
 
 export const sourcesIt = {
-  title: "Fonti d'ordine",
-  /** The catalog's row, the homepage tab's button. */
-  open: "Fonti d'ordine",
+  title: "Classifiche",
+  /** The catalog's row, the panels' and the section editor's buttons. */
+  open: "Classifiche da altri negozi",
   row: (count: number) =>
-    count === 0 ? "Usa l'ordine di un altro negozio" : count === 1 ? "1 fonte" : `${n(count)} fonti`,
+    count === 0 ? "Disponi i prodotti come un altro negozio" : count === 1 ? "1 classifica" : `${n(count)} classifiche`,
   intro:
-    "Una fonte è l'ordine dei prodotti di un altro negozio, preso dalla pagina di una sua collezione o categoria (non dalla homepage: lì l'ordine non c'è). Su una categoria, un brand o tutto il catalogo, «Usa l'ordine di…» mette prima i suoi prodotti, in quell'ordine; gli altri seguono.",
-  empty: "Nessuna fonte, per ora.",
-  add: "Aggiungi una fonte",
-  loading: "Carico le fonti…",
+    "Una classifica è come un altro negozio mette in fila i suoi prodotti, presa dalla pagina di una sua collezione o categoria (non dalla homepage: lì non c'è). Su una categoria, un brand o tutto il catalogo, «Disponi come…» mette prima i suoi prodotti, uno dopo l'altro come lì; gli altri seguono.",
+  empty: "Nessuna classifica, per ora.",
+  add: "Aggiungi una classifica",
+  loading: "Carico le classifiche…",
   matched: (matched: number, items: number) =>
     items === 1 ? (matched === 1 ? "1 prodotto, nel negozio" : "1 prodotto, non nel negozio") : `${n(matched)} di ${n(items)} prodotti nel negozio`,
   updated: (when: string) => `aggiornata ${when}`,
 
   /** One source. */
   origin: "Da dove viene",
-  applyAll: "Usa su tutto il catalogo",
-  applyAllHint: "Di solito una fonte è una collezione: usala sulla categoria che le corrisponde, dalla sua pagina: «Ordina» › «Usa l'ordine di…».",
+  applyAll: "Disponi tutto il catalogo così",
+  applyAllHint: "Di solito una classifica è una collezione: usala sulla categoria che le corrisponde, dalla sua pagina: «Posizioni nel negozio» › «Disponi come…».",
   edit: "Modifica o sostituisci la classifica",
-  remove: "Elimina la fonte",
-  removeConfirm: (name: string) => `Eliminare «${name}»? Gli ordini già applicati restano come sono.`,
+  remove: "Elimina la classifica",
+  removeConfirm: (name: string) => `Eliminare «${name}»? I prodotti già disposti così restano dove sono.`,
   removeYes: "Elimina",
   removeNo: "Annulla",
   removed: (name: string) => `«${name}» eliminata`,
@@ -38,17 +40,17 @@ export const sourcesIt = {
   unmatchedHint: "Il negozio non li ha, o il nome non basta a capire quale prodotto sono: vengono ignorati.",
   unmatchedMore: (count: number) => (count === 1 ? "e un altro" : `e altri ${n(count)}`),
   ambiguous: "più prodotti possibili",
-  allMatched: "Tutti i prodotti della fonte sono nel negozio.",
+  allMatched: "Tutti i prodotti della classifica sono nel negozio.",
 
   /** The form. */
-  newTitle: "Nuova fonte",
-  editTitle: "Modifica la fonte",
+  newTitle: "Nuova classifica",
+  editTitle: "Modifica la classifica",
   name: "Nome",
   namePlaceholder: "Es. Kith — Nike Dunk",
   originLabel: "Da dove viene",
   originPlaceholder: "Link della collezione o della categoria (facoltativo)",
   /** The origin is a shop's homepage: its order is in its collections' pages. */
-  originHomepage: "Sembra la homepage: l'ordine dei prodotti si legge nella pagina di una collezione o di una categoria (su Shopify: /collections/…).",
+  originHomepage: "Sembra la homepage: come il negozio mette in fila i prodotti si legge nella pagina di una collezione o di una categoria (su Shopify: /collections/…).",
   text: "Classifica",
   textPlaceholder: "Incolla qui la risposta dell'LLM (JSON) — più risposte, una dopo l'altra —, un CSV con «sku» e «name», o un prodotto per riga…",
   textKeep: "Lascia vuoto per tenere la classifica di adesso.",
@@ -63,20 +65,23 @@ export const sourcesIt = {
     `${n(items)} ${items === 1 ? "prodotto" : "prodotti"} nella classifica: ${matched === items ? (items === 1 ? "è nel negozio" : "tutti nel negozio") : `${n(matched)} nel negozio`}.`,
   duplicates: (count: number) => (count === 1 ? "1 ripetuto, contato una volta." : `${n(count)} ripetuti, contati una volta.`),
   /** Several JSON answers pasted one after another. */
-  parts: (count: number) => `${n(count)} risposte unite, nell'ordine in cui le hai incollate.`,
+  parts: (count: number) => `${n(count)} risposte unite, una dopo l'altra come le hai incollate.`,
   /** The last answer stops halfway: the LLM's length limit. */
   truncated:
     "La risposta si interrompe a metà: ho letto fino all'ultimo prodotto completo. Scrivi «continua» all'LLM e incolla qui, dopo questa, anche la sua nuova risposta.",
-  save: "Salva la fonte",
+  save: "Salva la classifica",
   saved: (name: string) => `«${name}» salvata`,
 
-  /** "Usa l'ordine di «X»", on a list's sort sheet, and its sheet. */
-  use: (name: string) => `Usa l'ordine di «${name}»`,
-  manage: "Fonti d'ordine…",
+  /** "Disponi come «X»", on a term's panel and the section editor, and its sheet. */
+  use: (name: string) => `Disponi come «${name}»`,
+  manage: "Classifiche…",
+  /** The action sheet listing them for a category or a brand. */
+  rankAs: (term: string) => `Disponi «${term}» come…`,
+  none: "Nessuna classifica, per ora: aggiungine una.",
   apply: {
-    title: (name: string) => `Ordine di «${name}»`,
+    title: (name: string) => `Come «${name}»`,
     whole: "Tutto il catalogo",
-    intro: "I prodotti della fonte vanno in cima, nel suo ordine; gli altri seguono, nel loro.",
+    intro: "I prodotti della classifica vanno in cima, uno dopo l'altro come lì; gli altri seguono, come sono.",
     start: (count: number) => (count === 1 ? "Sposta 1 prodotto" : `Sposta ${n(count)} prodotti`),
     plain: "Applica",
   },

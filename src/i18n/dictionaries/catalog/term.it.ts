@@ -90,11 +90,30 @@ export const termIt = {
     retry: "Riprova",
   },
 
+  /**
+   * "Posizioni nel negozio": where the term's products stand on its page in
+   * the shop (WooCommerce's menu_order, then the name) — set by hand, from a
+   * ranking, or a few products at a time. Never "ordine": in a shop that is a
+   * customer's order.
+   */
+  positions: {
+    title: "Posizioni nel negozio",
+    hint: (name: string) => `Come la pagina «${name}» del negozio mette in fila i suoi prodotti.`,
+    arrange: "Disponi a mano",
+    arrangeHint: "Trascina i prodotti nei posti che vuoi.",
+    ranking: "Disponi come una classifica",
+    rankingHint: (count: number) =>
+      count === 0 ? "Copia come un altro negozio mette in fila gli stessi prodotti." : count === 1 ? "1 classifica pronta." : `${count} classifiche pronte.`,
+    place: "Metti in cima dei prodotti",
+    placeHint: "Scegli i prodotti, poi «Posiziona».",
+    selecting: "Scegli i prodotti da spostare, poi tocca «Posiziona».",
+  },
+
   /** The "⋯" in the navbar. */
   menu: {
     open: "Altre azioni",
     saveRule: "Salva come categoria automatica",
-    reorder: "Riordina i prodotti",
+    reorder: "Disponi a mano",
     activity: "Attività",
     cancel: "Annulla",
   },
@@ -112,20 +131,23 @@ export const termIt = {
     withinAll: { category: "Tutti i brand", brand: "Tutte le categorie" },
   },
 
+  /** How the list on screen is sorted — the app's own view, which changes nothing in the shop. */
   sort: {
-    button: (label: string) => `Ordina: ${label}`,
-    title: "Ordina per",
+    button: (label: string) => label,
+    /** The button's whole words, for a screen reader. */
+    label: (label: string) => `Elenco per: ${label}. Cambia`,
+    title: "Elenca i prodotti per",
     cancel: "Annulla",
     options: {
-      shop: "Negozio",
+      shop: "Posizione nel negozio",
       newest: "Novità",
       bestselling: "Più venduti",
       priceAsc: "Prezzo crescente",
       priceDesc: "Prezzo decrescente",
       name: "Nome",
     },
-    /** The order the shop's page follows, set by hand. */
-    reorder: "Riordina a mano…",
+    /** The shop's positions, set by hand: also under "Posizioni nel negozio". */
+    reorder: "Disponi a mano…",
     /** On the list's button, beside the count and "Seleziona": short, so the count keeps its room on a phone. */
     short: {
       shop: "Negozio",

@@ -166,6 +166,25 @@ function TermTop({ taxonomy, shape }: { taxonomy: CatalogTaxonomy; shape: TermSh
         </List>
       )}
 
+      {/* "Posizioni nel negozio", on a term with products: its title and three rows. */}
+      {shape.counted && (
+        <>
+          <div className="px-5 pb-1.5">
+            <div className="text-[13px] font-semibold uppercase tracking-wide">
+              <Ghost>{v.positions.title}</Ghost>
+            </div>
+            <p className="mt-0.5 text-[13px] leading-snug">
+              <Ghost>{v.positions.hint("Nike Air Force 1")}</Ghost>
+            </p>
+          </div>
+          <List strong inset className="!mb-5 !mt-0">
+            <ListItem media={tile} title={<Ghost>{v.positions.arrange}</Ghost>} subtitle={<Ghost>{v.positions.arrangeHint}</Ghost>} />
+            <ListItem media={tile} title={<Ghost>{v.positions.ranking}</Ghost>} subtitle={<Ghost>{v.positions.rankingHint(0)}</Ghost>} />
+            <ListItem media={tile} title={<Ghost>{v.positions.place}</Ghost>} subtitle={<Ghost>{v.positions.placeHint}</Ghost>} />
+          </List>
+        </>
+      )}
+
       {shape.children && (
         <div className="pb-1">
           <div className="px-5 pb-0.5 text-[13px] font-semibold uppercase tracking-wide">

@@ -35,14 +35,15 @@ import { hideTermNewcomers, loadTermActions } from "@/server/actions/vetrina-ope
 import type { VetrinaResult } from "@/server/vetrina/service";
 import { CollectionSheet } from "../../CollectionSheet";
 import { ErrorState } from "../../ErrorState";
-import { EyeOff, Funnel, More } from "../../icons";
+import { EyeOff, Funnel, Grip, More } from "../../icons";
 import { ActSheets, type ActRequest } from "../act/ActSheets";
 import type { OrderTerm } from "../act/OrderSheet";
 import { ReorderSheet } from "../act/ReorderSheet";
+import { RankingActions } from "../sources/RankingActions";
 import { useOrderSourceSheets } from "../sources/SourceOrderSheet";
 import { useOrderSourceNames } from "../sources/use-order-sources";
 import { call } from "../act/call";
-import { Eye, Percent } from "../act/icons";
+import { Eye, OrderLines, Percent, ToTop } from "../act/icons";
 import { formatDay, formatTime, queryTarget } from "../act/model";
 import { useOperations, useOperationSettled } from "../act/operations-context";
 import { useProductSelection } from "../act/selection";
@@ -145,14 +146,13 @@ function Term({
     [term.taxonomy, term.id, q, sort, filter],
   );
   const searching = controls.text.trim() !== "";
-  // Its order is the one its page on the shop follows: placed by "Ordina" (a selection) or "Riordina" (dragged).
+  // Its positions are the ones its page on the shop follows: set by "Posiziona" (a selection), "Disponi a mano" (dragged), a ranking.
   const orderTerm = React.useMemo<OrderTerm>(
     () => ({ taxonomy: term.taxonomy, id: term.id, name: term.name, count: term.count }),
     [term.taxonomy, term.id, term.name, term.count],
   );
   const openReorder = term.count > 0 ? () => setReorderOpen(true) : undefined;
-  // "Usa l'ordine di «X»": the order sources by name, and their sheets.
-  const sourceNames = useOrderSourceNames();
+  // "Disponi come «X»": the rankings (order sources), and their sheets.
   const sourceSheets = useOrderSourceSheets();
   const back = backTarget(detail);
   const subtitle = [ancestors.map((a) => a.name).join(" › "), v.products(term.count)].filter(Boolean).join(" · ");
@@ -208,6 +208,18 @@ function Term({
         <>
           <ControlPanel term={term} onRule={() => setRuleOpen(true)} />
           <TermActionsPanel term={term} onChanged={refreshAll} />
+          {term.count > 0 && (
+            <PositionsPanel
+              term={term}
+              onArrange={() => setReorderOpen(true)}
+              onRanking={(source) => sourceSheets.apply(source, orderTerm)}
+              onManageRankings={sourceSheets.manage}
+              onPlace={() => {
+                selection.start();
+                toast(v.positions.selecting);
+              }}
+            />
+          )}
         </>
       )}
 
@@ -233,14 +245,7 @@ function Term({
             demo={detail.demo}
             onFacets={controls.setFacets}
             toolbar={
-              <SortActions
-                sort={sort}
-                onChange={controls.setSort}
-                onReorder={openReorder}
-                sources={sourceNames.data}
-                onUseSource={term.count > 0 ? (source) => sourceSheets.apply(source, orderTerm) : undefined}
-                onManageSources={sourceSheets.manage}
-              />
+              <SortActions sort={sort} onChange={controls.setSort} onReorder={openReorder} />
             }
             onClearFilters={hasFilters(filter) ? () => setFilter(NO_FILTER) : undefined}
             onProductsChanged={refreshCounts}
@@ -363,6 +368,88 @@ function ControlPanel({ term, onRule }: { term: CatalogTerm; onRule: () => void 
         />
       )}
     </List>
+  );
+}
+
+/**
+ * "Posizioni nel negozio": how the term's page in the shop lines up its
+ * products, and the three ways to change it, each a button in sight —
+ * dragged by hand, copied from a ranking of another shop, or a few products
+ * sent to the top (a selection, then "Posiziona"). Never called "ordine":
+ * in a shop that word is a customer's order.
+ */
+function PositionsPanel({
+  term,
+  onArrange,
+  onRanking,
+  onManageRankings,
+  onPlace,
+}: {
+  term: CatalogTerm;
+  onArrange: () => void;
+  onRanking: (source: { id: string; name: string }) => void;
+  onManageRankings: () => void;
+  onPlace: () => void;
+}) {
+  const { t } = useI18n();
+  const p = t.vetrinaCatalog.term.positions;
+  const rankings = useOrderSourceNames();
+  const [rankingsOpen, setRankingsOpen] = React.useState(false);
+  return (
+    <>
+      <div className="px-5 pb-1.5">
+        <div className="text-[13px] font-semibold uppercase tracking-wide opacity-50">{p.title}</div>
+        <p className="mt-0.5 text-[13px] leading-snug opacity-60">{p.hint(term.name)}</p>
+      </div>
+      <List strong inset className="!mb-5 !mt-0">
+        <ListItem
+          link
+          linkComponent="button"
+          linkProps={{ type: "button", onClick: onArrange }}
+          contentClassName="w-full text-start"
+          media={
+            <PanelIcon tone="ink">
+              <Grip className="h-[18px] w-[18px]" />
+            </PanelIcon>
+          }
+          title={p.arrange}
+          subtitle={p.arrangeHint}
+        />
+        <ListItem
+          link
+          linkComponent="button"
+          linkProps={{ type: "button", onClick: () => setRankingsOpen(true), "aria-haspopup": "dialog" }}
+          contentClassName="w-full text-start"
+          media={
+            <PanelIcon tone="gold">
+              <OrderLines className="h-[18px] w-[18px]" />
+            </PanelIcon>
+          }
+          title={p.ranking}
+          subtitle={<span className="line-clamp-2">{p.rankingHint(rankings.data?.length ?? 0)}</span>}
+        />
+        <ListItem
+          link
+          linkComponent="button"
+          linkProps={{ type: "button", onClick: onPlace }}
+          contentClassName="w-full text-start"
+          media={
+            <PanelIcon tone="muted">
+              <ToTop className="h-[18px] w-[18px]" />
+            </PanelIcon>
+          }
+          title={p.place}
+          subtitle={p.placeHint}
+        />
+      </List>
+      <RankingActions
+        open={rankingsOpen}
+        termName={term.name}
+        onClose={() => setRankingsOpen(false)}
+        onUse={onRanking}
+        onManage={onManageRankings}
+      />
+    </>
   );
 }
 

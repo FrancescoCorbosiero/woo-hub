@@ -29,8 +29,8 @@ export const homeIt = {
   order: {
     name: "A–Z",
     count: "Per numero",
-    toName: "Ordina dalla A alla Z",
-    toCount: "Ordina per numero di prodotti",
+    toName: "Elenca dalla A alla Z",
+    toCount: "Elenca per numero di prodotti",
   },
   showEmpty: (n: number) => (n === 1 ? "Mostra 1 vuota" : `Mostra ${n} vuote`),
   hideEmpty: "Nascondi le vuote",
