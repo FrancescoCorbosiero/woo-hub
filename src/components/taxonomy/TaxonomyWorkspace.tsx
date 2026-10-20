@@ -46,27 +46,32 @@ export function TaxonomyWorkspace({ initial }: { initial: TaxonomyState }) {
   const [state, setState] = React.useState<TaxonomyState>(initial);
   const [saved, setSaved] = React.useState<TaxonomyConfig>(initial.taxonomy);
   const [busy, setBusy] = React.useState(false);
-  const [previewing, setPreviewing] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
+  const drafted = JSON.stringify(draft);
+  const dirty = drafted !== JSON.stringify(saved);
+  // The draft whose preview is on screen: while the one being typed differs, its preview is on its way.
+  const [previewed, setPreviewed] = React.useState(drafted);
+  const previewing = dirty && previewed !== drafted;
+  const failedText = t.taxonomy.failed;
 
-  // Re-run the draft against the real catalog, shortly after typing stops.
+  // Re-run the draft against the real catalog, shortly after typing stops. An
+  // answer for a draft typed over since is dropped: the newer one is coming.
   React.useEffect(() => {
     if (!dirty) return;
-    setPreviewing(true);
+    let current = true;
     const timer = setTimeout(async () => {
       const res = await previewTaxonomy(draft);
+      if (!current) return;
       if (res.ok && res.state) setState(res.state);
-      else if (!res.ok) setError(res.error ?? t.taxonomy.failed);
-      setPreviewing(false);
+      else if (!res.ok) setError(res.error ?? failedText);
+      setPreviewed(JSON.stringify(draft));
     }, 400);
     return () => {
+      current = false;
       clearTimeout(timer);
-      setPreviewing(false);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft, dirty]);
+  }, [draft, dirty, failedText]);
 
   function patch(next: Partial<TaxonomyConfig>) {
     setError(null);

@@ -36,7 +36,7 @@ const feedRow = (sku: string, eu: string, active: boolean, quantity: number) => 
 
 describe.skipIf(!enabled)("sync runs (real SQL)", () => {
   it("walks, drops an uncommitted step, guards the cursor, finishes", async () => {
-    const { eq, db, plans, savePlans, cancelSyncRun, commitSyncStep, createSyncRun, dropUncommittedPlans, failSyncRun, getSyncRun, syncRunApplicable } = await load();
+    const { eq, db, plans, savePlans, cancelSyncRun, commitSyncStep, createSyncRun, dropUncommittedPlans, getSyncRun, syncRunApplicable } = await load();
     const run = await createSyncRun("IT", ["A", "B", "C"]);
     expect(run.status).toBe("running");
     expect(await syncRunApplicable(run.id)).toBe(false);
@@ -82,7 +82,7 @@ describe.skipIf(!enabled)("sync runs (real SQL)", () => {
   });
 
   it("a failed run is never applicable; a manual preview run always is", async () => {
-    const { eq, db, plans, savePlans, cancelSyncRun, commitSyncStep, createSyncRun, dropUncommittedPlans, failSyncRun, getSyncRun, syncRunApplicable } = await load();
+    const { createSyncRun, failSyncRun, syncRunApplicable } = await load();
     const run = await createSyncRun("IT", ["A"]);
     const f = await failSyncRun(run.id, "boom");
     expect(f.status).toBe("failed");
@@ -141,7 +141,7 @@ describe.skipIf(!enabled)("stepped store sync, solo-GS (no KicksDB), real SQL", 
   });
 
   it("an unfinished run is refused by the apply", async () => {
-    const { eq, db, feedItems, plans, saveSnapshot, advanceStoreSync, startStoreSync, applySyncPrices } = await load();
+    const { startStoreSync, applySyncPrices } = await load();
     const started = await startStoreSync("IT");
     const res = await applySyncPrices({ runId: started.progress!.runId, priceScope: "all", selections: [], excluded: [], dryRun: true, sanitize: false, backfillGtins: false });
     expect(res.ok).toBe(false);

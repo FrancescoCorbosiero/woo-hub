@@ -535,9 +535,7 @@ function TermActionsPanel({
   const live = (view: OperationView) => ops.active.find((a) => a.id === view.id) ?? view;
 
   // The counts came back from the server with the products shown: the switch reads them again.
-  React.useEffect(() => {
-    if (showingAll && vis.kind !== "allHidden" && vis.kind !== "loading") setShowingAll(null);
-  }, [showingAll, vis.kind]);
+  if (showingAll && vis.kind !== "allHidden" && vis.kind !== "loading") setShowingAll(null);
   useOperationSettled((view, outcome) => {
     // Shown again: the counts are on their way (the list refreshes the screen). Otherwise it is off again.
     if (view.id === showingAll && (outcome !== "done" || view.changed === 0)) setShowingAll(null);

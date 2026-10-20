@@ -6,6 +6,7 @@ import { Navbar, Page } from "konsta/react";
 import { useI18n } from "@/i18n/provider";
 import type { CatalogPage, CatalogQuery, QuickView } from "@/lib/vetrina/catalog";
 import type { VetrinaResult } from "@/server/vetrina/service";
+import { useChanged } from "../../../use-changed";
 import { ErrorState } from "../../ErrorState";
 import { ActivityLink } from "../act/ActivityLink";
 import { useOperationSettled } from "../act/operations-context";
@@ -77,12 +78,8 @@ export function QuickViewScreen({
     [setFacets],
   );
   // The server read the view again (after an action): its count is the newer word.
-  const seenPage = React.useRef(page);
-  React.useEffect(() => {
-    if (seenPage.current === page) return;
-    seenPage.current = page;
-    if (page.ok) setCounted({ key: countKey(served.q, served.within), total: page.data.total });
-  }, [page, served]);
+  const pageChanged = useChanged(page);
+  if (pageChanged && page.ok) setCounted({ key: countKey(served.q, served.within), total: page.data.total });
 
   const total = counted?.key === listKey ? counted.total : null;
   const empty = page.ok && listKey === WHOLE_VIEW && counted?.key === WHOLE_VIEW && counted.total === 0;

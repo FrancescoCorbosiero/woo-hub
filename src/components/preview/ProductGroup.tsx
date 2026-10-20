@@ -105,7 +105,11 @@ function ManualPriceCell({
   const [draft, setDraft] = React.useState(price != null ? String(price) : "");
 
   // Keep the draft in sync when the persisted value changes (e.g. after recompute).
-  React.useEffect(() => setDraft(price != null ? String(price) : ""), [price]);
+  const [persisted, setPersisted] = React.useState(price);
+  if (persisted !== price) {
+    setPersisted(price);
+    setDraft(price != null ? String(price) : "");
+  }
 
   if (!euSize) return <span className="text-faint">—</span>;
 

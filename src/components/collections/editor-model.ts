@@ -102,19 +102,20 @@ export function useDraftCheck(
   error: string | null;
 } {
   const [check, setCheck] = React.useState<DraftCheck | null>(null);
-  const [checking, setChecking] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const latest = React.useRef(0);
   const key = draft ? JSON.stringify(draft) : "";
+  // A check answers one draft against one read of the store: any other is still being checked.
+  const request = key ? `${indexProducts}:${key}` : "";
+  const [answered, setAnswered] = React.useState("");
 
   React.useEffect(() => {
-    if (!key) return;
+    if (!request) return;
     const ticket = ++latest.current;
-    setChecking(true);
     const timer = setTimeout(async () => {
       const res = await checkCollectionDraft(JSON.parse(key));
       if (ticket !== latest.current) return;
-      setChecking(false);
+      setAnswered(request);
       if (res.ok) {
         setCheck(res.data);
         setError(null);
@@ -123,9 +124,9 @@ export function useDraftCheck(
       }
     }, 350);
     return () => clearTimeout(timer);
-  }, [key, indexProducts]);
+  }, [request, key]);
 
-  return { check, checking, error };
+  return { check, checking: request !== "" && answered !== request, error };
 }
 
 /**

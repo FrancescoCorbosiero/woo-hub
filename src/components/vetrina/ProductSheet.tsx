@@ -12,6 +12,7 @@ import { loadProductPrices, publishProductPrices } from "@/server/actions/vetrin
 import { setProductManualPrices } from "@/server/actions/overrides";
 import { updateStoreVariation } from "@/server/actions/store-edit";
 import { repriceStoreEdits } from "@/server/actions/store-edits";
+import { useChanged } from "../use-changed";
 import { useLastShown } from "./catalog/act/parts";
 import { ROW, ROW_INNER, ROWS, SHEET_CARD, SHEET_LIST, SHEET_LIST_COLORS } from "./catalog/sheet/look";
 import { PlacementSection } from "./catalog/sheet/PlacementSection";
@@ -80,34 +81,48 @@ export function ProductSheet({
 
   // The product last asked for: an answer for one opened before is dropped.
   const asked = React.useRef("");
-  const load = React.useCallback(async (sku: string) => {
+  const read = React.useCallback((sku: string) => {
     asked.current = sku;
-    setData(undefined);
-    setError(null);
-    const res = await loadProductPrices({ sku });
-    if (asked.current !== sku) return;
-    if (!res.ok) {
-      setError(res.error);
-      setData(null);
-      return;
-    }
-    setData(res.data);
-    const next: Record<string, string> = {};
-    if (res.data?.store) {
-      for (const v of res.data.store.variants) next[String(v.variationId)] = toInput(v.price);
-    } else if (res.data) {
-      for (const v of res.data.variants) if (v.euSize) next[v.euSize] = toInput(v.manual);
-    }
-    setEdits(next);
+    return loadProductPrices({ sku }).then((res) => {
+      if (asked.current !== sku) return;
+      if (!res.ok) {
+        setError(res.error);
+        setData(null);
+        return;
+      }
+      setData(res.data);
+      const next: Record<string, string> = {};
+      if (res.data?.store) {
+        for (const v of res.data.store.variants) next[String(v.variationId)] = toInput(v.price);
+      } else if (res.data) {
+        for (const v of res.data.variants) if (v.euSize) next[v.euSize] = toInput(v.manual);
+      }
+      setEdits(next);
+    });
   }, []);
+  /** Read again after a write: the sheet waits for it, as when it opens. */
+  const load = React.useCallback(
+    (sku: string) => {
+      setData(undefined);
+      setError(null);
+      return read(sku);
+    },
+    [read],
+  );
 
   // Keyed on the SKU, not the card: a card refreshed after a publish must not
-  // reload the sheet under the operator's fingers.
+  // reload the sheet under the operator's fingers. Another product: the sheet
+  // waits for it from this very render.
   const sku = card?.sku ?? "";
+  const skuChanged = useChanged(sku);
+  if (skuChanged && sku && !demo) {
+    setData(undefined);
+    setError(null);
+  }
   React.useEffect(() => {
     if (!sku || demo) return;
-    void load(sku);
-  }, [sku, demo, load]);
+    void read(sku);
+  }, [sku, demo, read]);
 
   async function saveCatalog(d: DrawerData) {
     const prices: { euSize: string; price: number | null }[] = [];

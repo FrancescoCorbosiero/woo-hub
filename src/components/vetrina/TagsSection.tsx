@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { useI18n } from "@/i18n/provider";
 import type { ProductTagsView } from "@/lib/collections/types";
 import { loadProductTags, saveProductTags } from "@/server/actions/collections";
+import { useChanged } from "../use-changed";
 import { NETWORK_CODE, plainError } from "./catalog/rules/errors";
 import { HEADING, ROW, ROW_INNER, ROWS, SHEET_CARD } from "./catalog/sheet/look";
 import { Close } from "./icons";
@@ -41,23 +42,37 @@ export function TagsSection({ productId, onChanged }: { productId: number; onCha
   const [saving, setSaving] = React.useState(false);
   const listId = React.useId();
 
-  const load = React.useCallback(async () => {
+  const read = React.useCallback(
+    () =>
+      loadProductTags({ productId })
+        .catch(offline)
+        .then((res) => {
+          if (!res.ok) {
+            // Our words, never the server's: its log keeps the detail.
+            setError(res.code === NETWORK_CODE ? r.network : tg.loadFailed);
+            setView(null);
+            return;
+          }
+          setView(res.data);
+          setChips(res.data.tags.map((x) => ({ id: x.id, name: x.name })));
+        }),
+    [productId, r, tg],
+  );
+  /** Read again after a save: the card waits for it, as when it opens. */
+  async function load() {
     setView(undefined);
     setError(null);
-    const res = await loadProductTags({ productId }).catch(offline);
-    if (!res.ok) {
-      // Our words, never the server's: its log keeps the detail.
-      setError(res.code === NETWORK_CODE ? r.network : tg.loadFailed);
-      setView(null);
-      return;
-    }
-    setView(res.data);
-    setChips(res.data.tags.map((x) => ({ id: x.id, name: x.name })));
-  }, [productId, r, tg]);
+    await read();
+  }
 
+  // Another product: the card waits for its tags from this very render.
+  if (useChanged(productId)) {
+    setView(undefined);
+    setError(null);
+  }
   React.useEffect(() => {
-    void load();
-  }, [load]);
+    void read();
+  }, [read]);
 
   if (view === undefined) {
     // The card's shape while it loads, so the sheet does not jump when the tags arrive.

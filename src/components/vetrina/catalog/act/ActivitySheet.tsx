@@ -37,17 +37,20 @@ function ActivityContent({ onClose }: { onClose: () => void }) {
   const [asked, setAsked] = React.useState<ReadonlySet<string>>(() => new Set());
   const alive = React.useRef(true);
 
-  const load = React.useCallback(async () => {
-    const res = await call(() => listOperations({ limit: LIMIT }), network);
-    if (!alive.current) return;
-    if (res.ok) {
-      setViews(res.data);
-      setFailed(false);
-    } else {
-      // A refresh that fails keeps the log already shown; only a first read says so.
-      setFailed(true);
-    }
-  }, [network]);
+  const load = React.useCallback(
+    () =>
+      call(() => listOperations({ limit: LIMIT }), network).then((res) => {
+        if (!alive.current) return;
+        if (res.ok) {
+          setViews(res.data);
+          setFailed(false);
+        } else {
+          // A refresh that fails keeps the log already shown; only a first read says so.
+          setFailed(true);
+        }
+      }),
+    [network],
+  );
 
   React.useEffect(() => {
     alive.current = true;

@@ -192,10 +192,12 @@ export function PreviewWorkspace({
 
   // Snapshot staleness: the file is a point-in-time export of the store, so warn
   // (softly) once it's a week old — the remedy is to re-export from Woo + reload.
+  // Counted from when the page opened: a render may not read the clock.
+  const [openedAt] = React.useState(() => Date.now());
   const staleDays = React.useMemo(() => {
     if (!uploadedAt) return null;
-    return Math.floor((Date.now() - new Date(uploadedAt).getTime()) / 86_400_000);
-  }, [uploadedAt]);
+    return Math.floor((openedAt - new Date(uploadedAt).getTime()) / 86_400_000);
+  }, [uploadedAt, openedAt]);
 
   /** Rebuild the selection from a predicate over (plan, item). Quick-select. */
   function selectWhere(predicate: (p: PreviewPlan, item: PlanItem) => boolean) {

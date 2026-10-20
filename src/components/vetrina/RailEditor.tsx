@@ -43,7 +43,7 @@ import { changedFields, editableFields, SWITCH_FIELD, switchable } from "@/lib/v
 import { railSourceOf } from "@/lib/vetrina/sections";
 import type { HiddenReason, ProductCard, RailDetail, RailFallback, SectionDraft } from "@/lib/vetrina/types";
 import type { VetrinaRail, VetrinaResult } from "@/server/vetrina/service";
-import { loadVetrinaCards, loadVetrinaRail, publishVetrinaRail } from "@/server/actions/vetrina";
+import { loadVetrinaRail, publishVetrinaRail } from "@/server/actions/vetrina";
 import { Plus } from "./catalog/act/icons";
 import { isActive, outcomeOf, type Outcome } from "./catalog/act/model";
 import { useOperations, useOperationSettled } from "./catalog/act/operations-context";
@@ -64,6 +64,7 @@ import { formatFromPrice } from "./format";
 import { ChevronRight, EyeOff, Funnel, Grip, Lock, More, Pin } from "./icons";
 import { SEGMENTED_COLORS } from "./segmented";
 import { edited, movedUnderDraft, movesSection } from "./section-reload";
+import { useSectionCards } from "./section-editor/use-section-cards";
 import { useBack } from "./use-back";
 
 export interface EditorOptions {
@@ -209,10 +210,6 @@ function Editor({
     return joining.length > 0 ? [...siteVisible, ...joining] : siteVisible;
   }, [siteVisible, draft.pin, added, base.hideOutOfStock]);
 
-  const [cards, setCards] = React.useState(
-    () => new Map<number, ProductCard>([...initial.rail.items, ...initial.rail.hidden].map((c) => [c.id, c])),
-  );
-  const [locks, setLocks] = React.useState<Record<string, number>>(initial.locks);
   // The rule filling the rail's category, when it is automatic.
   const [collection, setCollection] = React.useState<RailCollection | null>(initial.collection);
   const [reasons, setReasons] = React.useState(
@@ -225,14 +222,24 @@ function Editor({
     latestDraft.current = draft;
   }, [draft]);
 
-  const absorb = React.useCallback((more: ProductCard[], moreLocks: Record<string, number>) => {
-    setCards((prev) => {
-      const next = new Map(prev);
-      for (const c of more) next.set(c.id, c);
-      return next;
-    });
-    setLocks((prev) => ({ ...prev, ...moreLocks }));
-  }, []);
+  const rows = React.useMemo(() => buildRows(visible, draft), [visible, draft]);
+  const rowById = React.useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows]);
+
+  // Drag: the list moves freely while dragging; the pins are decided on drop,
+  // against the list as it was when the drag began — so a drag that ends
+  // where it started changes nothing.
+  const [dragIds, setDragIds] = React.useState<number[] | null>(null);
+  const drag = React.useRef<{ rows: EditorRow[]; id: number; ids: number[] } | null>(null);
+
+  const [shown, setShown] = React.useState(options.pageSize);
+  const orderIds = dragIds ?? rows.map((r) => r.id);
+  const renderIds = orderIds.slice(0, shown);
+
+  // Cards for the rows on screen and the hidden products: those the section came with, the others asked for.
+  const { cards, locks, absorb, refresh, setLock } = useSectionCards(
+    { cards: [...initial.rail.items, ...initial.rail.hidden], locks: initial.locks },
+    [...renderIds, ...draft.exclude],
+  );
 
   const adoptRail = React.useCallback(
     (data: VetrinaRail) => {
@@ -299,35 +306,6 @@ function Editor({
       cancelled = true;
     };
   }, [loadingFallback, draft.fallback, railKey, absorb, t]);
-
-  const rows = React.useMemo(() => buildRows(visible, draft), [visible, draft]);
-  const rowById = React.useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows]);
-
-  // Drag: the list moves freely while dragging; the pins are decided on drop,
-  // against the list as it was when the drag began — so a drag that ends
-  // where it started changes nothing.
-  const [dragIds, setDragIds] = React.useState<number[] | null>(null);
-  const drag = React.useRef<{ rows: EditorRow[]; id: number; ids: number[] } | null>(null);
-
-  const [shown, setShown] = React.useState(options.pageSize);
-  const orderIds = dragIds ?? rows.map((r) => r.id);
-  const renderIds = orderIds.slice(0, shown);
-
-  // Cards scrolled into view (or brought in by a change) that we do not hold
-  // yet — each asked for once, so a failing request cannot loop.
-  const requested = React.useRef(new Set<number>());
-  const wantedKey = [...new Set([...renderIds, ...draft.exclude])]
-    .filter((id) => !cards.has(id) && !requested.current.has(id))
-    .slice(0, 100)
-    .join(",");
-  React.useEffect(() => {
-    if (!wantedKey) return;
-    const ids = wantedKey.split(",").map(Number);
-    for (const id of ids) requested.current.add(id);
-    loadVetrinaCards({ ids }).then((res) => {
-      if (res.ok) absorb(res.data.cards, res.data.locks);
-    });
-  }, [wantedKey, absorb]);
 
   // Leaving with unpublished changes asks first.
   React.useEffect(() => {
@@ -1161,11 +1139,9 @@ function Editor({
       <ProductSheet
         card={productFor != null ? (cardOf(productFor) ?? null) : null}
         onClose={() => setProductFor(null)}
-        onLocksChanged={(sku, count) => setLocks((prev) => ({ ...prev, [skuKey(sku)]: count }))}
+        onLocksChanged={setLock}
         onPricesChanged={(id) => {
-          void loadVetrinaCards({ ids: [id] }).then((res) => {
-            if (res.ok) absorb(res.data.cards, res.data.locks);
-          });
+          refresh(id);
           // The homepage's cards show the old price until read again.
           router.refresh();
         }}
