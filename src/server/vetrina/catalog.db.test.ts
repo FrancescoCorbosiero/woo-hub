@@ -228,6 +228,8 @@ function railBlock(key: string, title: string, taxonomy: string, termId: number,
       fallbackDefault: "menu_order" as const,
       editable: true,
       fields: {},
+      atts: {},
+      switchedOff: false,
       products: products.map(card),
     },
   };
@@ -239,6 +241,7 @@ const HOME: Homepage = {
   link: "",
   editLink: "",
   modifiedGmt: "",
+  features: [],
   blocks: [
     railBlock("category:basse#0", "BASSE", "product_cat", 11, [3, 1], [1]),
     railBlock("brand:nike#0", "Nike", "product_brand", 100, [1]),

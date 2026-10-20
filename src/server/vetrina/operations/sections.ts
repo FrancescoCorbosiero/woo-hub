@@ -19,7 +19,7 @@ import { resolveTarget, rowsInOrder } from "./context";
 /** The block every product section is (the editor's own, see server/vetrina/service.ts). */
 const RAIL_BLOCK = "golden-hive/shortcode-wrapper";
 
-type Rail = Pick<RailSummary, "taxonomy" | "terms">;
+type Rail = Pick<RailSummary, "taxonomy" | "terms"> & Partial<Pick<RailSummary, "atts">>;
 
 /** What fills a section: one manual category, one automatic one, one brand, or anything else. */
 export function sectionFill(rail: Rail, automatic: boolean): Pick<HomepageSectionOption, "fill" | "term"> {
@@ -53,7 +53,8 @@ export function pinnable(rail: Pick<RailSummary, "editable">): boolean {
 /**
  * Of these products, the ones the section can show, per the store index: in
  * its category or brand — sub-terms included, as the shop's own listings
- * are — or carrying its tag.
+ * are — or carrying its tag; for a shop-wide list (no term), any product, or
+ * those on sale for the list of what is on sale.
  */
 export function sectionMembers(rail: Rail, rows: readonly IndexRow[], trees: CatalogTrees): Set<number> {
   const ids = rail.terms.map((t) => t.id);
@@ -77,8 +78,12 @@ export function sectionMembers(rail: Rail, rows: readonly IndexRow[], trees: Cat
     case "product_tag":
       holds = (row) => row.tags.some((t) => ids.includes(t.id));
       break;
-    default:
-      holds = () => false;
+    default: {
+      // A shop-wide list ([gh_product_rail type="…"]) names no term; a fixed list or a tag rail does.
+      const atts = rail.atts ?? {};
+      const list = rail.terms.length === 0 && !atts.ids && !atts.tag && !atts.category && !atts.brand ? (atts.type ?? "recent") : null;
+      holds = list == null ? () => false : list === "sale" ? (row) => row.onSale : () => true;
+    }
   }
   return new Set(rows.filter(holds).map((r) => r.id));
 }

@@ -19,7 +19,9 @@ export default defineHubConfig({
     theme: "ios",
     page: "front",
     blocks: {
-      // Product rails: order, hide, size, and the section's texts and colour.
+      // Product sections: their products (order, hide, size), their texts and colour,
+      // and the sections themselves — what each shows, new ones, their order on the
+      // page, taking one away, switching one off.
       "golden-hive/shortcode-wrapper": {
         show: "rail",
         edit: {
@@ -28,6 +30,11 @@ export default defineHubConfig({
           fallback: true,
           limit: true,
           fields: ["eyebrow", "title", "backgroundColor", "buttonText", "buttonUrl"],
+          source: true,
+          add: true,
+          move: true,
+          remove: true,
+          switchOff: true,
         },
       },
       // Other blocks: their titles. Slides, cards and logos stay in WordPress.
@@ -39,6 +46,7 @@ export default defineHubConfig({
       "*": { show: "hidden" },
     },
     fallbacks: ["menu_order", "date", "popularity"],
+    lists: ["recent", "best_selling", "sale"],
     maxPins: 60,
     maxLimit: 48,
     pageSize: 60,

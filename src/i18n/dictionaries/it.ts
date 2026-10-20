@@ -1671,6 +1671,7 @@ export const it = {
     errors: {
       not_configured: "Il collegamento al negozio non è configurato. Chiedi a chi gestisce il server.",
       plugin_missing: "Il sito non è ancora pronto per la Vetrina: serve il plugin Golden Hive Blocks 5.10.0 o successivo.",
+      plugin_outdated: "Per cambiare le sezioni dalla Vetrina serve il plugin Golden Hive Blocks 5.15.0 sul sito: chiedi a chi gestisce il sito di aggiornarlo.",
       unauthorized: "Il sito ha rifiutato l'accesso: la chiave del negozio non ha i permessi giusti.",
       stale: "La pagina è cambiata nel frattempo.",
       not_found: "Sezione non trovata: forse è stata tolta dalla homepage.",

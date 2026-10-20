@@ -1615,6 +1615,7 @@ export const en: Dictionary = {
     errors: {
       not_configured: "The store connection is not configured. Ask whoever runs the server.",
       plugin_missing: "The site is not ready for the Showcase yet: it needs the Golden Hive Blocks plugin 5.10.0 or later.",
+      plugin_outdated: "Changing the sections from the Showcase needs the Golden Hive Blocks plugin 5.15.0 on the site: ask whoever runs the site to update it.",
       unauthorized: "The site refused access: the store key does not have the right permissions.",
       stale: "The page changed in the meantime.",
       not_found: "Section not found: it may have been removed from the homepage.",

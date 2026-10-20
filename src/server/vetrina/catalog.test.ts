@@ -366,6 +366,8 @@ function rail(key: string, over: Partial<RailSummary>): HomeBlock {
       fallbackDefault: "menu_order",
       editable: true,
       fields: {},
+      atts: {},
+      switchedOff: false,
       products: [],
       ...over,
     },
@@ -380,6 +382,7 @@ const HOME: Homepage = {
   link: "",
   editLink: "",
   modifiedGmt: "",
+  features: [],
   blocks: [
     { path: "0", name: "core/html", kind: "static", summary: { title: null, items: null, labels: [] } },
     rail("category:basse#0", {

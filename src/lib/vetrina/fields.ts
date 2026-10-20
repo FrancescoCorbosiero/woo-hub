@@ -13,6 +13,8 @@ export const FIELD_SPECS: Record<string, Record<string, FieldSpec>> = {
     backgroundColor: { type: "enum", options: ["white", "gray", "black"] },
     buttonText: { type: "text", max: 60 },
     buttonUrl: { type: "url", max: 500 },
+    // The section's switch (plugin 5.15.0): "yes" keeps it on the page and shows nothing.
+    hidden: { type: "enum", options: ["", "yes"] },
   },
   "golden-hive/category-slider": { title: { type: "text", max: 120 } },
   "golden-hive/brand-marquee": { title: { type: "text", max: 120 } },
@@ -22,14 +24,26 @@ export const FIELD_SPECS: Record<string, Record<string, FieldSpec>> = {
 };
 
 /**
- * The fields of a block the customer may edit: those the config lists, within
- * those the plugin allows, and present in what the site returned (an older
- * plugin returns none) — in the plugin's order.
+ * A section's on/off switch: a field to the plugin ("hidden": "yes" or
+ * nothing), a switch on the screen — never one of the texts.
+ */
+export const SWITCH_FIELD = "hidden";
+
+/**
+ * The fields of a block the customer may edit as texts: those the config
+ * lists, within those the plugin allows, and present in what the site
+ * returned (an older plugin returns none) — in the plugin's order. The
+ * section's switch is not one of them (see switchable).
  */
 export function editableFields(blockName: string, configured: readonly string[], present?: FieldValues): string[] {
   return Object.keys(FIELD_SPECS[blockName] ?? {}).filter(
-    (field) => configured.includes(field) && (present == null || field in present),
+    (field) => field !== SWITCH_FIELD && configured.includes(field) && (present == null || field in present),
   );
+}
+
+/** The customer may switch the section off and on: the config lets them, and the site's plugin reports the switch. */
+export function switchable(blockName: string, allowed: boolean, present: FieldValues): boolean {
+  return allowed && SWITCH_FIELD in (FIELD_SPECS[blockName] ?? {}) && SWITCH_FIELD in present;
 }
 
 export type FieldProblem = "not_editable" | "not_an_option" | "too_long" | "bad_url";

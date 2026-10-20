@@ -13,6 +13,14 @@ import { z } from "zod";
 export const RAIL_FALLBACKS = ["menu_order", "date", "popularity", "price", "price-desc", "rating"] as const;
 export type RailFallback = (typeof RAIL_FALLBACKS)[number];
 
+/**
+ * The shop-wide lists a section can show instead of a category or a brand
+ * ([gh_product_rail type="…"]): the newest products, the best sellers, what
+ * is on sale, the featured ones, the best rated.
+ */
+export const RAIL_LISTS = ["recent", "best_selling", "sale", "featured", "top_rated"] as const;
+export type RailList = (typeof RAIL_LISTS)[number];
+
 const BlockConfigSchema = z.object({
   /**
    * How the Vetrina shows the block:
@@ -40,8 +48,29 @@ const BlockConfigSchema = z.object({
        * name. The plugin's own list is the ceiling (lib/vetrina/fields.ts).
        */
       fields: z.array(z.string().min(1)).default([]),
+      /**
+       * Rails, with golden-hive-blocks ≥ 5.15.0: what the section shows (another
+       * category, brand or shop-wide list), new sections of this kind, their
+       * order on the page, taking one away, and its on/off switch.
+       */
+      source: z.boolean().default(false),
+      add: z.boolean().default(false),
+      move: z.boolean().default(false),
+      remove: z.boolean().default(false),
+      switchOff: z.boolean().default(false),
     })
-    .default({ pins: false, exclude: false, fallback: false, limit: false, fields: [] }),
+    .default({
+      pins: false,
+      exclude: false,
+      fallback: false,
+      limit: false,
+      fields: [],
+      source: false,
+      add: false,
+      move: false,
+      remove: false,
+      switchOff: false,
+    }),
 });
 export type BlockConfig = z.infer<typeof BlockConfigSchema>;
 
@@ -81,6 +110,8 @@ export const HubConfigSchema = z.object({
     blocks: z.record(z.string(), BlockConfigSchema),
     /** Orderings offered for the products after the pinned ones. */
     fallbacks: z.array(z.enum(RAIL_FALLBACKS)).min(1),
+    /** Shop-wide lists a section may show, besides a category or a brand (edit.source, edit.add). */
+    lists: z.array(z.enum(RAIL_LISTS)).default(["recent", "best_selling", "sale"]),
     /** Most products a rail may pin. The plugin's own ceiling is 100. */
     maxPins: z.number().int().min(1).max(100),
     /** Most products a rail may show (edit.limit). The plugin's own ceiling is 100. */

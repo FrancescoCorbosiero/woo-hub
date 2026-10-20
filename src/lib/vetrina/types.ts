@@ -4,9 +4,10 @@
  * client components import only these types.
  */
 
-import type { RailFallback } from "@/config/schema";
+import type { RailFallback, RailList } from "@/config/schema";
 
-export type { RailFallback };
+export type { RailFallback, RailList };
+export { RAIL_LISTS } from "@/config/schema";
 
 /** One product as a card: enough to draw it and to join it to Hub data by SKU. */
 export interface ProductCard {
@@ -52,6 +53,9 @@ export interface RailTerm {
   link: string | null;
 }
 
+/** What a section shows, as a write names it: a category or a brand (by slug), or a shop-wide list. */
+export type RailSource = { taxonomy: "category" | "brand"; slug: string } | { list: RailList };
+
 /** A product rail as the homepage shows it now. */
 export interface RailSummary {
   /** Stable name: "category:saldi-sneakers-outlet#0". */
@@ -75,7 +79,11 @@ export interface RailSummary {
   editable: boolean;
   /** The section's editable fields; empty with a plugin older than 5.10.0. */
   fields: FieldValues;
-  /** What the site renders right now, in order. */
+  /** The rail's shortcode attributes as written ("type", "limit", "columns"…). */
+  atts: Record<string, string>;
+  /** Switched off: the section stays on the page and shows nothing on the site (plugin 5.15.0). */
+  switchedOff: boolean;
+  /** What the site renders right now, in order (switched off: what it would render). */
   products: ProductCard[];
 }
 
@@ -105,6 +113,8 @@ export interface Homepage {
   editLink: string;
   /** The page's modified time as read; a write must present it back. */
   modifiedGmt: string;
+  /** What the site's plugin can do ("layout-insert", "rail-source"…); empty before 5.15.0. */
+  features: string[];
   blocks: HomeBlock[];
 }
 
@@ -167,6 +177,8 @@ export interface RailWrite extends RailState {
   /** Only the fields that change. */
   fields?: FieldValues;
   limit?: number;
+  /** Point the section at something else (plugin 5.15.0): its pins and hidden products are then the new ones. */
+  source?: RailSource;
   dryRun?: boolean;
 }
 
@@ -192,6 +204,44 @@ export interface RailWriteResult {
   rendered: number[];
   /** The block's editable fields after the write. */
   fields: FieldValues;
+  /** The rail's key after the write — a new source is a new key (plugin 5.15.0; null before). */
+  key: string | null;
+  /** The section's button, moved to the new source's page with it. */
+  buttonUrl: string | null;
+}
+
+/** A section as the editor read it: where it is and what it was then. */
+export interface BlockRef {
+  path: string;
+  attrsHash: string;
+}
+
+/** A new section: what it shows, and — to put a removed one back — its size, order and layout. */
+export interface NewRail {
+  source: RailSource;
+  limit?: number;
+  pin?: number[];
+  exclude?: number[];
+  fallback?: RailFallback;
+  /** columns, columns_tablet, columns_mobile, ratio, fit; by default the neighbour's. */
+  layout?: Record<string, string>;
+}
+
+/** The page's sections themselves (plugin 5.15.0): add one, take one away, put them in another order. */
+export type LayoutWrite = { pageId: number; expectedModifiedGmt: string; dryRun?: boolean } & (
+  | { action: "insert"; anchor: BlockRef; place: "after" | "before"; rail: NewRail; fields: FieldValues }
+  | { action: "remove"; target: BlockRef }
+  /** Every section of the page, each once, in its new order. */
+  | { action: "arrange"; order: BlockRef[] }
+);
+
+export interface LayoutWriteResult {
+  dryRun: boolean;
+  changed: boolean;
+  modifiedGmt: string;
+  /** "insert": the new section's key and place. */
+  key: string | null;
+  path: string | null;
 }
 
 export interface RailHistoryState extends RailState {
@@ -217,6 +267,8 @@ export interface Capabilities {
 export type VetrinaErrorCode =
   | "not_configured"
   | "plugin_missing"
+  /** The site's plugin answers, but is too old for what was asked (sections need 5.15.0). */
+  | "plugin_outdated"
   | "unauthorized"
   | "stale"
   | "not_found"
