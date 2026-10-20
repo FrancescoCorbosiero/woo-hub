@@ -1,11 +1,12 @@
-# Order sources ("Fonti d'ordine")
+# Order sources ("Classifiche")
 
-An **order source** is another shop's order of its products — usually one of
-its **collections** (Shopify) or **categories** — or any ranking someone
-keeps. It is uploaded once (by hand, from the Vetrina or the API) in the
-format below, and then used with one tap: **"Usa l'ordine di «X»"** puts the
-products it ranks first — in its order — on a category, a brand or the whole
-catalog. The other products follow, in the order they had.
+An **order source** — a *classifica* in the Vetrina, never an "ordine", which
+in a shop reads as a customer's order — is another shop's order of its
+products — usually one of its **collections** (Shopify) or **categories** — or
+any ranking someone keeps. It is uploaded once (by hand, from the Vetrina or
+the API) in the format below, and then used with one tap: **"Disponi come
+«X»"** puts the products it ranks first — in its order — on a category, a
+brand or the whole catalog. The other products follow, in the order they had.
 
 The typical way to make one: give an LLM the link of the collection or
 category page whose order you want, together with the instructions in
@@ -35,11 +36,10 @@ LLM is told to read them in order, 150 products at a time; each answer after
 
 ## In the Vetrina
 
-- **Where they live**: "Fonti d'ordine" — the row under the quick views on
-  the **Catalogo** tab, and the button at the top right of the **Homepage**
-  tab (beside the clock of "Attività").
-  The sheet lists the sources with how many of their products the shop has.
-- **Adding one**: "Aggiungi una fonte" → a name, where it comes from
+- **Where they live**: "Classifiche da altri negozi" — the row under the
+  quick views on the **Catalogo** tab. The sheet lists them with how many of
+  their products the shop has.
+- **Adding one**: "Aggiungi una classifica" → a name, where it comes from
   (the collection's link, optional), and the ranking: paste the LLM's answer
   — or its answers, one after another — (or a CSV, or one product per line)
   or upload a file. "Copia istruzioni LLM" copies the instructions to give
@@ -48,12 +48,14 @@ LLM is told to read them in order, 150 products at a time; each answer after
   when a name could be more than one product), how many answers were joined,
   and whether the last one stops halfway (the LLM's length limit: write
   "continua" and paste the rest after it). Nothing is saved before "Salva la
-  fonte".
+  classifica".
 - **Using one**:
-  - on a category or a brand: its screen, "Ordina: Negozio" → **"Usa
-    l'ordine di «X»"** (the first sources by name; "Fonti d'ordine…" for the
-    others);
-  - on the whole catalog: the source's sheet → **"Usa su tutto il catalogo"**.
+  - on a category or a brand: its screen, "Posizioni nel negozio" →
+    "Disponi come una classifica" → **"Disponi come «X»"** (the first by name;
+    "Classifiche…" for the others) — or, on a homepage section showing that
+    category or brand, its editor's "Disponi come una classifica…";
+  - on the whole catalog: the ranking's sheet → **"Disponi tutto il catalogo
+    così"**.
 
   Both show the preview first: the products moved (#37 → #1), the products the
   source does not rank (they stay after, in their order), and what to know.
@@ -214,7 +216,7 @@ curl -H "Authorization: Bearer $HUB_API_TOKEN" -d '{"term":{"id":12}}' \
 ```
 
 So a pipeline (an LLM reading a page every morning, say) can upload its
-ranking under a fixed name, and the owner taps "Usa l'ordine di «…»" when
+ranking under a fixed name, and the owner taps "Disponi come «…»" when
 they want it — or the pipeline applies it too.
 
 ## Limits

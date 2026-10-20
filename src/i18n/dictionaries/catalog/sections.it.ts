@@ -123,14 +123,13 @@ export const sectionsIt = {
   arrange: {
     open: "Sposta le sezioni",
     title: "Sposta le sezioni",
-    intro:
-      "Trascina dalla maniglia, o usa le frecce. Le sezioni si scambiano di posto: banner, slider e loghi restano dove sono.",
+    intro: "Trascina dalla maniglia o usa le frecce: banner, slider e loghi restano dove sono.",
     up: (title: string) => `Sposta su «${title}»`,
     down: (title: string) => `Sposta giù «${title}»`,
     moveUp: "Sposta su",
     moveDown: "Sposta giù",
     save: "Salva",
-    nothing: "Sposta una sezione per cambiarne il posto.",
+    nothing: "Nessuno spostamento da salvare",
     done: "Sezioni spostate",
     undone: "Sezioni di nuovo come prima",
     off: "spenta",

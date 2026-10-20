@@ -99,7 +99,7 @@ export function SheetHead({
       <div className="flex items-start gap-2 ps-4 pe-2">
         <div className="min-w-0 flex-1 pb-3">
           <h2 className="text-[20px] font-bold leading-tight">{title}</h2>
-          {subtitle && <p className="mt-0.5 line-clamp-2 text-[14px] leading-snug opacity-60">{subtitle}</p>}
+          {subtitle && <p className="mt-0.5 line-clamp-3 text-[14px] leading-snug opacity-60">{subtitle}</p>}
         </div>
         <button
           type="button"

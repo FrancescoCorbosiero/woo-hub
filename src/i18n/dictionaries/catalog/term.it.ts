@@ -104,7 +104,7 @@ export const termIt = {
     ranking: "Disponi come una classifica",
     rankingHint: (count: number) =>
       count === 0 ? "Copia come un altro negozio mette in fila gli stessi prodotti." : count === 1 ? "1 classifica pronta." : `${count} classifiche pronte.`,
-    place: "Metti in cima dei prodotti",
+    place: "Porta in cima alcuni prodotti",
     placeHint: "Scegli i prodotti, poi «Posiziona».",
     selecting: "Scegli i prodotti da spostare, poi tocca «Posiziona».",
   },

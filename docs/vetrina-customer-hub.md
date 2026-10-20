@@ -29,7 +29,7 @@ Repositories involved:
 | 7 | Plugin change | Yes, in `golden-hive-blocks` |
 | 8 | Order after the pinned products | Chosen per rail. Default: today's store order. |
 | 9 | Category pages follow the rail | Yes. A category page uses the pins of the homepage rail that shows that category (§6.4). |
-| 13 | Homepage structure | Read-only in the UI. What is editable is decided by code config (§5). |
+| 13 | Homepage structure | The product sections are the customer's: what each shows, new ones, their order, one switched off or taken away (§6.5). Banners, sliders, logos and the FAQ stay where they are, texts aside. What is editable is decided by code config (§5) and what the site's plugin can do. |
 | 14 | Plugin auth | `wc-gh/v1` namespace, authenticated with the existing Woo keys |
 | 15–18 | Margins | One % per section. Explicit priority between sections. Precedence: lock > SKU rule > section > brand/family rule, with the safety nets still applied. GoldenSneakers excluded in v1. |
 | 20–21 | Going live | A price edit goes live immediately. A margin change is previewed, then applied to the section right away. |
@@ -44,8 +44,9 @@ Branch `claude/custom-product-catalog-ui-sqzewp`, in both repositories.
 | 1 · See | Done |
 | 2 · Order | Done: pin / exclude / fallback, publish, history and restore, category pages follow their rail |
 | 3 · Price | Product sheet with locks and one-product publish: done. Margin × taxonomy (store-term scope, margin sheet): not started |
-| 4 · Fill | Not started |
+| 4 · Fill | In part: "Aggiungi" in a section's editor picks products from the whole catalog (search, newest, best sellers, in stock, on sale) and pins them on top; for a category filled by hand, those not in it join it when the section is published (§7). Taking a product out of a category stays a catalog action |
 | 5 · Shape | In part: a section's eyebrow, title, button, background and size; the titles of the category slider, brand marquee and FAQ (plus its subtitle). Slides, cards and logos stay in WordPress |
+| 6 · Sections | Done (branch `claude/keen-darwin-aqdjye`, both repositories): what a section shows, a new section, their order, a section switched off, one taken away — from the Homepage tab and the section editor (§6.5) |
 
 ### How to test
 
@@ -64,6 +65,12 @@ Branch `claude/custom-product-catalog-ui-sqzewp`, in both repositories.
    title, button, background and how many products show; the change joins the draft
    and goes live with **Pubblica**. On the home screen, the FAQ, category slider and
    brand marquee rows open their titles, saved straight to the site.
+5. **The sections themselves** (golden-hive-blocks **5.15.0**): on the Homepage tab,
+   **Nuova sezione**, **Sposta le sezioni**, and a card's **⋯** (Cambia cosa
+   mostra…, Sposta su / giù, Nuova sezione qui sotto, Spegni sul sito, Togli dalla
+   homepage); **＋ Aggiungi prodotti** on a card or in the editor. Each is written at
+   once, as one WordPress revision, with **Annulla** in its toast. With an older
+   plugin the screen hides them and says which version is needed.
 
 Notes:
 
@@ -518,7 +525,8 @@ All endpoints use Woo-key auth and require `manage_woocommerce`.
 | GET | `/capabilities` | plugin version and supported attributes. The Hub goes read-only if they're missing. |
 | GET | `/homepage` | parses the front page's blocks. Returns rails (block path, attributes, parsed shortcode, the ids rendered now, card data) and other blocks as summaries. Also returns `page_id` and `modified`. |
 | GET | `/rail?path=…&offset&count` | every member of a rail in effective order, plus hidden pinned ones with a reason (`outofstock`, `hidden`, `excluded`). Cards include id, sku, name, `woocommerce_thumbnail`, min price, stock status. |
-| PUT | `/homepage/block` | writes allowlisted attributes of one block (§6.3). `dry_run: true` returns the diff only. |
+| PUT | `/homepage/block` | writes allowlisted attributes of one block (§6.3). `dry_run: true` returns the diff only. From 5.15.0 a rail's `source` too (§6.5). |
+| POST | `/homepage/layout` | 5.15.0: a new product section (`insert`), one taken away (`remove`), the sections in another order (`arrange`) (§6.5) |
 | GET | `/homepage/history?path=…` | the block's attributes in recent revisions, for "Ripristina" |
 
 ### 6.3 Safe page writes
@@ -557,6 +565,45 @@ sort:
 - apply its exclusions.
 
 Terms without a homepage rail keep today's order.
+
+### 6.5 The sections themselves (5.15.0)
+
+`/homepage` and `/capabilities` list `features`: `rail-source`, `rail-hidden`,
+`layout-insert`, `layout-remove`, `layout-arrange`. The Hub offers an action only
+when the config allows it (`edit.source / add / move / remove / switchOff` on the
+rail block) **and** the site reports it; a write the plugin cannot do is refused
+with `plugin_outdated`.
+
+- **What a section shows** — `rail.source` on `PUT /homepage/block`: a category, a
+  brand (`{taxonomy, slug}`) or a shop-wide list (`recent`, `best_selling`,
+  `sale`). The shortcode's source attributes change and its layout attributes
+  stay. In the same write the Hub keeps the pinned and hidden products the new
+  source also holds (the sheet says how many stay and how many go), keeps an
+  automatic order the owner chose (else the new source's default), and a button
+  that pointed at the old term's page follows. The section's key may change
+  ("brand:nike#0"), and another section's too when they show the same thing (keys
+  count the sections showing it, in page order): the response says the new key.
+  "Annulla" writes the old source back with its pins, hidden products and order.
+- **A new section** — `insert` beside an anchor section (`before` / `after`): a
+  `golden-hive/shortcode-wrapper` the plugin builds from checked values only — its
+  source, size, title and eyebrow, and the neighbour's grid (`columns`,
+  `columns_tablet`, `columns_mobile`, `ratio`, `fit`) so its cards look like the
+  others'. Its markup goes right beside the anchor's, so a section inside a group
+  joins that group. An identical block already on the page is refused (two blocks
+  with the same markup could not be told apart by later writes).
+- **Their order** — `arrange` with every section's key in the new order. Each
+  section's *place* stays where it is, with its container and widths; the places
+  swap what they hold. Banners, sliders, logos and the FAQ never move. The keys are
+  checked to be the page's sections exactly (a permutation), or nothing is written.
+- **Switched off** — the block's `hidden: "yes"`: it stays on the page, with its
+  settings, and renders nothing; Gutenberg shows the toggle ("Nascondi sul sito").
+- **Taken away** — `remove` deletes the block's markup. The last product section
+  cannot be taken away (`ghb_last_rail`). The Hub keeps what it was (source,
+  fields, size, place) for "Annulla", which inserts it again.
+
+Every write is §6.3's: `expected_modified` and the block's attributes hash, a
+targeted replacement of markup found exactly once (never a whole-page rewrite),
+`wp_update_post` (a revision), the page cache purged.
 
 ---
 

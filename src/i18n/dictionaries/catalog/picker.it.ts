@@ -17,7 +17,7 @@ export const pickerIt = {
   title: (section: string) => `Aggiungi a «${section}»`,
   /** What may join the section, by what fills it. */
   intro: {
-    category: (name: string) => `Scegli dal catalogo: quelli che non sono in «${name}» ci entrano quando pubblichi.`,
+    category: (name: string) => `Da tutto il catalogo: chi non è in «${name}» ci entra quando pubblichi.`,
     automatic: (name: string) =>
       `In «${name}» entra chi rispetta la sua regola: qui scegli tra i suoi prodotti quelli da mettere in cima.`,
     brand: (name: string) => `La sezione mostra «${name}»: scegli tra i suoi prodotti quelli da mettere in cima.`,
@@ -54,7 +54,5 @@ export const pickerIt = {
   /** In the section editor's list, until published. */
   newBadge: "Nuovo",
   willJoin: (name: string) => `Entra in «${name}» quando pubblichi`,
-  /** Publishing with products that join the category first. */
-  joining: (name: string) => `Aggiungo a «${name}»…`,
   joinFailed: "Non sono riuscito a metterli nella categoria: la sezione non è stata pubblicata. Riprova.",
 };

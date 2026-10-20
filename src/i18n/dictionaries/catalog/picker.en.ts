@@ -11,7 +11,7 @@ export const pickerEn: typeof pickerIt = {
   openLabel: (section: string) => `Add products to “${section}”`,
   title: (section: string) => `Add to “${section}”`,
   intro: {
-    category: (name: string) => `Choose from the catalog: those not in “${name}” join it when you publish.`,
+    category: (name: string) => `From the whole catalog: what isn't in “${name}” joins it when you publish.`,
     automatic: (name: string) => `What meets its rule joins “${name}”: choose among its products which go on top.`,
     brand: (name: string) => `The section shows “${name}”: choose among its products which go on top.`,
     sale: "The section shows the products on sale: choose which go on top.",
@@ -44,6 +44,5 @@ export const pickerEn: typeof pickerIt = {
     count === 1 ? "1 product added: publish to see it on the site" : `${n(count)} products added: publish to see them on the site`,
   newBadge: "New",
   willJoin: (name: string) => `Joins “${name}” when you publish`,
-  joining: (name: string) => `Adding to “${name}”…`,
   joinFailed: "Couldn't put them in the category: the section was not published. Try again.",
 };

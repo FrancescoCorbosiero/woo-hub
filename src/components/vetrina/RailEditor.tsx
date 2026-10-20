@@ -869,7 +869,7 @@ function Editor({
             className="fixed inset-x-0 bottom-0 z-30 border-t border-black/10 bg-white/85 px-4 pb-[calc(env(safe-area-inset-bottom)+12px)] pt-3 backdrop-blur-xl dark:border-white/10 dark:bg-black/80"
           >
             <div className="mx-auto flex max-w-xl items-center gap-3">
-              <span className="min-w-0 flex-1 text-[15px] font-medium">{v.changes(changes.total || 1)}</span>
+              <span className="min-w-0 flex-1 truncate text-[15px] font-medium">{v.changes(changes.total || 1)}</span>
               <Button
                 clear
                 inline
@@ -888,7 +888,8 @@ function Editor({
                 colors={{ fillTextIos: "text-white dark:text-black", fillTextMaterial: "text-white dark:text-black" }}
                 className="min-w-32"
               >
-                {joining && oneTerm ? pk.joining(oneTerm.name) : publishing ? v.publishing : v.publish}
+                {/* Joining the category first: its toast says so; the button stays short. */}
+                {joining || publishing ? v.publishing : v.publish}
               </Button>
             </div>
           </motion.div>

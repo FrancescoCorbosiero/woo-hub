@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Navbar, Page, Preloader, Link as KLink } from "konsta/react";
+import { Button, Navbar, Page, Preloader, Link as KLink } from "konsta/react";
 import { toast } from "sonner";
 import { useI18n } from "@/i18n/provider";
 import { blockConfig } from "@/config";
@@ -11,7 +11,7 @@ import { describeRule } from "@/lib/collections/describe";
 import { railCategory } from "@/lib/collections/rail";
 import type { RailCollection } from "@/lib/collections/types";
 import { editableFields } from "@/lib/vetrina/fields";
-import { railKeyToParam } from "@/lib/vetrina/order";
+import { railSourceOf } from "@/lib/vetrina/sections";
 import { skuKey } from "@/lib/skus";
 import type { FieldValues, HomeBlock, RailSummary } from "@/lib/vetrina/types";
 import type { VetrinaHome, VetrinaResult } from "@/server/vetrina/service";
@@ -21,13 +21,17 @@ import { railHealth } from "./rail-health";
 import { FieldsSheet } from "./FieldsSheet";
 import { ActivityLink } from "./catalog/act/ActivityLink";
 import { useOperationSettled } from "./catalog/act/operations-context";
-import { OrderLines, Warning } from "./catalog/act/icons";
-import { railCatalogHref } from "./catalog/sheet/links";
+import { FILL } from "./catalog/act/parts";
+import { Plus, Warning } from "./catalog/act/icons";
+import { railCatalogHref, sectionHref } from "./catalog/sheet/links";
 import { TabbarSpacer } from "./catalog/TabbarSpacer";
-import { useOrderSourceSheets } from "./catalog/sources/SourceOrderSheet";
-import { Stack } from "./catalog/term/glyphs";
+import { SortArrows, Stack } from "./catalog/term/glyphs";
+import { ArrangeSheet, type ArrangeRequest } from "./sections/ArrangeSheet";
+import { NewSectionSheet, type NewSectionRequest } from "./sections/NewSectionSheet";
+import { SectionMenu } from "./sections/SectionMenu";
+import { SourceSheet, type SourceRequest } from "./sections/SourceSheet";
 import { useStandalone } from "./sheet-mount";
-import { ChevronLeft, ChevronRight, External, Funnel, Lock, Pin, Refresh } from "./icons";
+import { ChevronLeft, External, EyeOff, Funnel, Lock, More, Pin, Refresh } from "./icons";
 
 type StaticBlock = Extract<HomeBlock, { kind: "static" }>;
 
@@ -37,10 +41,16 @@ function staticFields(block: HomeBlock): string[] {
   return editableFields(block.name, blockConfig(block.name).edit.fields, block.fields);
 }
 
+/** A section's card on the page, for scrolling a new one into view. */
+const cardId = (key: string) => `sezione-${key.replace(/[^a-z0-9_-]/gi, "-")}`;
+
 /**
  * "La tua homepage": every block of the page in order. Product rails are
  * cards showing what the site shows right now; static blocks are thin rows
- * so the page still reads like the real one.
+ * so the page still reads like the real one. The sections themselves are
+ * the owner's too, as far as the config and the site's plugin allow: a new
+ * one, their places ("Sposta le sezioni"), and each card's "⋯" — what it
+ * shows, up, down, its switch, taking it away — and its "Aggiungi prodotti".
  */
 export function HomeScreen({ result }: { result: VetrinaResult<VetrinaHome> }) {
   const { t } = useI18n();
@@ -56,10 +66,75 @@ export function HomeScreen({ result }: { result: VetrinaResult<VetrinaHome> }) {
   const editing = result.ok
     ? (result.data.home.blocks.find((b): b is StaticBlock => b.kind === "static" && b.path === editingPath) ?? null)
     : null;
-  // The catalog's order sources are reached from here too: the Vetrina's first screen.
-  const sourceSheets = useOrderSourceSheets();
   const blockLabel = (block: HomeBlock) =>
     blockConfig(block.name).label ?? v.blocks[block.name] ?? v.blocks.other;
+
+  // The sections themselves: the menu of one, a new one, their places, what one shows.
+  const sx = t.vetrinaCatalog.sections;
+  const data = result.ok ? result.data : null;
+  const rails = React.useMemo(() => (data ? data.home.blocks.flatMap((b) => (b.kind === "rail" ? [b.rail] : [])) : []), [data]);
+  const keys = React.useMemo(() => rails.map((r) => r.key), [rails]);
+  const [menuRail, setMenuRail] = React.useState<RailSummary | null>(null);
+  const [arrangeOpen, setArrangeOpen] = React.useState(false);
+  const [newAfter, setNewAfter] = React.useState<{ after: string | null } | null>(null);
+  const [sourceRail, setSourceRail] = React.useState<RailSummary | null>(null);
+  const canPin = blockConfig("golden-hive/shortcode-wrapper").edit.pins;
+
+  // A new section, once the page is read again: brought into view, ringed for a moment. Until then its
+  // key may name another section (one showing the same thing, renumbered by the new one), so it waits
+  // for the page with one section more.
+  const [highlight, setHighlight] = React.useState<{ key: string; sections: number } | null>(null);
+  const ringed = highlight && keys.length !== highlight.sections && keys.includes(highlight.key) ? highlight.key : null;
+  React.useEffect(() => {
+    if (!ringed) return;
+    document.getElementById(cardId(ringed))?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const timer = setTimeout(() => setHighlight(null), 2400);
+    return () => clearTimeout(timer);
+  }, [ringed]);
+
+  const arrangeRequest: ArrangeRequest | null =
+    arrangeOpen && data
+      ? {
+          sections: rails.map((r) => ({
+            key: r.key,
+            title: r.title.trim() || r.key,
+            eyebrow: r.eyebrow,
+            switchedOff: r.switchedOff,
+            thumbs: r.products.slice(0, 2).map((p) => p.image),
+          })),
+          modifiedGmt: data.home.modifiedGmt,
+        }
+      : null;
+  const newRequest: NewSectionRequest | null =
+    newAfter && data
+      ? {
+          sections: rails.map((r) => ({ key: r.key, title: r.title.trim() || r.key, limit: r.limit })),
+          after: newAfter.after,
+          modifiedGmt: data.home.modifiedGmt,
+        }
+      : null;
+  const sourceRequest: SourceRequest | null = (() => {
+    if (!sourceRail || !data) return null;
+    const current = railSourceOf(sourceRail);
+    return {
+      key: sourceRail.key,
+      title: sourceRail.title.trim() || sourceRail.key,
+      current,
+      expectedModifiedGmt: data.home.modifiedGmt,
+      expectedAttrsHash: sourceRail.attrsHash,
+      button: { text: sourceRail.button.text },
+      before: current
+        ? {
+            source: current,
+            title: sourceRail.title,
+            buttonUrl: sourceRail.button.url,
+            pin: sourceRail.pin,
+            exclude: sourceRail.exclude,
+            fallback: sourceRail.fallback,
+          }
+        : null,
+    };
+  })();
 
   async function saveBlock(block: StaticBlock, fields: FieldValues): Promise<boolean> {
     if (!result.ok || !block.attrsHash) return false;
@@ -89,14 +164,7 @@ export function HomeScreen({ result }: { result: VetrinaResult<VetrinaHome> }) {
             <Refresh className="h-5 w-5" />
           </KLink>
         }
-        right={
-          <>
-            <KLink iconOnly onClick={sourceSheets.manage} aria-label={t.vetrinaCatalog.sources.open} aria-haspopup="dialog">
-              <OrderLines className="h-6 w-6" />
-            </KLink>
-            <ActivityLink />
-          </>
-        }
+        right={<ActivityLink />}
       />
 
       {!result.ok ? (
@@ -114,16 +182,45 @@ export function HomeScreen({ result }: { result: VetrinaResult<VetrinaHome> }) {
             {v.viewSite}
             <External className="h-4 w-4" />
           </a>
+          {/* The sections themselves: their places, a new one. */}
+          {((result.data.powers.move && rails.length > 1) || (result.data.powers.add && rails.length > 0)) && (
+            <div className="flex gap-2">
+              {result.data.powers.move && rails.length > 1 && (
+                <Button rounded tonal onClick={() => setArrangeOpen(true)} className="!h-11 flex-1 gap-1.5 !px-3">
+                  <SortArrows className="h-4 w-4 shrink-0" />
+                  <span className="truncate">{sx.arrange.open}</span>
+                </Button>
+              )}
+              {result.data.powers.add && rails.length > 0 && (
+                <Button rounded colors={FILL} onClick={() => setNewAfter({ after: null })} className="!h-11 flex-1 gap-1 !px-3">
+                  <Plus className="h-4 w-4 shrink-0" />
+                  <span className="truncate">{sx.add.open}</span>
+                </Button>
+              )}
+            </div>
+          )}
           {result.data.home.blocks.map((block) => (
-            <HomeRow
-              key={block.path}
-              block={block}
-              label={blockLabel(block)}
-              locks={result.data.locks}
-              collections={result.data.collections}
-              onEdit={() => setEditingPath(block.path)}
-            />
+            <React.Fragment key={block.path}>
+              <HomeRow
+                block={block}
+                label={blockLabel(block)}
+                locks={result.data.locks}
+                collections={result.data.collections}
+                onEdit={() => setEditingPath(block.path)}
+                onMenu={setMenuRail}
+                highlighted={block.kind === "rail" && block.rail.key === ringed}
+                canPin={canPin}
+              />
+              {/* Right after the last section: a new one goes there. */}
+              {result.data.powers.add && block.kind === "rail" && block.rail.key === keys[keys.length - 1] && (
+                <Button large rounded tonal onClick={() => setNewAfter({ after: block.rail.key })} className="w-full gap-1.5">
+                  <Plus className="h-5 w-5" />
+                  {sx.add.open}
+                </Button>
+              )}
+            </React.Fragment>
           ))}
+          {result.data.powers.pluginOutdated && <p className="px-1 text-[13px] leading-snug opacity-50">{sx.outdated}</p>}
         </div>
       )}
       <TabbarSpacer />
@@ -139,7 +236,30 @@ export function HomeScreen({ result }: { result: VetrinaResult<VetrinaHome> }) {
         onSubmit={(fields) => (editing ? saveBlock(editing, fields) : true)}
         onClose={() => setEditingPath(null)}
       />
-      {sourceSheets.sheets}
+
+      {data && (
+        <>
+          <SectionMenu
+            rail={menuRail}
+            keys={keys}
+            modifiedGmt={data.home.modifiedGmt}
+            powers={data.powers}
+            canPin={canPin}
+            siteLink={data.home.link}
+            onClose={() => setMenuRail(null)}
+            onChangeSource={setSourceRail}
+            onAddBelow={(key) => setNewAfter({ after: key })}
+          />
+          <ArrangeSheet request={arrangeRequest} onClose={() => setArrangeOpen(false)} />
+          <NewSectionSheet
+            request={newRequest}
+            lists={data.powers.lists}
+            onClose={() => setNewAfter(null)}
+            onAdded={(key, sections) => setHighlight({ key, sections })}
+          />
+          <SourceSheet request={sourceRequest} lists={data.powers.lists} onClose={() => setSourceRail(null)} />
+        </>
+      )}
     </Page>
   );
 }
@@ -197,14 +317,7 @@ export function HomeScreenSkeleton() {
             <Preloader className="!h-5 !w-5" />
           </KLink>
         }
-        right={
-          <>
-            <KLink iconOnly aria-label={t.vetrinaCatalog.sources.open}>
-              <OrderLines className="h-6 w-6" />
-            </KLink>
-            <ActivityLink />
-          </>
-        }
+        right={<ActivityLink />}
       />
       <div aria-hidden className="space-y-3 px-4 pb-1 pt-1 motion-safe:animate-pulse">
         <div className="space-y-2 px-1 py-0.5">
@@ -235,12 +348,20 @@ function HomeRow({
   locks,
   collections,
   onEdit,
+  onMenu,
+  highlighted,
+  canPin,
 }: {
   block: HomeBlock;
   label: string;
   locks: Record<string, number>;
   collections: Record<number, RailCollection>;
   onEdit: () => void;
+  /** A section's "⋯". */
+  onMenu: (rail: RailSummary) => void;
+  /** A section just added: ringed for a moment. */
+  highlighted: boolean;
+  canPin: boolean;
 }) {
   const { t } = useI18n();
   const config = blockConfig(block.name);
@@ -248,7 +369,16 @@ function HomeRow({
 
   if (block.kind === "rail" && config.show === "rail") {
     const category = railCategory(block.rail);
-    return <RailCard rail={block.rail} locks={locks} collection={category != null ? (collections[category] ?? null) : null} />;
+    return (
+      <RailCard
+        rail={block.rail}
+        locks={locks}
+        collection={category != null ? (collections[category] ?? null) : null}
+        onMenu={() => onMenu(block.rail)}
+        highlighted={highlighted}
+        canAdd={canPin && block.rail.editable && railSourceOf(block.rail) != null}
+      />
+    );
   }
 
   const summary = block.kind === "static" ? block.summary : null;
@@ -288,22 +418,31 @@ function RailCard({
   rail,
   locks,
   collection,
+  onMenu,
+  highlighted,
+  canAdd,
 }: {
   rail: RailSummary;
   locks: Record<string, number>;
   /** The rule filling the rail's category, when it is automatic. */
   collection: RailCollection | null;
+  onMenu: () => void;
+  highlighted: boolean;
+  /** Products can be added to it from the catalog. */
+  canAdd: boolean;
 }) {
   const { t } = useI18n();
   const v = t.vetrina.home;
   const r = t.vetrinaCatalog.home.rail;
+  const sx = t.vetrinaCatalog.sections;
   const auto = t.vetrina.auto;
   const pinned = rail.pin.length;
   const hidden = rail.exclude.length;
   const health = railHealth(rail, r);
+  const title = rail.title.trim() || rail.key;
   // A section showing exactly one category or brand: its screen in the catalog, one tap away.
   const catalogHref = railCatalogHref(rail);
-  const sectionHref = rail.editable ? `/vetrina/sezione/${railKeyToParam(rail.key)}` : null;
+  const sectionHrefOf = rail.editable ? sectionHref(rail.key) : null;
 
   const heading = (
     <div className="min-w-0 flex-1">
@@ -311,7 +450,7 @@ function RailCard({
         <div className="truncate text-[12px] font-semibold uppercase tracking-wide opacity-50">{rail.eyebrow}</div>
       )}
       {/* Two lines before it is cut: beside the "Catalogo" chip, one line would cut most titles short. */}
-      <div className="line-clamp-2 break-words text-[19px] font-bold leading-tight">{rail.title || rail.key}</div>
+      <div className="line-clamp-2 break-words text-[19px] font-bold leading-tight">{title}</div>
       {collection && (
         <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[13px]">
           <span
@@ -337,14 +476,14 @@ function RailCard({
       )}
     </div>
   );
-  const chevron = rail.editable && <ChevronRight className="h-5 w-5 shrink-0 opacity-30" />;
 
   const content = (
     <>
       {rail.products.length === 0 ? (
         <p className="px-4 py-3 text-[15px] opacity-50">{v.empty}</p>
       ) : (
-        <div className="no-scrollbar mt-3 flex gap-2 overflow-x-auto px-4 pb-1">
+        // Switched off, the site shows none of them: they are drawn faded.
+        <div className={`no-scrollbar mt-3 flex gap-2 overflow-x-auto px-4 pb-1 ${rail.switchedOff ? "opacity-40" : ""}`}>
           {rail.products.slice(0, 12).map((p, i) => (
             <div key={p.id} className="relative shrink-0">
               {/* eslint-disable-next-line @next/next/no-img-element -- the shop's own thumbnail sizes */}
@@ -367,60 +506,42 @@ function RailCard({
         </div>
       )}
 
-      {health && (
+      {health && !rail.switchedOff && (
         <div className="flex items-center gap-1.5 px-4 pt-2 text-[13px] font-medium text-amber-700 dark:text-amber-400">
           <Warning className="h-3.5 w-3.5 shrink-0" />
           <span className="min-w-0 truncate">{r.health(health)}</span>
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 pb-3.5 pt-2 text-[13px] opacity-60">
-        <span>{v.inHomepage(Math.min(rail.limit, rail.products.length))}</span>
+      {/* Room at its end for "Aggiungi prodotti", drawn over it (a link cannot hold another). */}
+      <div className={`flex min-h-12 flex-wrap items-center gap-x-3 gap-y-1 px-4 pb-3 pt-2 text-[13px] ${canAdd ? "pe-40" : ""}`}>
+        {rail.switchedOff ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-black/[0.06] px-2 py-0.5 text-[12px] font-semibold dark:bg-white/10">
+            <EyeOff className="h-3.5 w-3.5" />
+            {sx.switch.offBadge}
+          </span>
+        ) : (
+          <span className="opacity-60">{v.inHomepage(Math.min(rail.limit, rail.products.length))}</span>
+        )}
         {pinned > 0 && (
-          <span className="inline-flex items-center gap-1">
+          <span className="inline-flex items-center gap-1 opacity-60">
             <Pin className="h-3.5 w-3.5 text-amber-600" />
             {v.pinned(pinned)}
           </span>
         )}
-        {hidden > 0 && <span>{v.hidden(hidden)}</span>}
-        {!rail.editable && <span>{v.fixedList}</span>}
+        {hidden > 0 && <span className="opacity-60">{v.hidden(hidden)}</span>}
+        {!rail.editable && <span className="opacity-60">{v.fixedList}</span>}
       </div>
     </>
   );
 
-  const frame = "block overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-[#1c1c1e]";
-
-  if (!catalogHref) {
-    const body = (
-      <>
-        <div className="flex items-center gap-2 px-4 pt-3.5">
-          {heading}
-          {chevron}
-        </div>
-        {content}
-      </>
-    );
-    return sectionHref ? (
-      <Link href={sectionHref} className={`${frame} active:opacity-80`}>
-        {body}
-      </Link>
-    ) : (
-      <div className={frame}>{body}</div>
-    );
-  }
-
-  // With its catalog link the card is two links side by side (a link cannot
-  // hold another): the section editor's — the title, the products, the
-  // counts — and the catalog's. Pressing any part of the first dims the whole
-  // card, as before.
-  const toSection = (className: string, children: React.ReactNode, decorative = false) =>
-    sectionHref ? (
-      <Link
-        href={sectionHref}
-        className={`card-link ${className}`}
-        tabIndex={decorative ? -1 : undefined}
-        aria-hidden={decorative || undefined}
-      >
+  // The card is a few controls side by side (a link cannot hold another): the
+  // section editor's link — the title, the products, the counts — the
+  // catalog's chip, the "⋯", and "Aggiungi prodotti". Pressing any part of
+  // the first dims the whole card.
+  const toSection = (className: string, children: React.ReactNode) =>
+    sectionHrefOf ? (
+      <Link href={sectionHrefOf} className={`card-link ${className}`}>
         {children}
       </Link>
     ) : (
@@ -428,24 +549,52 @@ function RailCard({
     );
 
   return (
-    <div className={`${frame} has-[.card-link:active]:opacity-80`}>
+    <div
+      id={cardId(rail.key)}
+      className={`relative block scroll-mt-24 overflow-hidden rounded-2xl bg-white shadow-sm transition-shadow duration-500 has-[.card-link:active]:opacity-80 dark:bg-[#1c1c1e] ${
+        highlighted ? "ring-2 ring-[#d4a017]" : ""
+      }`}
+    >
       <div className="flex items-center">
         {toSection("flex min-w-0 flex-1 items-center pe-2 ps-4 pt-3.5", heading)}
-        <Link
-          href={catalogHref}
-          aria-label={r.catalogLabel(rail.terms[0]?.name ?? rail.title)}
-          // A 44px target that takes no more room than the pill it holds.
-          className={`-mb-2.5 mt-1 flex h-11 shrink-0 items-center transition-opacity active:opacity-50 ${chevron ? "" : "pe-3"}`}
+        {catalogHref && (
+          <Link
+            href={catalogHref}
+            aria-label={r.catalogLabel(rail.terms[0]?.name ?? rail.title)}
+            // A 44px target that takes no more room than the pill it holds.
+            className="-mb-2.5 mt-1 flex h-11 shrink-0 items-center transition-opacity active:opacity-50"
+          >
+            <span className="inline-flex h-7 items-center gap-1 rounded-full bg-black/[0.06] px-2.5 text-[13px] font-semibold dark:bg-white/10">
+              <Stack className="h-3.5 w-3.5 opacity-60" />
+              {r.catalog}
+            </span>
+          </Link>
+        )}
+        <button
+          type="button"
+          onClick={onMenu}
+          aria-label={sx.menu.open(title)}
+          aria-haspopup="dialog"
+          className="-mb-2.5 me-1 mt-1 grid h-11 w-11 shrink-0 place-items-center opacity-50 transition-opacity active:opacity-25"
         >
-          <span className="inline-flex h-7 items-center gap-1 rounded-full bg-black/[0.06] px-2.5 text-[13px] font-semibold dark:bg-white/10">
-            <Stack className="h-3.5 w-3.5 opacity-60" />
-            {r.catalog}
-          </span>
-        </Link>
-        {chevron && toSection("flex items-center self-stretch pe-4 ps-1.5 pt-3.5", chevron, true)}
+          <More className="h-5 w-5" />
+        </button>
       </div>
       {/* flow-root: the products' top margin stays inside the link, so the gap is tappable too. */}
       {toSection("flow-root", content)}
+      {canAdd && sectionHrefOf && (
+        <Link
+          href={`${sectionHrefOf}?aggiungi=1`}
+          aria-label={t.vetrinaCatalog.picker.openLabel(title)}
+          // A 44px target over the counts line's end.
+          className="absolute bottom-0.5 end-2 flex h-11 items-center px-1.5 transition-opacity active:opacity-50"
+        >
+          <span className="inline-flex h-8 items-center gap-1 rounded-full bg-black/[0.06] px-3 text-[13px] font-semibold dark:bg-white/10">
+            <Plus className="h-3.5 w-3.5" />
+            {sx.quick.add}
+          </span>
+        </Link>
+      )}
     </div>
   );
 }

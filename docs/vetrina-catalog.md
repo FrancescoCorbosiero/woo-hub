@@ -279,28 +279,43 @@ As built (phase 3, `src/components/vetrina/catalog/act/`):
   shows is edited in its own sheet, from the section editor or the
   category's screen.
 
-### 4.1 The shop's order ("Ordina")
+### 4.1 The shop's positions ("Posizioni nel negozio")
 
 The storefront's category and brand pages show their products in the shop's
 own order when WooCommerce › Settings › Products › "Default product sorting" is
-**Custom ordering + name**: `menu_order` ascending, then the name. The catalog's
-"Ordina: Negozio" is that order. The storefront adds two things the catalog
-does not: a homepage section's pins first on its category's page, and sold-out
-products last.
+**Custom ordering + name**: `menu_order` ascending, then the name. The app calls
+it the products' **positions in the shop**. The storefront adds two things the
+catalog does not: a homepage section's pins first on its category's page, and
+sold-out products last.
 
-- **From a selection** — the action bar's "Ordina" on a category's or brand's
-  list: the chosen products, in the list's order, at the top, at a position or
-  at the bottom.
-- **By dragging** — "Riordina i prodotti" (the ⋯ menu, or "Riordina a mano…"
-  under "Ordina: Negozio"): the first products in the shop's order (100 at a
-  time, more on request), dragged by the handle or sent to the top, then
-  saved as one "Ordina" over the rows down to the last that moved.
-- **From an order source** — "Usa l'ordine di «X»" (under "Ordina: Negozio",
-  or "Usa su tutto il catalogo" from the source): a ranking from elsewhere —
-  a reference shop's page read by an LLM, say — uploaded in the agreed format,
-  its products first in its order ([order-sources.md](order-sources.md)).
-- **From a script** — `POST /api/v1/catalog/order`, or an order source
-  uploaded and applied through `/api/v1/order-sources` ([api.md](api.md)).
+**Words.** The app never says "ordine" or "ordina" for this: in a shop "Ordini"
+are the customers' orders (WooCommerce's own menu), and the owner read "Ordina"
+as "place an order". It says *posizioni*, *Disponi*, *Posiziona*; a list's
+sorting on screen is *Elenca per*; another shop's ranking is a *classifica*.
+
+**Seeing them** — the button above a list ("⇅ Negozio") opens "Elenca i
+prodotti per": "Posizione nel negozio", Novità, Più venduti, prices, name. It
+is how the app lists the products; it changes nothing in the shop.
+
+**Changing them** — one labelled place on a category's or brand's screen, the
+**"Posizioni nel negozio"** panel above its list (and the same choices where a
+homepage section follows them, its editor's "Dopo i fissati, in automatico"
+card):
+
+- **"Disponi a mano"** (also "Disponi a mano…" in the list's sort sheet): the
+  first products in the shop's positions (100 at a time, more on request),
+  dragged by the handle or sent to the top, then saved as one move over the
+  rows down to the last that moved.
+- **"Disponi come una classifica"** → "Disponi come «X»": a ranking from
+  elsewhere — a reference shop's page read by an LLM, say — uploaded in the
+  agreed format, its products first in its order
+  ([order-sources.md](order-sources.md)). "Disponi tutto il catalogo così",
+  from the ranking's sheet, does the whole catalog.
+- **"Porta in cima alcuni prodotti"**: the list's selection, then the action
+  bar's **"Posiziona"**: the chosen products, in the list's order, at the top,
+  at a position or at the bottom.
+- **From a script** — `POST /api/v1/catalog/order`, or a ranking uploaded and
+  applied through `/api/v1/order-sources` ([api.md](api.md)).
 
 How it writes (`src/server/vetrina/operations/order-plan.ts`, `order.ts`):
 the new order is fixed by the move; the plan keeps the largest set of products
@@ -397,7 +412,7 @@ custom order (the order is saved, the pages ignore it).
 | 1 · Foundations | The Hub's Catalog tab removed (drawer on every page); the store index fresh whatever the rules, with photo, visibility, order and sales; every live price write reads the store first | **Done** |
 | 2 · Browse | The tab bar; Catalogo; a category's and a brand's screen; search; quick views; the product sheet extended; homepage ↔ catalog links | **Done** |
 | 3 · Act | Selection and bulk actions; the operations log and "Annulla"; new automatic category, filter → category; Saldo and Togli saldo (§3.4); hide and show a whole category or brand | **Done** |
-| 4.1 · Order | "Ordina" and "Riordina" on a category's or brand's screen; order sources and "Usa l'ordine di «X»" ([order-sources.md](order-sources.md)); the programmatic API (`/api/v1/*`, [api.md](api.md)) | **Done** |
+| 4.1 · Order | "Posizioni nel negozio" on a category's or brand's screen: "Disponi a mano", "Posiziona"; rankings ("Classifiche") and "Disponi come «X»" ([order-sources.md](order-sources.md)); the programmatic API (`/api/v1/*`, [api.md](api.md)) | **Done** |
 | 4 · Margins | A margin rule per store category or brand, previewed, applied by the engine: the "Ricarico" row and sheet (`src/components/vetrina/catalog/margins/`), the action (`src/server/vetrina/operations/margin*.ts`), store terms read for every price (`src/server/pricing/store-terms.ts`), the Hub's Margins tab editing the same rules under one lock (`src/server/config/rule-list.ts`) | **Done** |
 
 ## 8. Open questions
