@@ -34,6 +34,9 @@ npm-debug.log*
 
 # test
 /coverage
+/test-results/
+/playwright-report/
+/blob-report/
 
 # heap snapshots from /api/debug/heap — can be gigabytes
 *.heapsnapshot

@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "playwright test",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "guard:tanstack": "node scripts/guard-tanstack.mjs",
@@ -39,6 +40,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "3.3.5",
+    "@playwright/test": "1.56.1",
     "@tailwindcss/postcss": "4.3.1",
     "@types/node": "25.9.3",
     "@types/pg": "8.20.0",

@@ -1175,9 +1175,9 @@ function Editor({
         lists={powers.lists}
         onClose={() => setSourceOpen(false)}
         onChanged={(key) => {
-          // Shown elsewhere, it may have another key: its editor opens on it, fresh.
+          // A new source is a new key: its editor opens on it, read fresh by the navigation itself
+          // (a refresh right after it would cancel it).
           router.replace(sectionHref(key));
-          router.refresh();
         }}
       />
 

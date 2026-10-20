@@ -26,5 +26,14 @@ export default defineConfig([
       ],
     },
   },
-  globalIgnores([".next/**", "node_modules/**", "drizzle/**", "next-env.d.ts"]),
+  globalIgnores([
+    ".next/**",
+    "node_modules/**",
+    "drizzle/**",
+    "next-env.d.ts",
+    // Playwright's output: its report is a built app.
+    "playwright-report/**",
+    "test-results/**",
+    "blob-report/**",
+  ]),
 ]);
