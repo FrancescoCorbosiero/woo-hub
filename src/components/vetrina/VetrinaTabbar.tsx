@@ -51,10 +51,10 @@ function atStart(tab: VetrinaTab): boolean {
 function useLastCatalog(active: VetrinaTab | null): string {
   const pathname = usePathname();
   const search = useSearchParams().toString();
+  const here = search ? `${pathname}?${search}` : pathname;
   const [last, setLast] = React.useState(HREF.catalog);
-  React.useEffect(() => {
-    if (active === "catalog") setLast(search ? `${pathname}?${search}` : pathname);
-  }, [active, pathname, search]);
+  // Kept while the catalog is the tab on screen: during the render, so the tab bar never draws a stale link.
+  if (active === "catalog" && last !== here) setLast(here);
   return last;
 }
 

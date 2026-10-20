@@ -350,12 +350,10 @@ function SourceForm({
   // The name and the origin the ranking states fill the fields the owner left empty, once.
   const named = React.useRef(name.trim() !== "");
 
+  // A check answers one text: everything below reads it only while it answers the text there now.
   React.useEffect(() => {
     const body = text.trim();
-    if (!body) {
-      setCheck(null);
-      return;
-    }
+    if (!body) return;
     let alive = true;
     const timer = window.setTimeout(() => {
       void call(() => checkOrderSource({ text: body }), network).then((res) => {

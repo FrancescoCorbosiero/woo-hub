@@ -3,7 +3,6 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { PlanItem } from "@core/core-spine";
 import {
   advanceStoreSync,
   cancelStoreSync,
@@ -500,22 +499,18 @@ export function SyncWorkspace({
     dryValid && dry != null && (dry.outcome.variations > 0 || (dry.outcome.cleanup?.deletions ?? 0) > 0 || (dry.outcome.cleanup?.taglieRealigned ?? 0) > 0 || (dry.outcome.cleanup?.stockSynthesized ?? 0) > 0 || (dry.outcome.cleanup?.parentsRealigned ?? 0) > 0 || (dry.outcome.sizes?.planned ?? 0) > 0);
 
   // Guided step 3: once the preview is in and idle, fire the dry run exactly once.
+  // The guide stops itself while rendering: something broke (surface it, stop
+  // driving), the dry run is done (the Apply button is the only step left), or
+  // there is nothing to run.
+  const guideIdle = !(pulling || pending || applying != null);
+  const guideBroke = Boolean(error || applyError || pullError);
+  if (guided && guideIdle && (guideBroke || (plans.length > 0 && (dryValid || !canRun)))) setGuided(false);
   React.useEffect(() => {
-    if (!guided) return;
-    if (pulling || pending || applying != null) return;
-    if (error || applyError || pullError) {
-      setGuided(false); // something broke — surface it, stop driving
-      return;
-    }
-    if (plans.length === 0) return; // still waiting for the preview
-    if (dryValid) {
-      setGuided(false); // dry run done — the Apply button is the only step left
-      return;
-    }
-    if (canRun) runDry();
-    else setGuided(false);
+    if (!guided || !guideIdle || guideBroke) return;
+    if (plans.length === 0 || dryValid || !canRun) return; // waiting for the preview, or stopping
+    runDry();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [guided, pulling, pending, applying, plans, dryValid, error, applyError, pullError]);
+  }, [guided, guideIdle, guideBroke, plans, dryValid]);
 
   async function refreshHistory() {
     try {

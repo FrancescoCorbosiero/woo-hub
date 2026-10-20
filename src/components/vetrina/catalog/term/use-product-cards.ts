@@ -43,14 +43,17 @@ export function useProductCards(ids: readonly number[]): {
     [absorb],
   );
 
-  // A string, so the effect runs when the set of missing ids changes, not on every render.
-  const missing = ids.filter((id) => !requested.current.has(id)).join(",");
+  // A string, so the effect runs when the rows change, not on every render (a new array each time).
+  const shown = ids.join(",");
   React.useEffect(() => {
-    if (!missing) return;
-    const wanted = missing.split(",").map(Number);
-    for (const id of wanted) requested.current.add(id);
-    for (let i = 0; i < wanted.length; i += CATALOG_PAGE_MAX) fetchCards(wanted.slice(i, i + CATALOG_PAGE_MAX));
-  }, [missing, fetchCards]);
+    if (!shown) return;
+    const missing = shown
+      .split(",")
+      .map(Number)
+      .filter((id) => !requested.current.has(id));
+    for (const id of missing) requested.current.add(id);
+    for (let i = 0; i < missing.length; i += CATALOG_PAGE_MAX) fetchCards(missing.slice(i, i + CATALOG_PAGE_MAX));
+  }, [shown, fetchCards]);
 
   const refresh = React.useCallback((id: number) => fetchCards([id]), [fetchCards]);
   const refreshMany = React.useCallback(

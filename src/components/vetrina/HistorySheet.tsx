@@ -7,6 +7,7 @@ import { useI18n } from "@/i18n/provider";
 import { sameState } from "@/lib/vetrina/order";
 import type { RailHistoryState, RailState } from "@/lib/vetrina/types";
 import { loadVetrinaHistory } from "@/server/actions/vetrina";
+import { useChanged } from "../use-changed";
 import { formatWhen } from "./format";
 import { useSheetMount } from "./sheet-mount";
 
@@ -33,11 +34,15 @@ export function HistorySheet({
   const [states, setStates] = React.useState<RailHistoryState[] | null>(null);
   const [error, setError] = React.useState<string | null>(null);
 
+  // Every opening starts from the spinner: cleared while rendering, read in the effect.
+  const reopened = useChanged(open ? railKey : null);
+  if (reopened && open) {
+    setStates(null);
+    setError(null);
+  }
   React.useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    setStates(null);
-    setError(null);
     loadVetrinaHistory({ key: railKey }).then((res) => {
       if (cancelled) return;
       if (res.ok) setStates(res.data);

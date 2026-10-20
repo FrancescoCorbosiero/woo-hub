@@ -24,10 +24,12 @@ export function I18nProvider({
   const router = useRouter();
   const [locale, setLocaleState] = React.useState<Locale>(initialLocale);
 
-  // Reconcile if the server re-renders with a different cookie value.
-  React.useEffect(() => {
+  // Reconcile if the server re-renders with a different cookie value: during the render, not after it.
+  const [served, setServed] = React.useState<Locale>(initialLocale);
+  if (served !== initialLocale) {
+    setServed(initialLocale);
     setLocaleState(initialLocale);
-  }, [initialLocale]);
+  }
 
   const setLocale = React.useCallback(
     (next: Locale) => {

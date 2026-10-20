@@ -3,7 +3,6 @@
 import * as React from "react";
 import { listCatalog, type CatalogListResult } from "@/server/actions/catalog";
 import { filterCatalog } from "@/lib/catalog";
-import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n/provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

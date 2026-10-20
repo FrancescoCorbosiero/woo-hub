@@ -58,9 +58,13 @@ export function useSectionWrites() {
     [t, router],
   );
 
-  /** A toast with "Annulla": the way back runs once, then the screens read the page again. */
+  /**
+   * A toast with "Annulla": the way back runs once, then the screens read the
+   * page again — unless the way back went to another address ("navigated"),
+   * which reads it: a refresh right after a navigation would cancel it.
+   */
   const offerUndo = React.useCallback(
-    (message: string, undo: () => Promise<boolean>, undone: string) => {
+    (message: string, undo: () => Promise<boolean | "navigated">, undone: string) => {
       toast.dismiss();
       toast.success(message, {
         duration: 10_000,
@@ -69,7 +73,7 @@ export function useSectionWrites() {
           onClick: () => {
             void undo().then((ok) => {
               if (ok) toast.success(undone);
-              router.refresh();
+              if (ok !== "navigated") router.refresh();
             });
           },
         },
@@ -123,8 +127,9 @@ export function useSectionWrites() {
               network,
             );
             if (!said(back)) return false;
-            input.onKey?.(back.data.key);
-            return true;
+            if (!input.onKey) return true;
+            input.onKey(back.data.key);
+            return "navigated";
           },
           s.change.undone,
         );

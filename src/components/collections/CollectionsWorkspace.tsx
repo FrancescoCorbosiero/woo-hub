@@ -15,6 +15,7 @@ import {
   saveCollectionDraft,
 } from "@/server/actions/collections";
 import { Button } from "@/components/ui/button";
+import { useChanged } from "@/components/use-changed";
 import { useShopTime } from "@/components/use-shop-time";
 import { editorFrom, toDraft, useDraftCheck, type EditorState } from "./editor-model";
 import { CategoryField, ConditionsField, MatchField, RuleProblems, type Look } from "./RuleFields";
@@ -82,27 +83,30 @@ export function CollectionsWorkspace({ initial }: { initial: CollectionsState })
   // category may exist now) and — when this page asked for the run — say
   // what it did. The quiet catch-up on opening the page says nothing.
   const running = active(state);
-  const wasRunning = React.useRef(running);
-  const announce = React.useRef(false);
+  // Set by an action that starts a run: the run's end is said.
+  const [announce, setAnnounce] = React.useState(false);
+  const runningChanged = useChanged(running);
+  if (runningChanged && !running && announce) {
+    setAnnounce(false);
+    if (state.runner.lastError) setNotice({ tone: "error", text: `${c.status.failed} ${state.runner.lastError}` });
+    else if (state.runner.lastMoved != null) setNotice({ tone: "ok", text: c.toasts.done(state.runner.lastMoved) });
+  }
+  const followed = React.useRef(running);
   React.useEffect(() => {
     if (running) {
-      wasRunning.current = true;
+      followed.current = true;
+      // Armed again by every answer (`state`): the next look comes 1.5 s after the last one.
       const timer = setTimeout(async () => {
         const res = await pollCollections();
         if (res.ok) absorb(res.data);
       }, 1500);
       return () => clearTimeout(timer);
     }
-    if (wasRunning.current) {
-      wasRunning.current = false;
-      if (announce.current) {
-        announce.current = false;
-        if (state.runner.lastError) setNotice({ tone: "error", text: `${c.status.failed} ${state.runner.lastError}` });
-        else if (state.runner.lastMoved != null) setNotice({ tone: "ok", text: c.toasts.done(state.runner.lastMoved) });
-      }
+    if (followed.current) {
+      followed.current = false;
       void getCollectionsState().then((res) => res.ok && setState(res.data));
     }
-  }, [running, state, absorb, c]);
+  }, [running, state, absorb]);
 
   /**
    * Run an action and say how it went. One that starts a run (`startsRun`)
@@ -112,11 +116,11 @@ export function CollectionsWorkspace({ initial }: { initial: CollectionsState })
   async function act(run: () => Promise<{ ok: boolean; error?: string }>, success: string, startsRun: boolean) {
     setBusy(true);
     setNotice(null);
-    announce.current = startsRun;
+    setAnnounce(startsRun);
     try {
       const res = await run();
       if (!res.ok) {
-        announce.current = false;
+        setAnnounce(false);
         setNotice({ tone: "error", text: `${c.toasts.failed}: ${res.error}` });
         return false;
       }
@@ -125,7 +129,7 @@ export function CollectionsWorkspace({ initial }: { initial: CollectionsState })
       if (fresh.ok) {
         absorb(fresh.data);
         if (startsRun && !active(fresh.data)) {
-          announce.current = false;
+          setAnnounce(false);
           const r = fresh.data.runner;
           setNotice(
             r.lastError

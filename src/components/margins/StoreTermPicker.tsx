@@ -102,7 +102,10 @@ export function StoreTermPicker({
     searchRef.current?.focus({ preventScroll: true });
   }, [state.status, taxonomy]);
 
-  const terms = state.status === "ready" ? (taxonomy === "category" ? state.categories : state.brands) : [];
+  const terms = React.useMemo(
+    () => (state.status === "ready" ? (taxonomy === "category" ? state.categories : state.brands) : []),
+    [state, taxonomy],
+  );
   // The demo shop's ids are not the real shop's: a rule saved on one would
   // land on whatever real term has the same id once the demo is off (the
   // Vetrina refuses the same, margin.ts). Shown to browse, never picked.

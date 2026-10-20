@@ -3,22 +3,27 @@
 import * as React from "react";
 import { useI18n } from "@/i18n/provider";
 
+/** The `.dark` class on <html>: set before hydration by the layout's script, flipped by the toggle. */
+function subscribeTheme(onChange: () => void): () => void {
+  const observer = new MutationObserver(onChange);
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+  return () => observer.disconnect();
+}
+const isDark = () => document.documentElement.classList.contains("dark");
+// The server cannot know the theme: it draws the light one's icon.
+const isDarkOnServer = () => false;
+
 /** Sun/moon toggle that flips the `.dark` class on <html> and persists it. */
 export function ThemeToggle() {
   const { t } = useI18n();
-  const [dark, setDark] = React.useState(false);
-
-  React.useEffect(() => {
-    setDark(document.documentElement.classList.contains("dark"));
-  }, []);
+  const dark = React.useSyncExternalStore(subscribeTheme, isDark, isDarkOnServer);
 
   function toggle() {
-    const next = !document.documentElement.classList.contains("dark");
+    const next = !isDark();
     document.documentElement.classList.toggle("dark", next);
     try {
       localStorage.setItem("kx-theme", next ? "dark" : "light");
     } catch {}
-    setDark(next);
   }
 
   return (

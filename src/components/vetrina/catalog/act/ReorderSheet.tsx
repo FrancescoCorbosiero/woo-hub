@@ -82,23 +82,23 @@ function ReorderContent({
   const [confirming, setConfirming] = React.useState(false);
 
   const read = React.useCallback(
-    async (offset: number) => {
-      const res = await call(
+    (offset: number) =>
+      call(
         () => loadCatalogPage({ taxonomy: term.taxonomy, termId: term.id, sort: "shop", offset, limit: CATALOG_PAGE_MAX }),
         network,
-      );
-      if (!res.ok) {
-        setFailed(res.error);
-        return;
-      }
-      setFailed(null);
-      setLoaded((prev) => {
-        const products = offset === 0 || !prev ? res.data.products : [...prev.products, ...res.data.products];
-        return { products, total: res.data.total };
-      });
-      // Rows read later go below what the owner has dragged so far.
-      setIds((prev) => (offset === 0 ? res.data.products.map((p) => p.id) : [...prev, ...res.data.products.map((p) => p.id)]));
-    },
+      ).then((res) => {
+        if (!res.ok) {
+          setFailed(res.error);
+          return;
+        }
+        setFailed(null);
+        setLoaded((prev) => {
+          const products = offset === 0 || !prev ? res.data.products : [...prev.products, ...res.data.products];
+          return { products, total: res.data.total };
+        });
+        // Rows read later go below what the owner has dragged so far.
+        setIds((prev) => (offset === 0 ? res.data.products.map((p) => p.id) : [...prev, ...res.data.products.map((p) => p.id)]));
+      }),
     [term.taxonomy, term.id, network],
   );
 

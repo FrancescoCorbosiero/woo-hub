@@ -21,6 +21,7 @@ import {
 } from "@/components/collections/editor-model";
 import { ConditionsField, MatchField, RuleProblems, type Look } from "@/components/collections/RuleFields";
 import { RulePreview, type PreviewLook } from "@/components/collections/RulePreview";
+import { useChanged } from "../use-changed";
 import { NETWORK_CODE, plainError } from "./catalog/rules/errors";
 import { useSheetMount } from "./sheet-mount";
 
@@ -85,14 +86,18 @@ export function CollectionSheet({
   const [busy, setBusy] = React.useState(false);
   const open = termId != null;
 
-  // Every opening starts from the rule as it is now. The very first one also
-  // starts the first read of the store: the preview waits for it.
-  React.useEffect(() => {
-    if (termId == null) return;
-    let cancelled = false;
+  // Every opening starts from the rule as it is now (cleared while rendering,
+  // read in the effect). The very first one also starts the first read of the
+  // store: the preview waits for it.
+  const reopened = useChanged(termId);
+  if (reopened && termId != null) {
     setData(undefined);
     setState(null);
     setError(null);
+  }
+  React.useEffect(() => {
+    if (termId == null) return;
+    let cancelled = false;
     void loadCollectionForTerm({ termId })
       .catch(offline)
       .then(async (res) => {
