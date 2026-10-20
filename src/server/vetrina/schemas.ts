@@ -7,6 +7,7 @@ import type {
   FieldValues,
   HiddenItem,
   Homepage,
+  LayoutWriteResult,
   ProductCard,
   RailDetail,
   RailHistoryState,
@@ -23,8 +24,19 @@ import type {
 
 const Fallback = z.enum(RAIL_FALLBACKS).catch("menu_order");
 const Ids = z.array(z.coerce.number().int()).catch([]);
-// PHP encodes an empty associative array as [] — accept both shapes.
-const Atts = z.union([z.record(z.string(), z.unknown()), z.array(z.unknown())]).catch({});
+// PHP encodes an empty associative array as [] — accept both shapes. The
+// shortcode's attributes by name, as strings (positional ones dropped).
+const Atts = z
+  .union([z.record(z.string(), z.unknown()), z.array(z.unknown())])
+  .transform((raw): Record<string, string> => {
+    const out: Record<string, string> = {};
+    if (Array.isArray(raw)) return out;
+    for (const [key, value] of Object.entries(raw)) {
+      if (!/^\d+$/.test(key) && (typeof value === "string" || typeof value === "number")) out[key] = String(value);
+    }
+    return out;
+  })
+  .catch({});
 // A block's editable fields: strings by name. Absent (a plugin older than
 // 5.10.0) or unreadable reads as "nothing editable", never as an error.
 const Fields = z
@@ -102,6 +114,7 @@ const RailBaseSchema = z.looseObject({
   fallback_default: Fallback,
   editable: z.boolean().catch(true),
   fields: Fields,
+  switched_off: z.boolean().catch(false),
   products: z.array(CardSchema).optional(),
 });
 
@@ -123,6 +136,8 @@ function railBase(raw: z.infer<typeof RailBaseSchema>): Omit<RailSummary, "produ
     fallbackDefault: raw.fallback_default,
     editable: raw.editable,
     fields: raw.fields,
+    atts: raw.atts,
+    switchedOff: raw.switched_off,
   };
 }
 
@@ -132,6 +147,7 @@ const HomepageSchema = z.looseObject({
   link: z.string().catch(""),
   edit_link: z.string().catch(""),
   modified_gmt: z.string(),
+  features: z.array(z.string()).catch([]),
   blocks: z.array(
     z.union([
       z.looseObject({ path: z.string(), name: z.string(), kind: z.literal("rail"), rail: RailBaseSchema }),
@@ -161,6 +177,7 @@ export function parseHomepage(data: unknown): Homepage {
     link: raw.link,
     editLink: raw.edit_link,
     modifiedGmt: raw.modified_gmt,
+    features: raw.features,
     blocks: raw.blocks.map((b) =>
       b.kind === "rail"
         ? {
@@ -229,6 +246,8 @@ export function parseWriteResult(data: unknown): RailWriteResult {
       attrs_hash: z.string(),
       rendered: Ids.optional(),
       fields: Fields.optional(),
+      key: z.string().nullish(),
+      button_url: z.string().nullish(),
     })
     .parse(data);
   return {
@@ -240,6 +259,27 @@ export function parseWriteResult(data: unknown): RailWriteResult {
     attrsHash: raw.attrs_hash,
     rendered: raw.rendered ?? [],
     fields: raw.fields ?? {},
+    key: raw.key ?? null,
+    buttonUrl: raw.button_url ?? null,
+  };
+}
+
+export function parseLayoutResult(data: unknown): LayoutWriteResult {
+  const raw = z
+    .looseObject({
+      dry_run: z.boolean(),
+      changed: z.boolean(),
+      modified_gmt: z.string(),
+      key: z.string().nullish(),
+      path: z.string().nullish(),
+    })
+    .parse(data);
+  return {
+    dryRun: raw.dry_run,
+    changed: raw.changed,
+    modifiedGmt: raw.modified_gmt,
+    key: raw.key ?? null,
+    path: raw.path ?? null,
   };
 }
 

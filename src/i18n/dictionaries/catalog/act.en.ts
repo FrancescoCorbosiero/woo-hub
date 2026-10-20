@@ -39,7 +39,7 @@ export const actEn: typeof actIt = {
       tag: "Tag",
       category: "Category",
       pin: "Homepage",
-      order: "Order",
+      order: "Place",
     },
   },
 
@@ -170,8 +170,8 @@ export const actEn: typeof actIt = {
   },
 
   order: {
-    title: (term: string) => `Order in “${term}”`,
-    intro: "Choose where they go on the shop's page, in the list's order.",
+    title: (term: string) => `Place in “${term}”`,
+    intro: "Choose where they go on the shop's page: one after the other, as in the list.",
     modes: { top: "Top", position: "Position", bottom: "Bottom" },
     positionLabel: "Position",
     positionHint: (total: number) => `From 1 to ${n(total)}`,
@@ -180,27 +180,27 @@ export const actEn: typeof actIt = {
   },
 
   reorder: {
-    title: "Reorder",
+    title: "Arrange by hand",
     subtitle: (term: string, shown: number, total: number) =>
       shown < total ? `${term} · the first ${n(shown)} of ${n(total)}` : term,
-    intro: "Drag by the handle: this is the order of the category's page on the shop. The other products follow, as they are.",
+    intro: "Drag by the handle: this is how the category's page in the shop shows the products. The others follow, as they are.",
     loading: "Loading the products…",
     failed: "Cannot read the products.",
-    empty: "No product to order.",
+    empty: "No product to move.",
     dragHandle: "Drag to move",
     toTop: "Move to the top",
     soldOut: "Sold out",
     hidden: "Hidden",
     reset: "Reset",
     moved: (count: number) => (count === 1 ? "1 product moved" : `${n(count)} products moved`),
-    save: "Save the order",
-    nothing: "Drag a product to change the order.",
-    back: "Back to the order",
+    save: "Save the positions",
+    nothing: "Drag a product to change its place.",
+    back: "Back to the list",
   },
 
   pin: {
     title: "Put on the homepage",
-    intro: "Pick the section: the products go to the top, pinned, in the list's order.",
+    intro: "Pick the section: the products go to the top, pinned, one after the other as in the list.",
     fill: {
       category: (name: string) => `Category “${name}”: products not in it are added.`,
       automatic: (name: string) => `Automatic “${name}”: only the products its rule picks.`,
@@ -251,8 +251,8 @@ export const actEn: typeof actIt = {
       uncategorize: "Removing from the category",
       pin: "Pinning on the homepage",
       margin: "Changing the margin",
-      order: "Reordering",
-      sourceOrder: "Applying the order",
+      order: "Moving the products",
+      sourceOrder: "Arranging like the ranking",
     },
     undoing: "Undoing…",
     progress: (what: string, done: number, total: number) => `${what} · ${n(done)}/${n(total)}`,

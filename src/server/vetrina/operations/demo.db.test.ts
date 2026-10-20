@@ -113,7 +113,7 @@ describe.skipIf(!enabled)("the catalog's actions on the demo shop", () => {
     expect((await readTermOrder("category", outlet)).members.map((m) => m.id)).toEqual(before);
   });
 
-  it("a drag in «Riordina» moves only the product dragged, and says where", async () => {
+  it("a drag in «Disponi a mano» moves only the product dragged, and says where", async () => {
     const { DEMO_TERM_IDS, previewOperation } = await load();
     const { readTermOrder } = await import("./order");
     const outlet = DEMO_TERM_IDS["saldi-sneakers-outlet"];
@@ -126,11 +126,11 @@ describe.skipIf(!enabled)("the catalog's actions on the demo shop", () => {
     expect(preview.changes).toBe(1);
     expect(preview.sample).toMatchObject([{ id: dragged, before: "#5", after: "#3" }]);
     const op = await run(input);
-    expect(op.label).toBe("Nuovo ordine · Saldi outlet: 1 prodotto spostato");
+    expect(op.label).toBe("Disposti a mano · Saldi outlet: 1 prodotto spostato");
     expect((await readTermOrder("category", outlet)).members.map((m) => m.id).slice(0, 5)).toEqual(window);
   });
 
-  it("«Usa l'ordine di» a source: its products first in a category, by SKU and by name — then on the whole catalog — and undone", async () => {
+  it("«Disponi come» a ranking: its products first in a category, by SKU and by name — then on the whole catalog — and undone", async () => {
     const { DEMO_TERM_IDS, demoShop, previewOperation } = await load();
     const { readTermOrder, readScopeOrder } = await import("./order");
     const sources = await import("@/server/vetrina/order-sources/service");
@@ -148,27 +148,27 @@ describe.skipIf(!enabled)("the catalog's actions on the demo shop", () => {
     expect(check).toMatchObject({ name: "Test LLM", items: 4, matched: 3, unmatchedCount: 1 });
     const saved = await sources.saveSource({ name: check.name!, text });
     expect(saved).toMatchObject({ name: "Test LLM", items: 4, matched: 3 });
-    await expect(sources.saveSource({ name: "test llm", text })).rejects.toThrow("Esiste già una fonte");
+    await expect(sources.saveSource({ name: "test llm", text })).rejects.toThrow("Esiste già una classifica");
 
     const input = { kind: "sourceOrder" as const, sourceId: saved.id, term: { taxonomy: "category" as const, id: outlet } };
     const preview = await previewOperation(input);
     expect(preview.sample.map((s) => s.id)).toEqual([a, b, c].filter((id, i) => before.indexOf(id) !== i));
     const op = await run(input);
     expect(op.status).toBe("done");
-    expect(op.label).toMatch(/^Ordine di «Test LLM» · Saldi outlet: \d+ prodott/);
+    expect(op.label).toMatch(/^Come «Test LLM» · Saldi outlet: \d+ prodott/);
     const after = (await readTermOrder("category", outlet)).members.map((m) => m.id);
     expect(after.slice(0, 3)).toEqual([a, b, c]);
     expect(after.slice(3)).toEqual(before.filter((id) => id !== a && id !== b && id !== c));
 
     // Again: nothing left to move.
-    expect((await previewOperation(input)).warnings[0]).toBe("È già nell'ordine di «Test LLM».");
+    expect((await previewOperation(input)).warnings[0]).toBe("È già disposto come «Test LLM».");
 
     // The whole catalog: these three already lead it (their numbers went below every other) — so another source, c then a.
-    expect((await previewOperation({ kind: "sourceOrder", sourceId: saved.id, term: null })).warnings[0]).toBe("È già nell'ordine di «Test LLM».");
+    expect((await previewOperation({ kind: "sourceOrder", sourceId: saved.id, term: null })).warnings[0]).toBe("È già disposto come «Test LLM».");
     const other = await sources.putSource({ text: JSON.stringify({ name: "Test LLM 2", items: [byId.get(c)!.sku, byId.get(a)!.sku] }) });
     expect(other).toMatchObject({ created: true, source: { name: "Test LLM 2", matched: 2 } });
     const whole = await run({ kind: "sourceOrder", sourceId: other.source.id, term: null });
-    expect(whole.label).toBe("Ordine di «Test LLM 2» · tutto il catalogo: 1 prodotto spostato");
+    expect(whole.label).toBe("Come «Test LLM 2» · tutto il catalogo: 1 prodotto spostato");
     expect((await readScopeOrder(null)).members.slice(0, 3).map((m) => m.id)).toEqual([c, a, b]);
     // The API's upload replaces a source of the same name.
     expect((await sources.putSource({ name: "test llm 2", text: "IE3437" })).created).toBe(false);
@@ -185,7 +185,7 @@ describe.skipIf(!enabled)("the catalog's actions on the demo shop", () => {
     const [first] = (await readTermOrder("category", outlet)).members;
     const preview = await previewOperation({ kind: "order", target: { kind: "ids", ids: [first.id] }, term: { taxonomy: "category", id: outlet }, position: 1 });
     expect(preview.changes).toBe(0);
-    expect(preview.warnings[0]).toBe("Sono già in quest'ordine.");
+    expect(preview.warnings[0]).toBe("Sono già in queste posizioni.");
   });
 
   it("ends a demo sale and puts it back", async () => {

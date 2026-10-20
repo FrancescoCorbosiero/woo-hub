@@ -9,7 +9,18 @@ export const hubConfig: HubConfig = HubConfigSchema.parse(rawConfig);
 
 const HIDDEN: BlockConfig = {
   show: "hidden",
-  edit: { pins: false, exclude: false, fallback: false, limit: false, fields: [] },
+  edit: {
+    pins: false,
+    exclude: false,
+    fallback: false,
+    limit: false,
+    fields: [],
+    source: false,
+    add: false,
+    move: false,
+    remove: false,
+    switchOff: false,
+  },
 };
 
 /** How the Vetrina treats a block type: its own entry, else "*", else hidden. */
@@ -17,5 +28,5 @@ export function blockConfig(blockName: string, config: HubConfig = hubConfig): B
   return config.vetrina.blocks[blockName] ?? config.vetrina.blocks["*"] ?? HIDDEN;
 }
 
-export type { BlockConfig, HubConfig, RailFallback } from "./schema";
-export { RAIL_FALLBACKS } from "./schema";
+export type { BlockConfig, HubConfig, RailFallback, RailList } from "./schema";
+export { RAIL_FALLBACKS, RAIL_LISTS } from "./schema";

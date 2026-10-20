@@ -40,6 +40,7 @@ export const ProductRow = React.memo(function ProductRow({
   selected = false,
   onToggle,
   onLongPress,
+  note,
 }: {
   product: CatalogProduct;
   /** The store's card, once it has arrived: the thumbnail and the live price. */
@@ -53,6 +54,8 @@ export const ProductRow = React.memo(function ProductRow({
   onToggle?: (product: CatalogProduct) => void;
   /** A long press: the list starts selecting, with this product picked. None: no long press. */
   onLongPress?: (product: CatalogProduct) => void;
+  /** A line under the row's states, for where the list is shown (a picker: "In sezione · #3"). */
+  note?: React.ReactNode;
 }) {
   const { t, locale } = useI18n();
   const live = card && !card.missing ? card : null;
@@ -60,7 +63,12 @@ export const ProductRow = React.memo(function ProductRow({
   const press = useLongPress(onLongPress ? () => onLongPress(product) : undefined);
   const thumb = <Thumb image={card?.image ?? null} hasImage={product.hasImage} noPhotoLabel={t.vetrinaCatalog.term.row.noPhoto} />;
   const title = <span className="line-clamp-2 leading-snug">{product.name}</span>;
-  const subtitle = <Meta product={product} price={price} locks={locks} />;
+  const subtitle = (
+    <>
+      <Meta product={product} price={price} locks={locks} />
+      {note && <span className="mt-1 block text-[13px] leading-snug">{note}</span>}
+    </>
+  );
 
   if (selecting) {
     // The whole row is the checkbox's label: a tap anywhere picks it.

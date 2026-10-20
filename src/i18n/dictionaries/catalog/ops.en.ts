@@ -37,9 +37,9 @@ export const opsEn: typeof opsIt = {
     margin: (percent: number | null, what: string) => (percent == null ? `Own margin removed · ${what}` : `Margin ${percent}% · ${what}`),
     order: (count: number, term: string, position: number | null) =>
       `${products(count)} ${position === 1 ? "to the top" : position == null ? "to the bottom" : `to position ${n(position)}`} · ${term}`,
-    reorder: (count: number, term: string) => `New order · ${term}: ${count === 1 ? "1 product moved" : `${n(count)} products moved`}`,
+    reorder: (count: number, term: string) => `Arranged by hand · ${term}: ${count === 1 ? "1 product moved" : `${n(count)} products moved`}`,
     sourceOrder: (count: number, source: string, what: string) =>
-      `Order of “${source}” · ${what}: ${count === 1 ? "1 product moved" : `${n(count)} products moved`}`,
+      `Like “${source}” · ${what}: ${count === 1 ? "1 product moved" : `${n(count)} products moved`}`,
   },
 
   untouched: {
@@ -66,7 +66,7 @@ export const opsEn: typeof opsIt = {
     notInTerm: (_count: number, term: string) => `not in “${term}”`,
     inPlace: (count: number) => (count === 1 ? "already in its place" : "already in their place"),
     notRanked: (count: number, source: string) =>
-      `not in “${source}”: ${count === 1 ? "stays after, in its place" : "stay after, in their order"}`,
+      `not in “${source}”: ${count === 1 ? "stays after, in its place" : "stay after, as they are"}`,
   },
 
   state: {
@@ -92,15 +92,15 @@ export const opsEn: typeof opsIt = {
 
   warning: {
     orderElsewhere: (count: number, names: string[], total: number) =>
-      `The shop's order is one number per product: ${count === 1 ? "1 is" : `${n(count)} are`} also in ${nameList(names, total)}, and ${count === 1 ? "moves" : "move"} there by the same rule.`,
+      `In the shop each product has one position: ${count === 1 ? "1 is" : `${n(count)} are`} also in ${nameList(names, total)}, and ${count === 1 ? "moves" : "move"} there the same way.`,
     orderRoom: (count: number) =>
-      `To make room, ${count === 1 ? "1 other product gets" : `${n(count)} other products get`} a new order number: ${count === 1 ? "its" : "their"} place stays the same.`,
+      `To make room, ${count === 1 ? "1 other product gets" : `${n(count)} other products get`} a new position number: ${count === 1 ? "its" : "their"} place stays the same.`,
     orderPins: (sections: string[]) =>
-      `On the category's page the products pinned in ${nameList(sections.map((s) => `“${s}”`))} come first, then this order.`,
+      `On the category's page the products pinned in ${nameList(sections.map((s) => `“${s}”`))} come first, then these positions.`,
     sourceUnmatched: (count: number, total: number) =>
-      `${count === 1 ? "1 product" : `${n(count)} products`} of the source out of ${n(total)} ${count === 1 ? "matches" : "match"} no product of the shop: ${count === 1 ? "it is" : "they are"} left out.`,
+      `${count === 1 ? "1 product" : `${n(count)} products`} of the ranking out of ${n(total)} ${count === 1 ? "matches" : "match"} no product of the shop: ${count === 1 ? "it is" : "they are"} left out.`,
     orderNotUsed: (sort: string) =>
-      `The shop sorts its pages by “${sort}”, not by the custom order: the order is saved, but the pages follow it only once WooCommerce › Settings › Products sets the default sorting to “Custom ordering + name”.`,
+      `The shop shows its pages by “${sort}”, not by the positions set by hand: they are saved, but the pages follow them only once WooCommerce › Settings › Products sets the default sorting to “Custom ordering + name”.`,
     alsoElsewhere: (count: number, names: string[], total: number) =>
       `${count === 1 ? "1 is" : `${n(count)} are`} also in ${nameList(names, total)}: ${count === 1 ? "it disappears" : "they disappear"} there too.`,
     sectionsLose: (sections: string[]) => `The homepage loses products in ${nameList(sections)}.`,
@@ -156,7 +156,7 @@ export const opsEn: typeof opsIt = {
     termTooBig: (total: number) =>
       `That's ${n(total)} products: more than the catalog holds (${n(MAX_TERM_PRODUCTS)}). Act on one sub-category at a time.`,
     empty: "No product chosen.",
-    inOrder: "They are already in this order.",
+    inOrder: "They are already in these positions.",
     notInTerm: (term: string) => `None of these products is in “${term}”.`,
     alreadyHidden: (term: string) => `The products of “${term}” are already hidden: use “Show” to bring them back.`,
     automatic: (category: string) => `“${category}” is automatic: its rule decides its products.`,
@@ -172,7 +172,7 @@ export const opsEn: typeof opsIt = {
     undoing: "Already being undone.",
     nothingToUndo: "It changed nothing: there is nothing to undo.",
     tooOld: (days: number) => `It can only be undone in the first ${days} days.`,
-    sectionChanged: (title: string) => `The section “${title}” changed since: fix the order in the section editor.`,
+    sectionChanged: (title: string) => `The section “${title}” changed since: put its products back in the section editor.`,
     unexpected: "Didn't work, because of a problem on the server: try again shortly.",
     interrupted: "Interrupted: the server restarted before the end.",
     stopped: (message: string) => `Interrupted by an error: ${message}`,
@@ -197,15 +197,15 @@ export const opsEn: typeof opsIt = {
       empty: "The text is empty: paste the ranking or upload the file.",
       invalidJson: "The JSON cannot be read: check brackets and quotes (or paste the LLM's answer as it is).",
       noItems: "No products in the text: it needs an «items» list with «sku» and/or «name», or one product per line.",
-      tooMany: (max: number) => `More than ${n(max)} products: split them into several sources.`,
+      tooMany: (max: number) => `More than ${n(max)} products: split them into several rankings.`,
     },
-    nameMissing: "Give the source a name.",
-    nameTaken: (name: string) => `There is already a source “${name}”: pick another name, or replace that one.`,
-    tooManySources: (max: number) => `There are already ${n(max)} sources, the most: delete one.`,
-    gone: "This source is gone.",
-    noneInTerm: (term: string, source: string) => `None of the products of “${term}” is in the source “${source}”.`,
-    noneInShop: (source: string) => `None of the products of the source “${source}” is in the shop.`,
-    inOrder: (source: string) => `It is already in the order of “${source}”.`,
+    nameMissing: "Give the ranking a name.",
+    nameTaken: (name: string) => `There is already a ranking “${name}”: pick another name, or replace that one.`,
+    tooManySources: (max: number) => `There are already ${n(max)} rankings, the most: delete one.`,
+    gone: "This ranking is gone.",
+    noneInTerm: (term: string, source: string) => `None of the products of “${term}” is in the ranking “${source}”.`,
+    noneInShop: (source: string) => `None of the products of the ranking “${source}” is in the shop.`,
+    inOrder: (source: string) => `It is already arranged like “${source}”.`,
   },
 
   input: {

@@ -13,7 +13,7 @@ const state = (over: Partial<SectionDraft> = {}): SectionDraft => ({
 
 describe("the section editor reading its section again", () => {
   it("reads again after an action that can change what a section shows — not after a sale or a margin", () => {
-    for (const kind of ["pin", "hide", "show", "categorize", "uncategorize", "tag", "untag"] as const) {
+    for (const kind of ["pin", "hide", "show", "categorize", "uncategorize", "tag", "untag", "order", "sourceOrder"] as const) {
       expect(movesSection(kind)).toBe(true);
     }
     for (const kind of ["sale", "unsale", "margin"] as const) expect(movesSection(kind)).toBe(false);

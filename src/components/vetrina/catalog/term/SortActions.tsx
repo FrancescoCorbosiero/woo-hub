@@ -7,39 +7,26 @@ import { CATALOG_SORTS, type CatalogSort } from "@/lib/vetrina/catalog";
 import { Check, SortArrows } from "./glyphs";
 
 /**
- * "Ordina: Negozio" above a list, and the action sheet it opens. "Negozio" is
- * the store's own order (menu_order, then name). The storefront adds to it:
+ * "⇅ Negozio" above a list, and the action sheet it opens: how the app lists
+ * the products — it changes nothing in the shop. "Posizione nel negozio" is
+ * the store's own (menu_order, then name); the storefront adds to it
  * sold-out products last, and on a category a homepage section shows, that
- * section's pins first — neither is applied here. On a category's or
- * brand's list, "Riordina a mano…" sets that order, and "Usa l'ordine di
- * «X»" takes an order source's (the first few sources; "Fonti d'ordine…"
- * lists them all, and adds one).
+ * section's pins first — neither is applied here. Changing those positions is
+ * the term's "Posizioni nel negozio" panel; on a category's or brand's list
+ * the sheet keeps a way there too ("Disponi a mano…").
  */
-
-/** Sources offered by name in the sheet; the others are a tap away in "Fonti d'ordine…". */
-const SOURCES_SHOWN = 4;
-
 export function SortActions({
   sort,
   onChange,
   onReorder,
-  sources = [],
-  onUseSource,
-  onManageSources,
 }: {
   sort: CatalogSort;
   onChange: (sort: CatalogSort) => void;
-  /** A category's or brand's list: "Riordina a mano…" opens the editor of the shop's order. */
+  /** A category's or brand's list: "Disponi a mano…" opens the editor of the shop's positions. */
   onReorder?: () => void;
-  /** The order sources, by name: "Usa l'ordine di «X»" for each (with onUseSource). */
-  sources?: readonly { id: string; name: string }[];
-  onUseSource?: (source: { id: string; name: string }) => void;
-  /** "Fonti d'ordine…": the sheet that lists and adds them. */
-  onManageSources?: () => void;
 }) {
   const { t } = useI18n();
   const s = t.vetrinaCatalog.term.sort;
-  const src = t.vetrinaCatalog.sources;
   const [open, setOpen] = React.useState(false);
 
   function choose(next: CatalogSort) {
@@ -55,7 +42,7 @@ export function SortActions({
         type="button"
         onClick={() => setOpen(true)}
         aria-haspopup="dialog"
-        aria-label={s.button(s.options[sort])}
+        aria-label={s.label(s.options[sort])}
         className="-me-2 inline-flex h-11 min-w-0 items-center gap-1.5 rounded-full px-2 text-[14px] font-medium text-primary transition-opacity active:opacity-50"
       >
         <SortArrows className="h-4 w-4 shrink-0" />
@@ -71,40 +58,16 @@ export function SortActions({
             </ActionsButton>
           ))}
         </ActionsGroup>
-        {(onReorder || onManageSources) && (
+        {onReorder && (
           <ActionsGroup>
-            {onReorder && (
-              <ActionsButton
-                onClick={() => {
-                  setOpen(false);
-                  onReorder();
-                }}
-              >
-                {s.reorder}
-              </ActionsButton>
-            )}
-            {onUseSource &&
-              sources.slice(0, SOURCES_SHOWN).map((source) => (
-                <ActionsButton
-                  key={source.id}
-                  onClick={() => {
-                    setOpen(false);
-                    onUseSource(source);
-                  }}
-                >
-                  <span className="truncate px-2">{src.use(source.name)}</span>
-                </ActionsButton>
-              ))}
-            {onManageSources && (
-              <ActionsButton
-                onClick={() => {
-                  setOpen(false);
-                  onManageSources();
-                }}
-              >
-                {src.manage}
-              </ActionsButton>
-            )}
+            <ActionsButton
+              onClick={() => {
+                setOpen(false);
+                onReorder();
+              }}
+            >
+              {s.reorder}
+            </ActionsButton>
           </ActionsGroup>
         )}
         <ActionsGroup>

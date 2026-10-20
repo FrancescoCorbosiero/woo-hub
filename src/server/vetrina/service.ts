@@ -3,7 +3,7 @@ import { blockConfig, hubConfig } from "@/config";
 import { getOverrides } from "@/server/overrides/repo";
 import { lockedPriceCounts } from "@/server/overrides/model";
 import { skuKey } from "@/lib/skus";
-import { editableFields, fieldChanges, fieldProblem } from "@/lib/vetrina/fields";
+import { editableFields, fieldChanges, fieldProblem, switchable, SWITCH_FIELD } from "@/lib/vetrina/fields";
 import type {
   FieldValues,
   Homepage,
@@ -17,6 +17,7 @@ import type {
 } from "@/lib/vetrina/types";
 import { railCategory } from "@/lib/collections/rail";
 import type { RailCollection } from "@/lib/collections/types";
+import { rememberSiteFeatures, sectionPowers, siteFeatures, type SectionPowers } from "./powers";
 import { getVetrinaSource, VetrinaError } from "./source";
 
 /**
@@ -94,15 +95,18 @@ export interface VetrinaHome {
   locks: Record<string, number>;
   /** Automatic categories by category id. */
   collections: Record<number, RailCollection>;
+  /** What the owner may do with the sections themselves (the config, within what the site can do). */
+  powers: SectionPowers;
   source: "wordpress" | "fixture";
 }
 
 export async function readHome(): Promise<VetrinaHome> {
   const source = await getVetrinaSource();
   const home = await source.homepage();
+  rememberSiteFeatures(home.features);
   const shown = home.blocks.flatMap((b) => (b.kind === "rail" ? b.rail.products : []));
   const [locks, collections] = await Promise.all([locksFor(shown), automaticCategories()]);
-  return { home, locks, collections, source: source.kind };
+  return { home, locks, collections, powers: sectionPowers(home.features), source: source.kind };
 }
 
 export interface VetrinaRail {
@@ -110,15 +114,27 @@ export interface VetrinaRail {
   locks: Record<string, number>;
   /** The rule filling the rail's category, if it has one. */
   collection: RailCollection | null;
+  /** What the owner may do with the section itself (what it shows, its switch). */
+  powers: SectionPowers;
   source: "wordpress" | "fixture";
 }
 
 export async function readRail(key: string, fallback?: RailFallback): Promise<VetrinaRail> {
   const source = await getVetrinaSource();
   const rail = await source.rail(key, { count: hubConfig.vetrina.pageSize, fallback });
-  const [locks, collections] = await Promise.all([locksFor([...rail.items, ...rail.hidden]), automaticCategories()]);
+  const [locks, collections, features] = await Promise.all([
+    locksFor([...rail.items, ...rail.hidden]),
+    automaticCategories(),
+    siteFeatures().catch(() => []),
+  ]);
   const term = railCategory(rail);
-  return { rail, locks, collection: term != null ? (collections[term] ?? null) : null, source: source.kind };
+  return {
+    rail,
+    locks,
+    collection: term != null ? (collections[term] ?? null) : null,
+    powers: sectionPowers(features),
+    source: source.kind,
+  };
 }
 
 export async function readCards(ids: number[]): Promise<{ cards: ProductCard[]; locks: Record<string, number> }> {
@@ -145,11 +161,19 @@ const RAIL_BLOCK = "golden-hive/shortcode-wrapper";
 
 /**
  * The field edits a publish may carry: the fields the config lets the
- * customer edit and the site's plugin supports, checked, and only those that
- * change. Anything else in `wanted` is ignored, never written.
+ * customer edit and the site's plugin supports — the section's switch too,
+ * when allowed — checked, and only those that change. Anything else in
+ * `wanted` is ignored, never written.
  */
-function allowedFieldChanges(blockName: string, configured: readonly string[], current: FieldValues, wanted: FieldValues): FieldValues {
+export function allowedFieldChanges(
+  blockName: string,
+  configured: readonly string[],
+  current: FieldValues,
+  wanted: FieldValues,
+  switchAllowed = false,
+): FieldValues {
   const editable = new Set(editableFields(blockName, configured, current));
+  if (switchable(blockName, switchAllowed, current)) editable.add(SWITCH_FIELD);
   const requested: FieldValues = {};
   for (const [field, value] of Object.entries(wanted)) {
     if (!editable.has(field)) continue;
@@ -178,7 +202,14 @@ export async function publishRail(input: PublishInput): Promise<RailWriteResult>
   if (pin.length > max) {
     throw new VetrinaError("invalid", `Al massimo ${max} prodotti in posizione fissa.`, 400);
   }
-  const fields = allowedFieldChanges(RAIL_BLOCK, allowed.fields, current.fields, input.fields ?? {});
+  const features = await siteFeatures().catch(() => []);
+  const fields = allowedFieldChanges(
+    RAIL_BLOCK,
+    allowed.fields,
+    current.fields,
+    input.fields ?? {},
+    sectionPowers(features).switchOff,
+  );
   // A size is only written by a plugin that reports fields (≥ 5.10.0): an
   // older one would silently ignore it.
   const sizeable = allowed.limit && Object.keys(current.fields).length > 0;

@@ -3,12 +3,13 @@ import { env } from "@/lib/env";
 import { hubConfig } from "@/config";
 import { z } from "zod";
 import { requestJson, type HttpError, type RetryPolicy } from "@/server/adapters/http";
-import type { BlockWrite, RailFallback, RailWrite } from "@/lib/vetrina/types";
+import type { BlockRef, BlockWrite, LayoutWrite, NewRail, RailFallback, RailSource, RailWrite } from "@/lib/vetrina/types";
 import {
   parseCapabilities,
   parseCards,
   parseHistory,
   parseHomepage,
+  parseLayoutResult,
   parseRailDetail,
   parseWriteResult,
 } from "./schemas";
@@ -109,6 +110,24 @@ function parsed<T>(route: string, parse: (data: unknown) => T, data: unknown): T
   }
 }
 
+/** A source as the plugin reads it: { taxonomy, slug } or { type }. */
+function sourceBody(source: RailSource): Record<string, string> {
+  return "list" in source ? { type: source.list } : { taxonomy: source.taxonomy, slug: source.slug };
+}
+
+const refBody = (ref: BlockRef) => ({ path: ref.path, attrs_hash: ref.attrsHash });
+
+function newRailBody(rail: NewRail): Record<string, unknown> {
+  return {
+    source: sourceBody(rail.source),
+    ...(rail.limit != null ? { limit: rail.limit } : {}),
+    ...(rail.pin ? { pin: rail.pin } : {}),
+    ...(rail.exclude ? { exclude: rail.exclude } : {}),
+    ...(rail.fallback ? { fallback: rail.fallback } : {}),
+    ...(rail.layout && Object.keys(rail.layout).length > 0 ? { layout: rail.layout } : {}),
+  };
+}
+
 export function wordpressSource(): VetrinaSource {
   return {
     kind: "wordpress",
@@ -144,6 +163,7 @@ export function wordpressSource(): VetrinaSource {
             exclude: input.exclude,
             fallback: input.fallback,
             ...(input.limit != null ? { limit: input.limit } : {}),
+            ...(input.source ? { source: sourceBody(input.source) } : {}),
           },
           ...(input.fields && Object.keys(input.fields).length > 0 ? { attrs: input.fields } : {}),
           dry_run: input.dryRun ?? false,
@@ -161,6 +181,25 @@ export function wordpressSource(): VetrinaSource {
           expected_modified_gmt: input.expectedModifiedGmt,
           expected_attrs_hash: input.expectedAttrsHash,
           attrs: input.fields,
+          dry_run: input.dryRun ?? false,
+        }),
+      );
+    },
+    async writeLayout(input: LayoutWrite) {
+      const action =
+        input.action === "insert"
+          ? { anchor: refBody(input.anchor), place: input.place, rail: newRailBody(input.rail), attrs: input.fields }
+          : input.action === "remove"
+            ? { target: refBody(input.target) }
+            : { order: input.order.map(refBody) };
+      return parsed(
+        "homepage/layout",
+        parseLayoutResult,
+        await call("POST", "homepage/layout", {}, {
+          page_id: input.pageId,
+          expected_modified_gmt: input.expectedModifiedGmt,
+          action: input.action,
+          ...action,
           dry_run: input.dryRun ?? false,
         }),
       );

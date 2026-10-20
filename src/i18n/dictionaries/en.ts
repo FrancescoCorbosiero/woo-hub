@@ -1355,7 +1355,7 @@ export const en: Dictionary = {
     viewSite: "View site",
     refresh: "Refresh",
     home: {
-      intro: "Your homepage, section by section. Tap a section to choose which products it shows and in what order.",
+      intro: "Your homepage, section by section. Tap a section to choose which products it shows and where.",
       inHomepage: (n) => `${n} on the homepage`,
       pinned: (n) => (n === 1 ? "1 pinned" : `${n} pinned`),
       hidden: (n) => (n === 1 ? "1 hidden" : `${n} hidden`),
@@ -1380,7 +1380,7 @@ export const en: Dictionary = {
       fold: (n) => `The homepage shows the first ${n}`,
       autoLabel: "After the pinned ones, automatically:",
       fallbacks: {
-        menu_order: "Shop order",
+        menu_order: "Shop",
         date: "Newest",
         popularity: "Best sellers",
         price: "Price ↑",
@@ -1422,7 +1422,7 @@ export const en: Dictionary = {
         hidden: "Hidden from this section",
         shown: "Visible again",
         dragged: "Position updated",
-        fallback: "Automatic order changed",
+        fallback: "After the pinned ones: automatic choice changed",
         restored: "Version restored: publish to confirm",
         reset: "All automatic",
       },
@@ -1566,7 +1566,7 @@ export const en: Dictionary = {
       held: "Waiting for a confirmation",
       problem: "Rule needs a look",
       card: "Automatic category",
-      cardHint: "Products join and leave on their own, by the rule. Here you only choose the order.",
+      cardHint: "Products join and leave on their own, by the rule. Here you only choose their places.",
       cardPaused: "Rule paused: the category stays as it is.",
       members: (n) => (n === 1 ? "1 product in the category" : `${n} products in the category`),
       make: "Make it automatic",
@@ -1615,6 +1615,7 @@ export const en: Dictionary = {
     errors: {
       not_configured: "The store connection is not configured. Ask whoever runs the server.",
       plugin_missing: "The site is not ready for the Showcase yet: it needs the Golden Hive Blocks plugin 5.10.0 or later.",
+      plugin_outdated: "Changing the sections from the Showcase needs the Golden Hive Blocks plugin 5.15.0 on the site: ask whoever runs the site to update it.",
       unauthorized: "The site refused access: the store key does not have the right permissions.",
       stale: "The page changed in the meantime.",
       not_found: "Section not found: it may have been removed from the homepage.",

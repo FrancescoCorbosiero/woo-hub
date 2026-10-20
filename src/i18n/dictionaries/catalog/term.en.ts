@@ -76,10 +76,23 @@ export const termEn: typeof termIt = {
     retry: "Try again",
   },
 
+  positions: {
+    title: "Positions in the shop",
+    hint: (name: string) => `How “${name}”'s page in the shop lines up its products.`,
+    arrange: "Arrange by hand",
+    arrangeHint: "Drag the products to the places you want.",
+    ranking: "Arrange like a ranking",
+    rankingHint: (count: number) =>
+      count === 0 ? "Copy how another shop lines up the same products." : count === 1 ? "1 ranking ready." : `${count} rankings ready.`,
+    place: "Move some products to the top",
+    placeHint: "Choose the products, then “Place”.",
+    selecting: "Choose the products to move, then tap “Place”.",
+  },
+
   menu: {
     open: "More actions",
     saveRule: "Save as an automatic category",
-    reorder: "Reorder the products",
+    reorder: "Arrange by hand",
     activity: "Activity",
     cancel: "Cancel",
   },
@@ -98,18 +111,19 @@ export const termEn: typeof termIt = {
   },
 
   sort: {
-    button: (label: string) => `Sort: ${label}`,
-    title: "Sort by",
+    button: (label: string) => label,
+    label: (label: string) => `Listed by: ${label}. Change`,
+    title: "List the products by",
     cancel: "Cancel",
     options: {
-      shop: "Shop",
+      shop: "Position in the shop",
       newest: "Newest",
       bestselling: "Best sellers",
       priceAsc: "Price, low to high",
       priceDesc: "Price, high to low",
       name: "Name",
     },
-    reorder: "Reorder by hand…",
+    reorder: "Arrange by hand…",
     short: {
       shop: "Shop",
       newest: "Newest",

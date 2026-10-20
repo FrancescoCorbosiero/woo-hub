@@ -453,7 +453,7 @@ function pushTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
  * Where the homepage shows each term and each product. A term's sections are
  * the ones showing that term alone; a product's are every section showing it
  * now (a tag or hand-picked section included), at its place among what the
- * site renders.
+ * site renders — none of a section switched off.
  */
 export function presenceOf(home: Homepage): HomepagePresence {
   const out: HomepagePresence = { terms: new Map(), products: new Map() };
@@ -463,6 +463,8 @@ export function presenceOf(home: Homepage): HomepagePresence {
     const section: SectionRef = { key: rail.key, title: rail.title.trim() || rail.key };
     const taxonomy = railTaxonomy(rail.taxonomy);
     if (taxonomy && rail.terms.length === 1) pushTo(out.terms, termKey(taxonomy, rail.terms[0].id), section);
+    // Switched off, the section shows nothing on the site: no product is in it there.
+    if (rail.switchedOff) continue;
     const pinned = new Set(rail.pin);
     let position = 0;
     for (const p of rail.products) {

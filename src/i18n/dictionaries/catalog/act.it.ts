@@ -47,7 +47,7 @@ export const actIt = {
       tag: "Tag",
       category: "Categoria",
       pin: "Homepage",
-      order: "Ordina",
+      order: "Posiziona",
     },
   },
 
@@ -188,7 +188,7 @@ export const actIt = {
 
   pin: {
     title: "Metti in homepage",
-    intro: "Scegli la sezione: i prodotti vanno in cima, fissati, nell'ordine della lista.",
+    intro: "Scegli la sezione: i prodotti vanno in cima, fissati, uno dopo l'altro come nella lista.",
     fill: {
       category: (name: string) => `Categoria «${name}»: chi non c'è viene aggiunto.`,
       automatic: (name: string) => `Automatica «${name}»: solo i prodotti della sua regola.`,
@@ -209,10 +209,10 @@ export const actIt = {
     plain: "Fissa in cima",
   },
 
-  /** "Ordina": the chosen products placed in the category's or brand's order — the one its page on the shop follows. */
+  /** "Posiziona": the chosen products placed among a category's or brand's positions — the ones its page on the shop follows. */
   order: {
-    title: (term: string) => `Ordina in «${term}»`,
-    intro: "Decidi dove vanno nella pagina del negozio, nell'ordine della lista.",
+    title: (term: string) => `Posiziona in «${term}»`,
+    intro: "Decidi dove vanno nella pagina del negozio: uno dopo l'altro, come nella lista.",
     modes: { top: "In cima", position: "Posizione", bottom: "In fondo" },
     positionLabel: "Posizione",
     positionHint: (total: number) => `Da 1 a ${n(total)}`,
@@ -220,24 +220,24 @@ export const actIt = {
     plain: "Sposta",
   },
 
-  /** "Riordina": a category's or brand's first products, dragged into the order its page shows. */
+  /** "Disponi a mano": a category's or brand's first products, dragged into the places its page shows them. */
   reorder: {
-    title: "Riordina",
+    title: "Disponi a mano",
     subtitle: (term: string, shown: number, total: number) =>
       shown < total ? `${term} · i primi ${n(shown)} di ${n(total)}` : term,
-    intro: "Trascina dalla maniglia: è l'ordine della pagina della categoria nel negozio. Gli altri prodotti seguono, come sono.",
+    intro: "Trascina dalla maniglia: è come la pagina della categoria mostra i prodotti nel negozio. Gli altri seguono, come sono.",
     loading: "Carico i prodotti…",
     failed: "Non riesco a leggere i prodotti.",
-    empty: "Nessun prodotto da ordinare.",
+    empty: "Nessun prodotto da spostare.",
     dragHandle: "Trascina per spostare",
     toTop: "Porta in cima",
     soldOut: "Esaurito",
     hidden: "Nascosto",
     reset: "Ripristina",
     moved: (count: number) => (count === 1 ? "1 prodotto spostato" : `${n(count)} prodotti spostati`),
-    save: "Salva l'ordine",
-    nothing: "Trascina un prodotto per cambiare l'ordine.",
-    back: "Torna all'ordine",
+    save: "Salva le posizioni",
+    nothing: "Trascina un prodotto per cambiarne il posto.",
+    back: "Torna alla lista",
   },
 
   activity: {
@@ -274,8 +274,8 @@ export const actIt = {
       uncategorize: "Tolgo dalla categoria",
       pin: "Fisso in homepage",
       margin: "Cambio il ricarico",
-      order: "Riordino",
-      sourceOrder: "Applico l'ordine",
+      order: "Sposto i prodotti",
+      sourceOrder: "Dispongo come la classifica",
     },
     undoing: "Annullo…",
     progress: (what: string, done: number, total: number) => `${what} · ${n(done)}/${n(total)}`,

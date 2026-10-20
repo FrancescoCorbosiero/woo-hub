@@ -25,8 +25,8 @@ export const homeEn: typeof homeIt = {
   order: {
     name: "A–Z",
     count: "By count",
-    toName: "Sort from A to Z",
-    toCount: "Sort by number of products",
+    toName: "List from A to Z",
+    toCount: "List by number of products",
   },
   showEmpty: (n: number) => (n === 1 ? "Show 1 empty" : `Show ${n} empty`),
   hideEmpty: "Hide the empty ones",

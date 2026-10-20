@@ -5,6 +5,8 @@ import type {
   BlockWrite,
   Capabilities,
   Homepage,
+  LayoutWrite,
+  LayoutWriteResult,
   ProductCard,
   RailDetail,
   RailFallback,
@@ -28,8 +30,10 @@ export interface VetrinaSource {
   products(ids: number[]): Promise<ProductCard[]>;
   /** A rail's order, plus its fields and size when given. */
   writeRail(input: RailWrite): Promise<RailWriteResult>;
-  /** A block that is not a rail: its fields. */
+  /** A block's fields only (a rail's switch included). */
   writeBlock(input: BlockWrite): Promise<RailWriteResult>;
+  /** The page's sections themselves: add one, take one away, put them in another order. */
+  writeLayout(input: LayoutWrite): Promise<LayoutWriteResult>;
   history(key: string): Promise<RailHistoryState[]>;
 }
 
