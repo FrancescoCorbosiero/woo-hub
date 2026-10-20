@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { actionSheet, sheet, toast, undoFromToast } from "./helpers";
+import { actionSheet, open, sheet, toast, undoFromToast } from "./helpers";
 
 /**
  * A section's editor: what it shows, products added from the whole catalog
@@ -22,7 +22,7 @@ async function unpinAllAndPublish(page: Page) {
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.goto(TRENDING);
+  await open(page, TRENDING);
   await expect(page.getByText("Categoria «Prodotti in tendenza»")).toBeVisible();
 });
 
@@ -95,11 +95,11 @@ test("a product from outside the category joins it when the section is published
 
   // Put the demo shop back: the pin, then the product out of the category ("Annulla" in the activity log).
   await unpinAllAndPublish(page);
-  await page.goto("/vetrina");
+  await open(page, "/vetrina");
   await page.getByRole("link", { name: "Attività" }).filter({ visible: true }).first().click();
   const log = sheet(page, "Attività");
   await log.getByRole("button", { name: "Annulla" }).first().click();
   await expect(log.getByText("Annullata").first()).toBeVisible({ timeout: 30_000 });
-  await page.goto(TRENDING);
+  await open(page, TRENDING);
   await expect(page.getByText(`${members} prodotti`, { exact: false })).toBeVisible();
 });

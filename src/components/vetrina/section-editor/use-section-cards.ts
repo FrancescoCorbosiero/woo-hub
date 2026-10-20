@@ -14,22 +14,16 @@ export interface SectionCards {
   locks: Readonly<Record<string, number>>;
   /** Cards (and their locks) read elsewhere: a fresh rail, another automatic order. */
   absorb: (more: ProductCard[], moreLocks: Record<string, number>) => void;
+  /** Cards read from the shop, a batch per request. */
+  read: (ids: number[]) => void;
   /** One card read again: its prices changed. */
   refresh: (id: number) => void;
   /** The product's sheet locked or unlocked sizes. */
   setLock: (sku: string, count: number) => void;
 }
 
-/**
- * The section editor's product cards and the price locks they carry: those
- * the section came with, then those `wanted` — rows scrolled into view or
- * brought in by a change, hidden products — each asked for once, so a
- * failing request cannot loop.
- */
-export function useSectionCards(
-  initial: { cards: readonly ProductCard[]; locks: Record<string, number> },
-  wanted: readonly number[],
-): SectionCards {
+/** The section editor's product cards and the price locks they carry, from those the section came with. */
+export function useSectionCards(initial: { cards: readonly ProductCard[]; locks: Record<string, number> }): SectionCards {
   const [cards, setCards] = React.useState<ReadonlyMap<number, ProductCard>>(() => new Map(initial.cards.map((c) => [c.id, c])));
   const [locks, setLocks] = React.useState<Readonly<Record<string, number>>>(initial.locks);
 
@@ -53,8 +47,20 @@ export function useSectionCards(
     [absorb],
   );
 
-  // A string, so the effect runs when the wanted rows change, not on every render (a new array each time).
+  const refresh = React.useCallback((id: number) => read([id]), [read]);
+  const setLock = React.useCallback((sku: string, count: number) => setLocks((prev) => ({ ...prev, [skuKey(sku)]: count })), []);
+
+  return { cards, locks, absorb, read, refresh, setLock };
+}
+
+/**
+ * The cards `wanted` that are not held yet — rows scrolled into view or
+ * brought in by a change, hidden products — each asked for once, so a
+ * failing request cannot loop.
+ */
+export function useMissingCards({ cards, read }: Pick<SectionCards, "cards" | "read">, wanted: readonly number[]): void {
   const requested = React.useRef(new Set<number>());
+  // A string, so the effect runs when the wanted rows change, not on every render (a new array each time).
   const wantedKey = [...new Set(wanted)].join(",");
   React.useEffect(() => {
     if (!wantedKey) return;
@@ -65,9 +71,4 @@ export function useSectionCards(
     for (const id of missing) requested.current.add(id);
     read(missing);
   }, [wantedKey, cards, read]);
-
-  const refresh = React.useCallback((id: number) => read([id]), [read]);
-  const setLock = React.useCallback((sku: string, count: number) => setLocks((prev) => ({ ...prev, [skuKey(sku)]: count })), []);
-
-  return { cards, locks, absorb, refresh, setLock };
 }

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { actionSheet, sheet } from "./helpers";
+import { actionSheet, open, sheet } from "./helpers";
 
 /**
  * A category's screen in the catalog: its positions in the shop changed in
@@ -29,7 +29,7 @@ async function listed(page: Page): Promise<{ name: string; price: number }[]> {
 
 /** Undoes the newest action from the activity log (on the homepage tab). */
 async function undoLastAction(page: Page) {
-  await page.goto("/vetrina");
+  await open(page, "/vetrina");
   await page.getByRole("link", { name: "Attività" }).filter({ visible: true }).first().click();
   const log = sheet(page, "Attività");
   await log.getByRole("button", { name: "Annulla" }).first().click();
@@ -37,7 +37,7 @@ async function undoLastAction(page: Page) {
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.goto(TRENDING);
+  await open(page, TRENDING);
   await expect(page.getByText("Posizioni nel negozio")).toBeVisible();
   await expect.poll(async () => (await listed(page))[0]?.name ?? "").not.toBe("");
 });
@@ -81,6 +81,6 @@ test("Posiziona puts a product first in the shop; Annulla puts it back", async (
   await expect.poll(async () => (await listed(page))[0]?.name, { timeout: 30_000 }).toBe(target);
 
   await undoLastAction(page);
-  await page.goto(TRENDING);
+  await open(page, TRENDING);
   await expect.poll(async () => (await listed(page)).map((p) => p.name)).toEqual(before);
 });

@@ -1,5 +1,16 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 
+/**
+ * Opens a page and waits until its streamed parts are revealed. React sends
+ * a Suspense boundary's content in a hidden <div id="S:…"> and moves it into
+ * place a moment later; until then a locator can find the same text twice
+ * (strict mode counts hidden elements too).
+ */
+export async function open(page: Page, path: string): Promise<void> {
+  await page.goto(path);
+  await page.waitForFunction(() => !document.querySelector('div[hidden][id^="S:"]'));
+}
+
 /** A toast (sonner) saying `text`. */
 export function toast(page: Page, text: string | RegExp): Locator {
   return page.locator("[data-sonner-toast]").filter({ hasText: text });

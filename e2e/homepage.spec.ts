@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { actionSheet, sectionCard, sectionTitles, sheet, toast, undoFromToast } from "./helpers";
+import { actionSheet, open, sectionCard, sectionTitles, sheet, toast, undoFromToast } from "./helpers";
 
 /**
  * The homepage tab: the sections themselves — a new one, their places, one
@@ -7,7 +7,7 @@ import { actionSheet, sectionCard, sectionTitles, sheet, toast, undoFromToast } 
  */
 
 test.beforeEach(async ({ page }) => {
-  await page.goto("/vetrina");
+  await open(page, "/vetrina");
   await expect(page.getByRole("button", { name: /^Azioni per «/ }).first()).toBeVisible();
 });
 

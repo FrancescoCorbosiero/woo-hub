@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Button, List, Preloader } from "konsta/react";
 import { useI18n } from "@/i18n/provider";
+import type { PickPlace, SectionFill } from "@/lib/vetrina/section-editor";
 import { withDescendantIds } from "@/lib/vetrina/sections";
 import type { CatalogProduct, CatalogQuery, CatalogTaxonomy } from "@/lib/vetrina/catalog";
 import { Pin } from "../icons";
@@ -40,7 +41,7 @@ import { useProductCards } from "../catalog/term/use-product-cards";
 export interface PickerSection {
   title: string;
   /** What fills it: what may join, and how the sheet says so. */
-  fill: "category" | "automatic" | "brand" | "sale" | "list";
+  fill: SectionFill;
   /** Its one category or brand. */
   term: { taxonomy: CatalogTaxonomy; id: number; name: string } | null;
 }
@@ -51,7 +52,7 @@ export interface PickedProduct {
   joins: boolean;
 }
 
-export type PickPlace = "top" | "afterPins";
+export type { PickPlace };
 
 type PickerSort = "newest" | "bestselling" | "name";
 
