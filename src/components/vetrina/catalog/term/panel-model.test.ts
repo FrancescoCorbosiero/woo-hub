@@ -8,6 +8,7 @@ function op(kind: OperationView["kind"], status: OperationStatus): OperationView
     kind,
     label: "",
     status,
+    via: "app",
     progress: { done: 0, total: 10 },
     changed: status === "running" ? 0 : 10,
     failed: 0,

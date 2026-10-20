@@ -126,6 +126,8 @@ function ActivityRow({ view, busy, onUndo }: { view: OperationView; busy: boolea
         : a.status[view.status];
   const parts = [status];
   if (!going && when) parts.push(when);
+  // Not from these screens: the API, an assistant, the scheduler.
+  if (view.via !== "app") parts.push(a.via[view.via]);
   if (view.status === "done" && view.failed > 0) {
     parts.push(refusedText(view.kind, view.failed, { products: a.refused, sizes: a.refusedSizes }));
   }

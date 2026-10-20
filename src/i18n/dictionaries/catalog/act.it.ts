@@ -256,6 +256,12 @@ export const actIt = {
       undoing: "La sto annullando",
       undone: "Annullata",
     },
+    /** How an action came, when not from these screens. */
+    via: {
+      api: "via API",
+      assistant: "dall'assistente",
+      scheduler: "programmata",
+    },
     refused: (count: number) => agreed(count, "prodotto rifiutato dal negozio", "prodotti rifiutati dal negozio"),
     /** A margin's reprice counts sizes, not products. */
     refusedSizes: (count: number) => agreed(count, "taglia rifiutata dal negozio", "taglie rifiutate dal negozio"),

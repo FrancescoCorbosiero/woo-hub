@@ -41,6 +41,7 @@ function op(status: OperationView["status"], over: Partial<OperationView> = {}):
     kind: "margin",
     label: "Ricarico 25% · Nike",
     status,
+    via: "app",
     progress: { done: 12, total: 41 },
     changed: 0,
     failed: 0,

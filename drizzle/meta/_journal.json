@@ -176,6 +176,13 @@
       "when": 1792291061738,
       "tag": "0024_colossal_darkstar",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1792540437470,
+      "tag": "0025_massive_puck",
+      "breakpoints": true
     }
   ]
 }

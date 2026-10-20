@@ -217,12 +217,22 @@ export interface OperationPreview {
 
 export type OperationStatus = "running" | "done" | "failed" | "undoing" | "undone";
 
+/**
+ * How an action came to the Hub: the Vetrina's screens, the programmatic
+ * API (/api/v1), an assistant acting for the owner, or the Hub's own
+ * scheduler. Filed with the action, shown in the log beside the others.
+ */
+export const OPERATION_VIAS = ["app", "api", "assistant", "scheduler"] as const;
+export type OperationVia = (typeof OPERATION_VIAS)[number];
+
 export interface OperationView {
   id: string;
   kind: OperationKind;
   /** In the owner's words: "Saldo −20% · Saldi outlet", "12 prodotti nascosti". */
   label: string;
   status: OperationStatus;
+  /** How it came: "app" for the Vetrina's own screens. */
+  via: OperationVia;
   progress: { done: number; total: number };
   /** Products changed, and refused by the store. */
   changed: number;

@@ -17,7 +17,7 @@ import type { AppConfig } from "@core/config";
 import type { CollectionCondition, HoldReason, IndexedAttribute, IndexedTerm } from "@core/collections";
 import type { Plan, PlanItem, ApplyResult, SourceProduct } from "@core/core-spine";
 import type { StoreOverrides } from "@/server/overrides/model";
-import type { OperationInput, OperationKind, OperationView } from "@/lib/vetrina/catalog-ops";
+import type { OperationInput, OperationKind, OperationVia, OperationView } from "@/lib/vetrina/catalog-ops";
 import type { OrderSourceItem } from "@/lib/vetrina/order-sources";
 import type { MediaImage } from "@/server/woo/media-plan";
 
@@ -667,6 +667,8 @@ export const vetrinaOperations = pgTable(
     // "category:12", "brand:7": a whole term's hide or sale, which its screen shows.
     termKey: text("term_key"),
     status: text("status", { enum: ["running", "done", "failed", "undoing", "undone"] }).notNull().default("running"),
+    // How it came: the Vetrina's screens, the API, an assistant, the scheduler (OPERATION_VIAS).
+    via: text("via").$type<OperationVia>().notNull().default("app"),
     done: integer("done").notNull().default(0),
     total: integer("total").notNull().default(0),
     changed: integer("changed").notNull().default(0),

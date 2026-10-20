@@ -1,7 +1,7 @@
 import "server-only";
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql, type SQL } from "drizzle-orm";
 import type { ScopedPricingRule } from "@core/config";
-import { OPERATION_UNDO_DAYS, type OperationInput, type OperationKind } from "@/lib/vetrina/catalog-ops";
+import { OPERATION_UNDO_DAYS, type OperationInput, type OperationKind, type OperationVia } from "@/lib/vetrina/catalog-ops";
 import { db } from "@/server/db/client";
 import { rowsOf } from "@/server/db/rows";
 import {
@@ -42,6 +42,7 @@ export async function insertOperation(row: {
   labelParams: OperationLabelParams;
   termKey: string | null;
   total: number;
+  via: OperationVia;
 }): Promise<VetrinaOperationRow> {
   const [inserted] = await db.insert(vetrinaOperations).values(row).returning();
   return inserted;

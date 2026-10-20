@@ -235,6 +235,11 @@ export const actEn: typeof actIt = {
       undoing: "Undoing",
       undone: "Undone",
     },
+    via: {
+      api: "via the API",
+      assistant: "by the assistant",
+      scheduler: "scheduled",
+    },
     refused: (count: number) => `${products(count)} refused by the shop`,
     refusedSizes: (count: number) => `${count === 1 ? "1 size" : `${n(count)} sizes`} refused by the shop`,
   },

@@ -5,6 +5,7 @@ import {
   type OperationInput,
   type OperationPreview,
   type OperationTarget,
+  type OperationVia,
   type OperationView,
   type TermActionsState,
   type TermKey,
@@ -44,6 +45,7 @@ export function operationView(row: VetrinaOperationRow, now = Date.now()): Opera
     // In the reader's language; a row from before labels were kept as data says its own words.
     label: row.labelParams ? labelText(row.labelParams) : row.label,
     status: row.status,
+    via: row.via,
     progress: { done: row.done, total: row.total },
     changed: row.changed,
     failed: row.failed,
@@ -63,8 +65,11 @@ export async function previewOperation(input: OperationInput): Promise<Operation
   return (await assess(input, { live: true })).preview;
 }
 
-/** File the action and queue it; it runs in the background. The answer is its row, to follow. */
-export async function startOperation(input: OperationInput): Promise<OperationView> {
+/**
+ * File the action and queue it; it runs in the background. The answer is its
+ * row, to follow. `via`: how it came (the Vetrina's screens unless said).
+ */
+export async function startOperation(input: OperationInput, via: OperationVia = "app"): Promise<OperationView> {
   await recover();
   // In demo mode the log of this demo shop starts no later than its first action.
   await logSince();
@@ -80,6 +85,7 @@ export async function startOperation(input: OperationInput): Promise<OperationVi
     labelParams: assessment.label,
     termKey: assessment.termKey,
     total: assessment.total,
+    via,
   });
   queueRun(row.id);
   return operationView(row);
