@@ -513,7 +513,10 @@ the persistent catalog itself — the smart cache in front of every SKU lookup.
 
 ```bash
 npm run typecheck     # tsc --noEmit
+npm run lint          # eslint; any warning fails it (as in CI)
 npm test              # vitest (pricing/plan/match/patch core)
+npm run test:e2e      # Playwright on the demo shop, after `npm run build`; needs a local
+                      # Postgres (E2E_DATABASE_URL, its name containing "e2e": dropped and made fresh)
 npm run guard:tanstack
 npm run db:generate   # drizzle migration from schema
 npm run build
