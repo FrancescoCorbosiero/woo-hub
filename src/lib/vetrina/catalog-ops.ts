@@ -1,4 +1,5 @@
 import type { CatalogQuery, CatalogTaxonomy } from "./catalog";
+import type { PageActionInput, PageActionKind } from "./page-ops";
 
 /**
  * The Vetrina catalog's actions on products, as the screens use them: hide and
@@ -123,6 +124,13 @@ export type OperationInput =
 
 export type OperationKind = OperationInput["kind"];
 
+/**
+ * Every action the log files: the catalog's, on products (above), and the
+ * homepage's own, on its sections and blocks (page-ops.ts).
+ */
+export type ActionInput = OperationInput | PageActionInput;
+export type ActionKind = ActionInput["kind"];
+
 /** A term's margin, as the owner sets it: a percent on the market price. */
 export const MARGIN_PERCENT_MIN = 0;
 export const MARGIN_PERCENT_MAX = 200;
@@ -195,7 +203,7 @@ export interface MarginPreview {
 
 /** What an action would do, before it runs — named products, not just numbers. */
 export interface OperationPreview {
-  kind: OperationKind;
+  kind: ActionKind;
   /** Products it would change. */
   changes: number;
   /** Products it leaves as they are, by reason ("già nascosti", "senza prezzo", "non sono in questa sezione"). */
@@ -213,6 +221,11 @@ export interface OperationPreview {
   sampled?: number;
   /** Optional (added in phase 4): a margin's own numbers; absent when the margin cannot be applied (a refusal leads the warnings). */
   margin?: MarginPreview;
+  /**
+   * A homepage action's preview (it changes no product): what it does, in
+   * sentences — for a reader without the screens, the API or an assistant.
+   */
+  page?: { lines: string[] };
 }
 
 export type OperationStatus = "running" | "done" | "failed" | "undoing" | "undone";
@@ -227,7 +240,7 @@ export type OperationVia = (typeof OPERATION_VIAS)[number];
 
 export interface OperationView {
   id: string;
-  kind: OperationKind;
+  kind: ActionKind;
   /** In the owner's words: "Saldo −20% · Saldi outlet", "12 prodotti nascosti". */
   label: string;
   status: OperationStatus;
@@ -260,7 +273,15 @@ export interface OperationView {
    * `heldBy` (optional): those terms' names, the most first.
    */
   undo?: { restored: number; kept: number; failed: number; held?: number; heldBy?: string[] } | null;
+  /**
+   * A homepage action on a section: the section's key now — after the
+   * action, or after its undo (a section pointed elsewhere changes key; a
+   * new one has one). Null for the others, and for a section taken away.
+   */
+  sectionKey?: string | null;
 }
+
+export type { PageActionKind };
 
 /** A term's state for its screen: hidden by an action, and the sale running on it. */
 export interface TermActionsState {

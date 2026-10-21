@@ -59,6 +59,15 @@ export const opsIt = {
     /** "Disponi come «X»" on a term, or on the whole catalog (`what`). */
     sourceOrder: (count: number, source: string, what: string) =>
       `Come «${source}» · ${what}: ${agreed(count, "prodotto spostato", "prodotti spostati")}`,
+    /** The homepage's own actions, on its sections and blocks. */
+    sectionSwitch: (section: string, on: boolean) => (on ? `«${section}» riaccesa sul sito` : `«${section}» spenta sul sito`),
+    sectionMove: (section: string, position: number) => `«${section}» spostata al ${n(position)}° posto`,
+    sectionsArrange: (count: number) => agreed(count, "sezione spostata", "sezioni spostate"),
+    sectionAdd: (section: string) => `Nuova sezione «${section}»`,
+    sectionRemove: (section: string) => `«${section}» tolta dalla homepage`,
+    sectionSource: (section: string, shows: string) => `«${section}» ora mostra ${shows}`,
+    sectionEdit: (section: string) => `«${section}» pubblicata`,
+    blockEdit: (block: string) => `Testi di «${block}» salvati`,
   },
 
   /** Why a preview leaves products as they are, agreeing with how many ("Già nascosto · 1", "Già nascosti · 3"). */
@@ -260,6 +269,48 @@ export const opsIt = {
     noneInTerm: (term: string, source: string) => `Nessun prodotto di «${term}» è nella classifica «${source}».`,
     noneInShop: (source: string) => `Nessun prodotto della classifica «${source}» è nel negozio.`,
     inOrder: (source: string) => `È già disposto come «${source}».`,
+  },
+
+  /**
+   * The homepage's own actions (src/server/vetrina/operations/page.ts): a
+   * preview in sentences, for a reader without the screens (the API, an
+   * assistant), and the refusals.
+   */
+  page: {
+    switchOff: (title: string) => `«${title}» resta nella homepage ma non si vede più sul sito.`,
+    switchOn: (title: string) => `«${title}» torna visibile sul sito.`,
+    moved: (title: string, from: number, to: number) => `«${title}» passa dal ${n(from)}° al ${n(to)}° posto tra le sezioni.`,
+    order: (titles: readonly string[]) => `Le sezioni, dall'alto: ${titles.map((title, i) => `${i + 1}. «${title}»`).join(" · ")}.`,
+    add: (title: string, shows: string, limit: number) => `Nuova sezione «${title}»: ${shows}, ${products(limit)}.`,
+    addPlace: (place: "after" | "before", anchor: string) => `${place === "after" ? "Va dopo" : "Va prima di"} «${anchor}».`,
+    remove: (title: string) => `«${title}» esce dalla homepage; i suoi prodotti restano nel negozio.`,
+    source: (title: string, from: string, to: string) => `«${title}» mostrerà ${to} invece di ${from}.`,
+    keptPins: (count: number) =>
+      count === 1 ? "1 prodotto in posizione fissa resta al suo posto." : `${n(count)} prodotti in posizione fissa restano al loro posto.`,
+    droppedPins: (count: number) =>
+      count === 1
+        ? "1 prodotto in posizione fissa non c'è nella nuova scelta: torna come gli altri."
+        : `${n(count)} prodotti in posizione fissa non ci sono nella nuova scelta: tornano come gli altri.`,
+    buttonFollows: "Il pulsante della sezione porterà alla nuova pagina.",
+    alsoIn: (titles: readonly string[]) => `È già nella homepage in ${nameList(titles.map((title) => `«${title}»`))}.`,
+    pins: (count: number) => (count === 0 ? "Nessun prodotto in posizione fissa." : `In cima, in posizione fissa: ${products(count)}.`),
+    hidden: (count: number) => (count === 0 ? "Nessun prodotto nascosto dalla sezione." : `Nascosti dalla sezione: ${products(count)}.`),
+    fallback: (name: string) => `Dopo quelli fissi, in automatico: ${name}.`,
+    fields: (names: readonly string[]) => `Cambiano: ${nameList(names)}.`,
+    limit: (count: number) => `Mostra ${products(count)}.`,
+    /** Refusals. */
+    stale: "La homepage è stata modificata nel frattempo: ricarica.",
+    unchanged: "Non cambia niente: è già così.",
+    alreadyOn: (title: string) => `«${title}» è già accesa.`,
+    alreadyOff: (title: string) => `«${title}» è già spenta.`,
+    samePlace: (title: string, position: number) => `«${title}» è già al ${n(position)}° posto.`,
+    sameSequence: "Le sezioni sono già messe così.",
+    notFound: "Sezione non trovata: forse è stata tolta dalla homepage.",
+    blockNotFound: "Blocco non trovato: forse la homepage è cambiata.",
+    changedSince: (title: string) => `«${title}» è cambiata dopo: annullare toglierebbe le modifiche più recenti.`,
+    sectionsChanged: "Le sezioni della homepage sono cambiate dopo: annullare toglierebbe le modifiche più recenti.",
+    neighbourGone: (title: string) => `Non trovo più la sezione accanto a cui stava «${title}»: rimettila da «Nuova sezione».`,
+    notUndoable: "Questa sezione mostrava una lista fissa o dei tag: da qui non si rimette com'era.",
   },
 
   /** What the screens sent, checked before anything runs: the problems the owner can fix, in his words. */

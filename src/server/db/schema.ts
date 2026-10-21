@@ -17,7 +17,8 @@ import type { AppConfig } from "@core/config";
 import type { CollectionCondition, HoldReason, IndexedAttribute, IndexedTerm } from "@core/collections";
 import type { Plan, PlanItem, ApplyResult, SourceProduct } from "@core/core-spine";
 import type { StoreOverrides } from "@/server/overrides/model";
-import type { OperationInput, OperationKind, OperationVia, OperationView } from "@/lib/vetrina/catalog-ops";
+import type { ActionInput, ActionKind, OperationVia, OperationView } from "@/lib/vetrina/catalog-ops";
+import type { OperationPageRecord } from "@/lib/vetrina/page-ops";
 import type { OrderSourceItem } from "@/lib/vetrina/order-sources";
 import type { MediaImage } from "@/server/woo/media-plan";
 
@@ -624,8 +625,8 @@ export type OperationUndoOutcome = NonNullable<OperationView["undo"]>;
  * reader's language each time it is shown, from the catalog's dictionaries.
  */
 export interface OperationLabelParams {
-  kind: OperationKind;
-  /** Products it changes, as counted when it started. */
+  kind: ActionKind;
+  /** Products it changes, as counted when it started (a homepage action: the sections it moves, else 1). */
   count: number;
   /** The whole category or brand it is filed under. */
   term?: string | null;
@@ -645,22 +646,29 @@ export interface OperationLabelParams {
   reordered?: boolean;
   /** "Usa l'ordine di «X»": the order source's name. */
   source?: string;
+  /** A section switched on (true) or off. */
+  on?: boolean;
+  /** A section pointed elsewhere: what it shows now ("Adidas", "Più venduti"). */
+  shows?: string;
+  /** A block's texts: the block's name ("Slider"). */
+  block?: string;
 }
 
 /**
- * The Vetrina catalog's actions on products (src/server/vetrina/operations):
- * hide and show, a sale and its end, tags, categories, a place on the
- * homepage — one row each, with its progress and how it went. Kept 30 days,
- * undoable for 7; a whole category or brand hidden by one keeps its row while
- * it stays hidden, since "Mostra" is that row's undo.
+ * The Vetrina's actions (src/server/vetrina/operations): the catalog's on
+ * products — hide and show, a sale and its end, tags, categories, a place on
+ * the homepage — and the homepage's own on its sections and blocks — one row
+ * each, with its progress and how it went. Kept 30 days, undoable for 7; a
+ * whole category or brand hidden by one keeps its row while it stays hidden,
+ * since "Mostra" is that row's undo.
  */
 export const vetrinaOperations = pgTable(
   "vetrina_operations",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    kind: text("kind").$type<OperationKind>().notNull(),
+    kind: text("kind").$type<ActionKind>().notNull(),
     // As the owner asked it; a catalog query is resolved again when it runs.
-    input: jsonb("input").$type<OperationInput>().notNull(),
+    input: jsonb("input").$type<ActionInput>().notNull(),
     // In Italian, for the server's own logs; the screens render label_params in the owner's language.
     label: text("label").notNull(),
     labelParams: jsonb("label_params").$type<OperationLabelParams | null>(),
@@ -676,6 +684,8 @@ export const vetrinaOperations = pgTable(
     error: text("error"),
     // A "Metti in homepage": the section before and after (null for every other kind).
     section: jsonb("section").$type<OperationSectionRecord | null>(),
+    // A homepage action: its way back, and how "Annulla" finds the section again (null for the catalog's).
+    page: jsonb("page").$type<OperationPageRecord | null>(),
     // How its undo went: products put back, left alone (changed since), refused.
     undo: jsonb("undo").$type<OperationUndoOutcome | null>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

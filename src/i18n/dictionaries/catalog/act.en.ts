@@ -222,7 +222,7 @@ export const actEn: typeof actIt = {
   activity: {
     title: "Activity",
     open: "Activity",
-    intro: "The latest actions on products. “Undo” puts the earlier values back, where nobody changed them since.",
+    intro: "The latest actions on products and on the homepage. “Undo” puts things back as they were, where nobody changed them since.",
     empty: "No actions yet.",
     loading: "Loading the activity…",
     failed: "Can't read the activity.",

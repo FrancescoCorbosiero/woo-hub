@@ -2,6 +2,7 @@ import "server-only";
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql, type SQL } from "drizzle-orm";
 import type { ScopedPricingRule } from "@core/config";
 import { OPERATION_UNDO_DAYS, type OperationInput, type OperationKind, type OperationVia } from "@/lib/vetrina/catalog-ops";
+import type { OperationPageRecord, PageActionInput } from "@/lib/vetrina/page-ops";
 import { db } from "@/server/db/client";
 import { rowsOf } from "@/server/db/rows";
 import {
@@ -45,6 +46,24 @@ export async function insertOperation(row: {
   via: OperationVia;
 }): Promise<VetrinaOperationRow> {
   const [inserted] = await db.insert(vetrinaOperations).values(row).returning();
+  return inserted;
+}
+
+/**
+ * A homepage action, filed once written: it is one write to the page, done
+ * at once (page.ts), so its row starts done — with its way back.
+ */
+export async function insertPageOperation(row: {
+  input: PageActionInput;
+  label: string;
+  labelParams: OperationLabelParams;
+  via: OperationVia;
+  page: OperationPageRecord | null;
+}): Promise<VetrinaOperationRow> {
+  const [inserted] = await db
+    .insert(vetrinaOperations)
+    .values({ ...row, kind: row.input.kind, termKey: null, status: "done", done: 1, total: 1, changed: 1, finishedAt: new Date() })
+    .returning();
   return inserted;
 }
 

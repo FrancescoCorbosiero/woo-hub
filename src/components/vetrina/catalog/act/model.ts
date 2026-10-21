@@ -1,5 +1,6 @@
 import type { CatalogQuery } from "@/lib/vetrina/catalog";
-import type { OperationKind, OperationStatus, OperationTarget, OperationView, SaleRounding } from "@/lib/vetrina/catalog-ops";
+import type { ActionKind, OperationStatus, OperationTarget, OperationView, SaleRounding } from "@/lib/vetrina/catalog-ops";
+import { movedCount as movedCountOf } from "@/lib/vetrina/page-plan";
 
 /**
  * The catalog's actions, their pure parts: what a selection holds and the
@@ -307,7 +308,7 @@ export function readersOfTag(categories: readonly { name: string; automatic: Rul
  * (one product can refuse eight) — "8 taglie rifiutate", never "8 prodotti".
  */
 export function refusedText(
-  kind: OperationKind,
+  kind: ActionKind,
   count: number,
   words: { products: (count: number) => string; sizes: (count: number) => string },
 ): string {
@@ -327,24 +328,6 @@ export function movedPrefix(original: readonly number[], now: readonly number[])
 
 /**
  * "Riordina": how many rows were moved — those that left their place among
- * the others, not the ones only pushed along: the rows minus the longest
- * run still in their old order.
+ * the others, not the ones only pushed along (lib/vetrina/page-plan.ts).
  */
-export function movedCount(original: readonly number[], now: readonly number[]): number {
-  const was = new Map(original.map((id, i) => [id, i]));
-  // Patience sorting: tails[k] is the smallest old place ending a run of k + 1.
-  const tails: number[] = [];
-  for (const id of now) {
-    const place = was.get(id);
-    if (place == null) continue;
-    let lo = 0;
-    let hi = tails.length;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (tails[mid] < place) lo = mid + 1;
-      else hi = mid;
-    }
-    tails[lo] = place;
-  }
-  return now.length - tails.length;
-}
+export const movedCount: (original: readonly number[], now: readonly number[]) => number = movedCountOf;

@@ -6,6 +6,7 @@ import { Preloader } from "konsta/react";
 import { toast } from "sonner";
 import { useI18n } from "@/i18n/provider";
 import type { OperationInput, OperationView } from "@/lib/vetrina/catalog-ops";
+import { isPageActionKind } from "@/lib/vetrina/page-ops";
 import { listOperations, loadOperation, startOperation, undoOperation } from "@/server/actions/vetrina-operations";
 import type { VetrinaResult } from "@/server/vetrina/service";
 import { ActivitySheet } from "./ActivitySheet";
@@ -253,7 +254,8 @@ function ProgressPill({ active, onOpen }: { active: readonly OperationView[]; on
     // An undo starts from the action's own numbers until it writes its own: words only.
     text = view.queued ? p.queued(p.undoing) : p.undoing;
   } else if (view) {
-    const what = p.kinds[view.kind];
+    // A homepage action is written at once, never followed here: its label, should one ever be.
+    const what = isPageActionKind(view.kind) ? view.label : p.kinds[view.kind];
     const { done, total } = view.progress;
     text = view.queued ? p.queued(what) : p.progress(what, done, total);
     share = total > 0 ? Math.min(1, done / total) : 0;

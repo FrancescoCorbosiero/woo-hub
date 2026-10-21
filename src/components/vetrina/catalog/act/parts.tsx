@@ -4,7 +4,7 @@ import * as React from "react";
 import { Sheet } from "react-modal-sheet";
 import { Button, Chip, List, ListItem, Preloader, Segmented, SegmentedButton } from "konsta/react";
 import { useI18n } from "@/i18n/provider";
-import type { OperationInput, OperationKind, OperationPreview, OperationTarget, OperationView } from "@/lib/vetrina/catalog-ops";
+import type { ActionKind, OperationInput, OperationPreview, OperationTarget, OperationView } from "@/lib/vetrina/catalog-ops";
 import { previewOperation } from "@/server/actions/vetrina-operations";
 import { Close } from "../../icons";
 import { SEGMENTED_COLORS } from "../../segmented";
@@ -496,7 +496,7 @@ export function usePreview(input: OperationInput | null, delay = 0): PreviewStat
 const capitalized = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 /** Previews whose before → after are lists of names (tags, categories): too long to sit on one line with an arrow. */
-const LIST_KINDS = new Set<OperationKind>(["tag", "untag", "categorize", "uncategorize"]);
+const LIST_KINDS = new Set<ActionKind>(["tag", "untag", "categorize", "uncategorize"]);
 
 /**
  * The preview, as the owner reads it: how many change, what to know, the

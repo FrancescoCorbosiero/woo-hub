@@ -1,5 +1,6 @@
 "use server";
 
+import { refresh } from "next/cache";
 import { z } from "zod";
 import { defaultLocale, type Locale } from "@/i18n/config";
 import { getDictionary } from "@/i18n/dictionary";
@@ -14,6 +15,7 @@ import type {
   TermMarginState,
 } from "@/lib/vetrina/catalog-ops";
 import type { CatalogTaxonomy } from "@/lib/vetrina/catalog";
+import { isPageActionKind } from "@/lib/vetrina/page-ops";
 import type { VetrinaErrorCode } from "@/lib/vetrina/types";
 import { parseOperationInput, parseTarget } from "@/server/vetrina/operations/input";
 import * as operations from "@/server/vetrina/operations/service";
@@ -97,12 +99,19 @@ export async function listOperations(input: { limit?: number } = {}): Promise<Ve
   });
 }
 
-/** "Annulla": put back what the action changed, where the store still shows it. Runs in the background too. */
+/**
+ * "Annulla": put back what the action changed, where the store still shows
+ * it. An action on products runs its undo in the background too; a
+ * homepage action's is written at once, and the screen that asked gets the
+ * page read again in the same answer (next/cache's refresh).
+ */
 export async function undoOperation(input: { id: string }): Promise<VetrinaResult<OperationView>> {
   return answer(async () => {
     const parsed = OperationId.safeParse(input);
     if (!parsed.success) return invalid(words().input.operation);
-    return attempt(() => operations.undoOperation(parsed.data.id));
+    const res = await attempt(() => operations.undoOperation(parsed.data.id));
+    if (res.ok && isPageActionKind(res.data.kind)) refresh();
+    return res;
   });
 }
 

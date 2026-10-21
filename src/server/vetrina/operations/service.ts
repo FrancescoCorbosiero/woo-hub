@@ -12,6 +12,7 @@ import {
   type TermMarginState,
 } from "@/lib/vetrina/catalog-ops";
 import type { CatalogTaxonomy } from "@/lib/vetrina/catalog";
+import { isPageActionKind, type PageActionInput, type PageActionKind } from "@/lib/vetrina/page-ops";
 import type { VetrinaOperationRow } from "@/server/db/schema";
 import { readCatalogTrees, readTermProducts } from "@/server/vetrina/catalog";
 import { readRail } from "@/server/vetrina/service";
@@ -22,6 +23,7 @@ import { labelText, standingSales, undoable } from "./plan";
 import { assess } from "./preview";
 import * as repo from "./repo";
 import { isQueued, queueRun, queueSweep, queueUndo, recover } from "./runner";
+import { startPageAction, undoPageAction, type PageResult } from "./page";
 import { homepageSections } from "./sections";
 import { sectionVerdict } from "./writes";
 import { heldByTermHides, heldTerms, logSince, shopToday, standingTermHide, termNewcomers, termSaleProducts } from "./standing";
@@ -30,7 +32,9 @@ import { words } from "./words";
 /**
  * The catalog's actions, as the screens use them (through
  * server/actions/vetrina-operations.ts): preview, start, follow, list, undo,
- * a term's standing hide and sale, and the homepage's sections to pin into.
+ * a term's standing hide and sale, and the homepage's sections to pin into —
+ * and the homepage's own actions (page.ts), in the same log, with the same
+ * undo.
  */
 
 // Where the input's checks look for it (and their tests stand it in).
@@ -38,7 +42,9 @@ export { shopToday };
 
 const iso = (date: Date | null) => (date ? date.toISOString() : null);
 
-export function operationView(row: VetrinaOperationRow, now = Date.now()): OperationView {
+export function operationView(row: VetrinaOperationRow, now = Date.now(), sectionKey?: string | null): OperationView {
+  // A homepage action with no way back on file (a fixed list pointed elsewhere) has no "Annulla".
+  const wayBack = !isPageActionKind(row.kind) || row.page != null;
   return {
     id: row.id,
     kind: row.kind,
@@ -53,10 +59,11 @@ export function operationView(row: VetrinaOperationRow, now = Date.now()): Opera
     termKey: (row.termKey as TermKey | null) ?? null,
     createdAt: row.createdAt.toISOString(),
     finishedAt: iso(row.finishedAt),
-    undoable: undoable(row, now, OPERATION_UNDO_DAYS),
+    undoable: wayBack && undoable(row, now, OPERATION_UNDO_DAYS),
     undoneAt: iso(row.undoneAt),
     queued: (row.status === "running" || row.status === "undoing") && isQueued(row.id),
     undo: row.undo ?? null,
+    ...(sectionKey !== undefined ? { sectionKey } : {}),
   };
 }
 
@@ -91,6 +98,18 @@ export async function startOperation(input: OperationInput, via: OperationVia = 
   return operationView(row);
 }
 
+/**
+ * A homepage action, done at once (page.ts): the write's own answer, and the
+ * log's view of it — null when the log could not file it.
+ */
+export async function startPageOperation<K extends PageActionKind>(
+  input: Extract<PageActionInput, { kind: K }>,
+  via: OperationVia = "app",
+): Promise<{ operation: OperationView | null; result: PageResult<K> }> {
+  const { row, sectionKey, result } = await startPageAction(input, via);
+  return { operation: row ? operationView(row, Date.now(), sectionKey) : null, result };
+}
+
 async function found(id: string): Promise<VetrinaOperationRow> {
   const row = await repo.getOperation(id, await logSince());
   if (!row) throw new VetrinaError("not_found", words().error.notFound, 404);
@@ -122,6 +141,11 @@ export async function undoOperation(id: string): Promise<OperationView> {
   if (row.status === "undone" || row.undoneAt) throw new VetrinaError("invalid", w.error.alreadyUndone, 409);
   if (row.status === "failed" && row.changed === 0) throw new VetrinaError("invalid", w.error.nothingToUndo, 400);
   if (!undoable(row, Date.now(), OPERATION_UNDO_DAYS)) throw new VetrinaError("invalid", w.error.tooOld(OPERATION_UNDO_DAYS), 400);
+  // A homepage action is one write: its way back is written now, not queued.
+  if (isPageActionKind(row.kind)) {
+    const undone = await undoPageAction(row);
+    return operationView(undone.row, Date.now(), undone.sectionKey);
+  }
   if (row.section) {
     // A section deleted since has nothing to put back: the undo still takes back the categories the pin added.
     const rail = await readRail(row.section.key).then(

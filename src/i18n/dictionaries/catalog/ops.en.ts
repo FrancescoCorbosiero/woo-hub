@@ -40,6 +40,14 @@ export const opsEn: typeof opsIt = {
     reorder: (count: number, term: string) => `Arranged by hand · ${term}: ${count === 1 ? "1 product moved" : `${n(count)} products moved`}`,
     sourceOrder: (count: number, source: string, what: string) =>
       `Like “${source}” · ${what}: ${count === 1 ? "1 product moved" : `${n(count)} products moved`}`,
+    sectionSwitch: (section: string, on: boolean) => (on ? `“${section}” back on the site` : `“${section}” switched off on the site`),
+    sectionMove: (section: string, position: number) => `“${section}” moved to place ${n(position)}`,
+    sectionsArrange: (count: number) => (count === 1 ? "1 section moved" : `${n(count)} sections moved`),
+    sectionAdd: (section: string) => `New section “${section}”`,
+    sectionRemove: (section: string) => `“${section}” taken off the homepage`,
+    sectionSource: (section: string, shows: string) => `“${section}” now shows ${shows}`,
+    sectionEdit: (section: string) => `“${section}” published`,
+    blockEdit: (block: string) => `Texts of “${block}” saved`,
   },
 
   untouched: {
@@ -206,6 +214,41 @@ export const opsEn: typeof opsIt = {
     noneInTerm: (term: string, source: string) => `None of the products of “${term}” is in the ranking “${source}”.`,
     noneInShop: (source: string) => `None of the products of the ranking “${source}” is in the shop.`,
     inOrder: (source: string) => `It is already arranged like “${source}”.`,
+  },
+
+  page: {
+    switchOff: (title: string) => `“${title}” stays on the homepage but no longer shows on the site.`,
+    switchOn: (title: string) => `“${title}” shows on the site again.`,
+    moved: (title: string, from: number, to: number) => `“${title}” goes from place ${n(from)} to place ${n(to)} among the sections.`,
+    order: (titles: readonly string[]) => `The sections, from the top: ${titles.map((title, i) => `${i + 1}. “${title}”`).join(" · ")}.`,
+    add: (title: string, shows: string, limit: number) => `New section “${title}”: ${shows}, ${products(limit)}.`,
+    addPlace: (place: "after" | "before", anchor: string) => `${place === "after" ? "It goes after" : "It goes before"} “${anchor}”.`,
+    remove: (title: string) => `“${title}” leaves the homepage; its products stay in the shop.`,
+    source: (title: string, from: string, to: string) => `“${title}” will show ${to} instead of ${from}.`,
+    keptPins: (count: number) => (count === 1 ? "1 pinned product keeps its place." : `${n(count)} pinned products keep their places.`),
+    droppedPins: (count: number) =>
+      count === 1
+        ? "1 pinned product is not in the new choice: it goes back to being like the others."
+        : `${n(count)} pinned products are not in the new choice: they go back to being like the others.`,
+    buttonFollows: "The section's button will lead to the new page.",
+    alsoIn: (titles: readonly string[]) => `It is already on the homepage in ${nameList(titles.map((title) => `“${title}”`))}.`,
+    pins: (count: number) => (count === 0 ? "No pinned products." : `Pinned at the top: ${products(count)}.`),
+    hidden: (count: number) => (count === 0 ? "No products hidden from the section." : `Hidden from the section: ${products(count)}.`),
+    fallback: (name: string) => `After the pinned ones, automatically: ${name}.`,
+    fields: (names: readonly string[]) => `Changing: ${nameList(names)}.`,
+    limit: (count: number) => `Shows ${products(count)}.`,
+    stale: "The homepage changed meanwhile: reload it.",
+    unchanged: "Nothing changes: it is already so.",
+    alreadyOn: (title: string) => `“${title}” is already on.`,
+    alreadyOff: (title: string) => `“${title}” is already off.`,
+    samePlace: (title: string, position: number) => `“${title}” is already in place ${n(position)}.`,
+    sameSequence: "The sections are already arranged so.",
+    notFound: "Section not found: it may have been taken off the homepage.",
+    blockNotFound: "Block not found: the homepage may have changed.",
+    changedSince: (title: string) => `“${title}” changed since: undoing would take away the newer changes.`,
+    sectionsChanged: "The homepage's sections changed since: undoing would take away the newer changes.",
+    neighbourGone: (title: string) => `The section “${title}” stood next to is gone: put it back with “New section”.`,
+    notUndoable: "This section showed a fixed list or tags: it cannot be put back from here.",
   },
 
   input: {

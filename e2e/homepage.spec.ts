@@ -58,6 +58,23 @@ test("Sposta le sezioni moves one down; Annulla puts it back", async ({ page }) 
   await expect.poll(() => sectionTitles(page)).toEqual(before);
 });
 
+test("a homepage action is in the activity log: undone from there", async ({ page }) => {
+  const title = "PRODOTTI IN TENDENZA";
+  const card = sectionCard(page, title);
+
+  await card.getByRole("button", { name: `Azioni per «${title}»` }).click();
+  await actionSheet(page).getByRole("button", { name: "Spegni sul sito" }).click();
+  await expect(card.getByText("Spenta", { exact: true })).toBeVisible();
+
+  await page.getByRole("link", { name: "Attività" }).filter({ visible: true }).first().click();
+  const log = sheet(page, "Attività");
+  const row = log.getByRole("listitem").filter({ hasText: `«${title}» spenta sul sito` }).first();
+  await row.getByRole("button", { name: "Annulla" }).click();
+  await expect(row.getByText("Annullata")).toBeVisible();
+  await log.getByRole("button", { name: "Chiudi" }).click();
+  await expect(card.getByText("Spenta", { exact: true })).toHaveCount(0);
+});
+
 test("a section switched off stays on the page, faded; switched on again", async ({ page }) => {
   const title = "PRODOTTI IN TENDENZA";
   const card = sectionCard(page, title);

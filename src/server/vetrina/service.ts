@@ -159,6 +159,19 @@ export interface PublishInput extends RailState {
 
 const RAIL_BLOCK = "golden-hive/shortcode-wrapper";
 
+/** No more pinned products than the config allows. */
+export function assertPins(pin: readonly number[]): void {
+  const max = hubConfig.vetrina.maxPins;
+  if (pin.length > max) throw new VetrinaError("invalid", `Al massimo ${max} prodotti in posizione fissa.`, 400);
+}
+
+/** How many products a section shows: 1 to the config's most (a section put back keeps what it had, up to 100). */
+export function assertSectionLimit(limit: number, restoring = false): void {
+  if (!Number.isInteger(limit) || limit < 1 || limit > Math.max(hubConfig.vetrina.maxLimit, restoring ? 100 : 0)) {
+    throw new VetrinaError("invalid", `Da 1 a ${hubConfig.vetrina.maxLimit} prodotti per sezione.`, 400);
+  }
+}
+
 /**
  * The field edits a publish may carry: the fields the config lets the
  * customer edit and the site's plugin supports — the section's switch too,
@@ -197,11 +210,8 @@ export async function publishRail(input: PublishInput): Promise<RailWriteResult>
     throw new VetrinaError("stale", "La homepage è stata modificata nel frattempo: ricarica la sezione.", 409);
   }
   const allowed = blockConfig(RAIL_BLOCK).edit;
-  const max = hubConfig.vetrina.maxPins;
   const pin = allowed.pins ? input.pin : current.pin;
-  if (pin.length > max) {
-    throw new VetrinaError("invalid", `Al massimo ${max} prodotti in posizione fissa.`, 400);
-  }
+  assertPins(pin);
   const features = await siteFeatures().catch(() => []);
   const fields = allowedFieldChanges(
     RAIL_BLOCK,
@@ -215,9 +225,7 @@ export async function publishRail(input: PublishInput): Promise<RailWriteResult>
   const sizeable = allowed.limit && Object.keys(current.fields).length > 0;
   let limit: number | undefined;
   if (sizeable && input.limit != null && input.limit !== current.limit) {
-    if (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > hubConfig.vetrina.maxLimit) {
-      throw new VetrinaError("invalid", `Da 1 a ${hubConfig.vetrina.maxLimit} prodotti per sezione.`, 400);
-    }
+    assertSectionLimit(input.limit);
     limit = input.limit;
   }
   return source.writeRail({

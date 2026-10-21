@@ -96,28 +96,17 @@ export function HomeScreen({ result }: { result: VetrinaResult<VetrinaHome> }) {
           modifiedGmt: data.home.modifiedGmt,
         }
       : null;
-  const sourceRequest: SourceRequest | null = (() => {
-    if (!sourceRail || !data) return null;
-    const current = railSourceOf(sourceRail);
-    return {
-      key: sourceRail.key,
-      title: sourceRail.title.trim() || sourceRail.key,
-      current,
-      expectedModifiedGmt: data.home.modifiedGmt,
-      expectedAttrsHash: sourceRail.attrsHash,
-      button: { text: sourceRail.button.text },
-      before: current
-        ? {
-            source: current,
-            title: sourceRail.title,
-            buttonUrl: sourceRail.button.url,
-            pin: sourceRail.pin,
-            exclude: sourceRail.exclude,
-            fallback: sourceRail.fallback,
-          }
-        : null,
-    };
-  })();
+  const sourceRequest: SourceRequest | null =
+    sourceRail && data
+      ? {
+          key: sourceRail.key,
+          title: sourceRail.title.trim() || sourceRail.key,
+          current: railSourceOf(sourceRail),
+          expectedModifiedGmt: data.home.modifiedGmt,
+          expectedAttrsHash: sourceRail.attrsHash,
+          button: { text: sourceRail.button.text },
+        }
+      : null;
 
   async function saveBlock(block: StaticBlock, fields: FieldValues): Promise<boolean> {
     if (!result.ok || !block.attrsHash) return false;
@@ -134,7 +123,6 @@ export function HomeScreen({ result }: { result: VetrinaResult<VetrinaHome> }) {
       return res.code === "stale";
     }
     toast.success(result.data.source === "fixture" ? v.section.savedDemo : v.section.saved);
-    router.refresh();
     return true;
   }
 

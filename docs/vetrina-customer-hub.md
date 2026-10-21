@@ -69,7 +69,8 @@ Branch `claude/custom-product-catalog-ui-sqzewp`, in both repositories.
    **Nuova sezione**, **Sposta le sezioni**, and a card's **⋯** (Cambia cosa
    mostra…, Sposta su / giù, Nuova sezione qui sotto, Spegni sul sito, Togli dalla
    homepage); **＋ Aggiungi prodotti** on a card or in the editor. Each is written at
-   once, as one WordPress revision, with **Annulla** in its toast. With an older
+   once, as one WordPress revision, and filed in **Attività** like the catalog's
+   actions: **Annulla** in its toast, and from the log for 7 days. With an older
    plugin the screen hides them and says which version is needed.
 
 Notes:
@@ -604,6 +605,20 @@ with `plugin_outdated`.
 Every write is §6.3's: `expected_modified` and the block's attributes hash, a
 targeted replacement of markup found exactly once (never a whole-page rewrite),
 `wp_update_post` (a revision), the page cache purged.
+
+**In the log.** Each of these writes — and a section editor's **Pubblica**, and a
+block's texts — is an action in the Vetrina's log, beside the catalog's
+(`src/server/vetrina/operations/page.ts`; kinds in `src/lib/vetrina/page-ops.ts`):
+its row says what it did and how it came (the screens, the API, an assistant), and
+keeps its way back. Its **Annulla** — from the toast, or from **Attività** within
+7 days — is written on the server, over the page as it is then: the section is
+found again by its fingerprint (the block's attributes hash, wherever it stands
+now), and the undo is refused when the section changed since, since a newer write
+is the owner's newer word. A move goes back only while the sections are exactly
+as it left them; a section taken away goes back next to the same neighbour. A
+section pointed away from what a write cannot name again (a fixed list, tags) has
+no way back on file. The write answers with the page read again (next/cache's
+`refresh()`), so the screen never waits on a refresh of its own.
 
 ---
 
