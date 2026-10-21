@@ -385,13 +385,16 @@ crontab line:
 
 ## Programmatic API
 
-`/api/v1/*`, with `Authorization: Bearer $HUB_API_TOKEN`: a category's or
-brand's products in the shop's order (the one its page on the shop follows),
-products placed in it — previewed, logged, undoable like the Vetrina's own
-"Ordina" — order sources (a ranking from elsewhere, e.g. an LLM's reading of
-a reference shop's page, used with "Usa l'ordine di «…»":
-[docs/order-sources.md](docs/order-sources.md)), and the progress and undo of
-the catalog's actions. See [docs/api.md](docs/api.md).
+`/api/v1/*`, with `Authorization: Bearer $HUB_API_TOKEN`: every action the
+Vetrina can do, on products and on the homepage — described for a script or
+an assistant (`/actions`), asked as **proposals** the owner confirms (the
+action runs only if the shop still gives the preview they saw, and only
+once), logged and undoable like the Vetrina's own — and the reads they start
+from (the homepage, the products, the log). Order sources (a ranking from
+elsewhere, e.g. an LLM's reading of a reference shop's page, used with
+"Usa l'ordine di «…»": [docs/order-sources.md](docs/order-sources.md)) too.
+See [docs/api.md](docs/api.md), and [docs/operations.md](docs/operations.md)
+for how actions, the log and proposals fit — the ground for an assistant.
 
 ```bash
 curl -H "Authorization: Bearer $HUB_API_TOKEN" -H "Content-Type: application/json" \

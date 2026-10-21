@@ -1,0 +1,1 @@
+ALTER TABLE "vetrina_operations" ADD COLUMN "via" text DEFAULT 'app' NOT NULL;

@@ -14,7 +14,7 @@ import { homepagePresence, readCatalogTrees, type CatalogTrees } from "./catalog
 import { rowsInOrder } from "./operations/context";
 import { sectionMembers } from "./operations/sections";
 import { requirePower, sectionPowers, siteFeatures } from "./powers";
-import { allowedFieldChanges } from "./service";
+import { allowedFieldChanges, assertSectionLimit } from "./service";
 import { getVetrinaSource, VetrinaError } from "./source";
 
 /**
@@ -69,6 +69,38 @@ function linkPath(url: string): string {
 }
 
 /* ---------------------------------------------------------------- *
+ * The refusals a write and its preview share
+ * ---------------------------------------------------------------- */
+
+/** A shop-wide list the Vetrina may pick (hub.config.ts's vetrina.lists). */
+export function assertListAllowed(source: RailSource): void {
+  if ("list" in source && !hubConfig.vetrina.lists.includes(source.list)) {
+    throw new VetrinaError("invalid", "Questa lista non si può scegliere dalla Vetrina.", 400);
+  }
+}
+
+/** Pointing a section at what it shows already changes nothing. */
+export function assertNewSource(rail: Pick<RailSummary, "taxonomy" | "terms" | "atts">, source: RailSource): void {
+  if (sameSource(railSourceOf(rail), source)) throw new VetrinaError("invalid", "La sezione mostra già questo.", 400);
+}
+
+/**
+ * The section a removal takes away, and its place: refused when it is not
+ * on the page, when no write could put it back (a fixed list, a tag), or
+ * when it is the homepage's last section.
+ */
+export function removalOf(rails: readonly RailSummary[], key: string): { index: number; rail: RailSummary } {
+  const index = rails.findIndex((r) => r.key === key);
+  if (index < 0) throw new VetrinaError("not_found", "Sezione non trovata: forse è stata tolta dalla homepage.", 404);
+  const rail = rails[index];
+  if (!railSourceOf(rail)) throw new VetrinaError("invalid", "Questa sezione si toglie dall'editor di WordPress.", 400);
+  if (rails.length <= 1) {
+    throw new VetrinaError("invalid", "È l'ultima sezione di prodotti della homepage: si toglie dall'editor di WordPress.", 422);
+  }
+  return { index, rail };
+}
+
+/* ---------------------------------------------------------------- *
  * What a section shows
  * ---------------------------------------------------------------- */
 
@@ -100,7 +132,8 @@ export async function previewSectionSource(key: string, source: RailSource): Pro
   return sourceChange(rail, source);
 }
 
-async function sourceChange(rail: Omit<RailSummary, "products">, source: RailSource): Promise<SourceChange> {
+/** previewSectionSource() for a section already read. */
+export async function sourceChange(rail: Omit<RailSummary, "products">, source: RailSource): Promise<SourceChange> {
   const before = railSourceOf(rail);
   let members = new Set<number>();
   let presenceKey: string | null = null;
@@ -167,11 +200,10 @@ export async function changeSectionSource(input: SourceInput): Promise<SourceRes
   const vetrina = await getVetrinaSource();
   const rail = await vetrina.rail(input.key, { count: 1 });
   if (rail.modifiedGmt !== input.expectedModifiedGmt || rail.attrsHash !== input.expectedAttrsHash) throw stale();
-  if (sameSource(railSourceOf(rail), input.source) && !input.restore) {
-    throw new VetrinaError("invalid", "La sezione mostra già questo.", 400);
-  }
-  if ("list" in input.source && !hubConfig.vetrina.lists.includes(input.source.list) && !input.restore) {
-    throw new VetrinaError("invalid", "Questa lista non si può scegliere dalla Vetrina.", 400);
+  // Putting a section back ("Annulla") takes what it had, whatever the lists allow now.
+  if (!input.restore) {
+    assertNewSource(rail, input.source);
+    assertListAllowed(input.source);
   }
   const order = input.restore ?? (await sourceChange(rail, input.source));
   const pin = "keptPins" in order ? order.keptPins : order.pin;
@@ -224,13 +256,9 @@ export async function addSection(input: AddSectionInput): Promise<{ key: string 
   const vetrina = await getVetrinaSource();
   const anchor = await vetrina.rail(input.anchorKey, { count: 1 });
   if (anchor.modifiedGmt !== input.expectedModifiedGmt) throw stale();
-  if ("list" in input.source && !hubConfig.vetrina.lists.includes(input.source.list) && !input.restore) {
-    throw new VetrinaError("invalid", "Questa lista non si può scegliere dalla Vetrina.", 400);
-  }
+  if (!input.restore) assertListAllowed(input.source);
   const limit = input.limit ?? anchor.limit;
-  if (!Number.isInteger(limit) || limit < 1 || limit > Math.max(hubConfig.vetrina.maxLimit, input.restore ? 100 : 0)) {
-    throw new VetrinaError("invalid", `Da 1 a ${hubConfig.vetrina.maxLimit} prodotti per sezione.`, 400);
-  }
+  assertSectionLimit(limit, input.restore != null);
   // The texts the owner may write, checked as an edit checks them — from blank, as a new block is.
   const blank: FieldValues = Object.fromEntries(Object.keys(anchor.fields).map((field) => [field, ""]));
   const fields = allowedFieldChanges(
@@ -269,20 +297,16 @@ export interface RemoveSectionInput {
  * puts it back, next to the same neighbour, with its texts, pins, hidden
  * products, order and layout. The answer is that way back.
  */
-export async function removeSection(input: RemoveSectionInput): Promise<{ restore: AddSectionInput }> {
+export async function removeSection(
+  input: RemoveSectionInput,
+): Promise<{ restore: AddSectionInput; neighbour: { key: string; attrsHash: string } }> {
   requirePower("remove", await siteFeatures());
   const vetrina = await getVetrinaSource();
   const home = await vetrina.homepage();
   if (home.modifiedGmt !== input.expectedModifiedGmt) throw stale();
   const rails = home.blocks.flatMap((b) => (b.kind === "rail" ? [b.rail] : []));
-  const index = rails.findIndex((r) => r.key === input.key);
-  if (index < 0) throw new VetrinaError("not_found", "Sezione non trovata: forse è stata tolta dalla homepage.", 404);
-  const rail = rails[index];
-  const source = railSourceOf(rail);
-  if (!source) throw new VetrinaError("invalid", "Questa sezione si toglie dall'editor di WordPress.", 400);
-  if (rails.length <= 1) {
-    throw new VetrinaError("invalid", "È l'ultima sezione di prodotti della homepage: si toglie dall'editor di WordPress.", 422);
-  }
+  const { index, rail } = removalOf(rails, input.key);
+  const source = railSourceOf(rail)!;
   // The way back: next to the section above it (or, the first, the one below), as that one is called once this is gone.
   const neighbour = index > 0 ? rails[index - 1] : rails[index + 1];
   const renamed = keysAfterArrange(rails.filter((r) => r !== rail).map((r) => r.key));
@@ -295,6 +319,8 @@ export async function removeSection(input: RemoveSectionInput): Promise<{ restor
   const layout = Object.fromEntries(LAYOUT_KEYS.flatMap((k) => (rail.atts[k] != null ? [[k, rail.atts[k]]] : [])));
   const fields = Object.fromEntries(Object.entries(rail.fields).filter(([field, value]) => value !== "" || field === SWITCH_FIELD));
   return {
+    // The section it goes back next to, as it is called once this one is gone — and its fingerprint, to find it later.
+    neighbour: { key: renamed.get(neighbour.key) ?? neighbour.key, attrsHash: neighbour.attrsHash },
     restore: {
       anchorKey: renamed.get(neighbour.key) ?? neighbour.key,
       place: index > 0 ? "after" : "before",

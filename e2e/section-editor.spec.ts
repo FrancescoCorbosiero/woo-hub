@@ -93,13 +93,14 @@ test("a product from outside the category joins it when the section is published
   await expect(rows(page).first()).toContainText(name);
   await expect(rows(page).first()).not.toContainText("quando pubblichi");
 
-  // Put the demo shop back: the pin, then the product out of the category ("Annulla" in the activity log).
+  // Put the demo shop back: the pin, then the product out of the category ("Annulla" on its line in the activity log,
+  // where the section's publishes are lines of their own).
   await unpinAllAndPublish(page);
   await open(page, "/vetrina");
   await page.getByRole("link", { name: "Attività" }).filter({ visible: true }).first().click();
-  const log = sheet(page, "Attività");
-  await log.getByRole("button", { name: "Annulla" }).first().click();
-  await expect(log.getByText("Annullata").first()).toBeVisible({ timeout: 30_000 });
+  const joined = sheet(page, "Attività").getByRole("listitem").filter({ hasText: "Categoria «Prodotti in tendenza» a 1 prodotto" }).first();
+  await joined.getByRole("button", { name: "Annulla" }).click();
+  await expect(joined.getByText("Annullata")).toBeVisible({ timeout: 30_000 });
   await open(page, TRENDING);
   await expect(page.getByText(`${members} prodotti`, { exact: false })).toBeVisible();
 });

@@ -222,7 +222,7 @@ export const actEn: typeof actIt = {
   activity: {
     title: "Activity",
     open: "Activity",
-    intro: "The latest actions on products. “Undo” puts the earlier values back, where nobody changed them since.",
+    intro: "The latest actions on products and on the homepage. “Undo” puts things back as they were, where nobody changed them since.",
     empty: "No actions yet.",
     loading: "Loading the activity…",
     failed: "Can't read the activity.",
@@ -234,6 +234,11 @@ export const actEn: typeof actIt = {
       failed: "Didn't finish",
       undoing: "Undoing",
       undone: "Undone",
+    },
+    via: {
+      api: "via the API",
+      assistant: "by the assistant",
+      scheduler: "scheduled",
     },
     refused: (count: number) => `${products(count)} refused by the shop`,
     refusedSizes: (count: number) => `${count === 1 ? "1 size" : `${n(count)} sizes`} refused by the shop`,

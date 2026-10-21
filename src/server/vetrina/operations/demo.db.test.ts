@@ -250,8 +250,21 @@ describe.skipIf(!enabled)("the catalog's actions on the demo shop", () => {
     const { demoShop } = await load();
     const [a, b] = demoShop().products.filter((x) => !x.tags.includes("estate"));
     const op = await run({ kind: "tag", target: { kind: "ids", ids: [a.id, b.id] }, tag: { id: 302, name: "estate" } });
-    expect(op).toMatchObject({ status: "done", changed: 2, label: "Tag «estate» a 2 prodotti" });
+    expect(op).toMatchObject({ status: "done", changed: 2, label: "Tag «estate» a 2 prodotti", via: "app" });
     expect(a.tags).toContain("estate");
+  });
+
+  it("files how an action came: the API's says so in the log, and is undone like any other", async () => {
+    const { demoShop, startOperation, idle, listOperations } = await load();
+    const p = demoShop().products.find((x) => x.visibility === "visible")!;
+    const started = await startOperation({ kind: "hide", target: { kind: "ids", ids: [p.id] } }, "api");
+    expect(started.via).toBe("api");
+    await idle();
+    const [logged] = await listOperations(5);
+    expect(logged).toMatchObject({ id: started.id, status: "done", via: "api" });
+    expect(p.visibility).toBe("hidden");
+    expect(await undo(started.id)).toMatchObject({ status: "undone", via: "api" });
+    expect(p.visibility).toBe("visible");
   });
 
   it("gives a new demo category an id no saved rule holds: the rules outlive a restart, the demo's own terms do not", async () => {

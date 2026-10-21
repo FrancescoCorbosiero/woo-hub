@@ -176,6 +176,27 @@
       "when": 1792291061738,
       "tag": "0024_colossal_darkstar",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1792540437470,
+      "tag": "0025_massive_puck",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1792541005124,
+      "tag": "0026_tearful_marauders",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1792545674433,
+      "tag": "0027_harsh_invisible_woman",
+      "breakpoints": true
     }
   ]
 }

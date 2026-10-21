@@ -243,7 +243,7 @@ export const actIt = {
   activity: {
     title: "Attività",
     open: "Attività",
-    intro: "Le ultime azioni sui prodotti. «Annulla» rimette i valori di prima, dove nessuno li ha cambiati dopo.",
+    intro: "Le ultime azioni sui prodotti e sulla homepage. «Annulla» rimette le cose com'erano, dove nessuno le ha cambiate dopo.",
     empty: "Ancora nessuna azione.",
     loading: "Carico le attività…",
     failed: "Non riesco a leggere le attività.",
@@ -255,6 +255,12 @@ export const actIt = {
       failed: "Non riuscita",
       undoing: "La sto annullando",
       undone: "Annullata",
+    },
+    /** How an action came, when not from these screens. */
+    via: {
+      api: "via API",
+      assistant: "dall'assistente",
+      scheduler: "programmata",
     },
     refused: (count: number) => agreed(count, "prodotto rifiutato dal negozio", "prodotti rifiutati dal negozio"),
     /** A margin's reprice counts sizes, not products. */

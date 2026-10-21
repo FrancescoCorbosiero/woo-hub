@@ -57,7 +57,7 @@ function ArrangeContent({ request, onClose }: { request: ArrangeRequest; onClose
   async function save() {
     if (!changed || busy) return;
     setBusy(true);
-    const ok = await writes.arrange({ keys: order, before, expectedModifiedGmt: request.modifiedGmt });
+    const ok = await writes.arrange({ keys: order, expectedModifiedGmt: request.modifiedGmt });
     setBusy(false);
     if (ok) onClose();
   }

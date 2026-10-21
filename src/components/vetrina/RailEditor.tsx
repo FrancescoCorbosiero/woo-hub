@@ -265,9 +265,6 @@ function Editor({
         expectedModifiedGmt: base.modifiedGmt,
         expectedAttrsHash: base.attrsHash,
         button: { text: base.button.text },
-        before: source
-          ? { source, title: base.title, buttonUrl: base.button.url, pin: base.pin, exclude: base.exclude, fallback: base.fallback }
-          : null,
         unpublished: dirty ? changes.total : 0,
       }
     : null;

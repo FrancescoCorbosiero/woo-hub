@@ -2,6 +2,7 @@ import "server-only";
 import { and, lt, sql } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import { applyAudit, ingestionRuns, plans, storeSyncRuns } from "@/server/db/schema";
+import { trimProposals } from "@/server/vetrina/operations/proposals";
 import { trimOperations } from "@/server/vetrina/operations/repo";
 
 /**
@@ -14,7 +15,7 @@ import { trimOperations } from "@/server/vetrina/operations/repo";
  * reads only their latest rows. Nothing here is state: the snapshot, the
  * catalog, the ledger, locks and plans are never touched. The Vetrina's log
  * of catalog actions is cut here too, keeping what a term's screen still
- * reads (trimOperations says which).
+ * reads (trimOperations says which), and its proposals.
  */
 
 /** Stepped syncs: a run nobody applied in a week never will be. */
@@ -29,6 +30,7 @@ export async function pruneRunLogs(): Promise<{
   ingestionRuns: number;
   applyRuns: number;
   vetrinaOperations: number;
+  vetrinaProposals: number;
 }> {
   // Only runs whose plans are gone: a run without its row reads as a manual
   // preview, "complete by construction" (syncRunApplicable) — a half-walked
@@ -51,5 +53,6 @@ export async function pruneRunLogs(): Promise<{
     .where(lt(applyAudit.startedAt, daysAgo(LOG_DAYS)))
     .returning({ id: applyAudit.id });
   const vetrinaOperations = await trimOperations();
-  return { syncRuns: syncRuns.length, ingestionRuns: ingestion.length, applyRuns: apply.length, vetrinaOperations };
+  const vetrinaProposals = await trimProposals();
+  return { syncRuns: syncRuns.length, ingestionRuns: ingestion.length, applyRuns: apply.length, vetrinaOperations, vetrinaProposals };
 }

@@ -1,5 +1,5 @@
 import { isListed } from "@/lib/vetrina/catalog";
-import type { OperationInput, OperationKind, OperationView } from "@/lib/vetrina/catalog-ops";
+import type { ActionKind, OperationInput, OperationView } from "@/lib/vetrina/catalog-ops";
 
 /**
  * The product sheet's "Nel negozio" as plain data: what it says about the
@@ -10,7 +10,7 @@ import type { OperationInput, OperationKind, OperationView } from "@/lib/vetrina
 /** An action started from the sheet, from its start until the sheet has read the product again after it ended. */
 export interface PendingAction {
   id: string;
-  kind: OperationKind;
+  kind: ActionKind;
   /** The category it adds or removes. */
   categoryId: number | null;
   /** It ended; the sheet is reading the product again. Until that answer, what it did is shown as done. */
@@ -23,7 +23,7 @@ export function pendingFrom(view: Pick<OperationView, "id" | "kind">, input: Ope
 }
 
 /** One of these is running (or just ended and not read back yet). */
-export function isWorking(pending: readonly PendingAction[], ...kinds: OperationKind[]): boolean {
+export function isWorking(pending: readonly PendingAction[], ...kinds: ActionKind[]): boolean {
   return pending.some((p) => kinds.includes(p.kind));
 }
 
@@ -86,7 +86,7 @@ export function shopState(
  * hidden product leaves the homepage, a category its list — which the
  * screen hears separately.
  */
-export function cardShows(kind: OperationKind): boolean {
+export function cardShows(kind: ActionKind): boolean {
   return kind === "sale" || kind === "unsale" || kind === "hide" || kind === "show" || kind === "margin";
 }
 

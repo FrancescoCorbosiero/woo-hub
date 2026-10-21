@@ -1,5 +1,5 @@
 import "server-only";
-import type { OperationInput, OperationKind, OperationStatus, SaleRounding } from "@/lib/vetrina/catalog-ops";
+import type { ActionInput, ActionKind, OperationInput, OperationStatus, SaleRounding } from "@/lib/vetrina/catalog-ops";
 import type { OperationLabelParams } from "@/server/db/schema";
 import { words, type Words } from "./words";
 
@@ -327,10 +327,10 @@ export function undoList(live: readonly number[], before: readonly number[], aft
 
 /** An action's row, as far as the term screen and the undo rules read it. */
 export interface OperationFacts {
-  kind: OperationKind;
+  kind: ActionKind;
   status: OperationStatus;
   changed: number;
-  input: OperationInput;
+  input: ActionInput;
   createdAt: Date;
   finishedAt: Date | null;
   undoneAt: Date | null;
@@ -504,6 +504,22 @@ export function labelText(p: OperationLabelParams, w: Words = words()): string {
       return p.reordered ? w.label.reorder(p.count, p.term ?? "") : w.label.order(p.count, p.term ?? "", p.position ?? null);
     case "sourceOrder":
       return w.label.sourceOrder(p.count, p.source ?? "", p.term || w.source.wholeCatalog);
+    case "sectionSwitch":
+      return w.label.sectionSwitch(p.section ?? "", p.on ?? false);
+    case "sectionMove":
+      return w.label.sectionMove(p.section ?? "", p.position ?? 1);
+    case "sectionsArrange":
+      return w.label.sectionsArrange(p.count);
+    case "sectionAdd":
+      return w.label.sectionAdd(p.section ?? "");
+    case "sectionRemove":
+      return w.label.sectionRemove(p.section ?? "");
+    case "sectionSource":
+      return w.label.sectionSource(p.section ?? "", p.shows ?? "");
+    case "sectionEdit":
+      return w.label.sectionEdit(p.section ?? "");
+    case "blockEdit":
+      return w.label.blockEdit(p.block ?? "");
   }
 }
 

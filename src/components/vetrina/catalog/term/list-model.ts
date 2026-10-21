@@ -12,7 +12,7 @@ import {
   type FacetCount,
   type QuickView,
 } from "@/lib/vetrina/catalog";
-import type { OperationKind } from "@/lib/vetrina/catalog-ops";
+import type { ActionKind } from "@/lib/vetrina/catalog-ops";
 
 /**
  * The catalog's pure parts: routes, what a list keeps in its address, the
@@ -268,6 +268,6 @@ export function joinPages(query: CatalogQuery, pages: readonly CatalogPage[]): L
  * the list reads the cards again rather than show the old prices under the
  * toast that says they changed.
  */
-export function movesRowPrices(kind: OperationKind): boolean {
+export function movesRowPrices(kind: ActionKind): boolean {
   return kind === "sale" || kind === "unsale" || kind === "margin";
 }

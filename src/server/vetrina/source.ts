@@ -37,12 +37,17 @@ export interface VetrinaSource {
   history(key: string): Promise<RailHistoryState[]>;
 }
 
-/** A failure the Vetrina explains in its own words (see VetrinaErrorCode). */
+/**
+ * A failure the Vetrina explains in its own words (see VetrinaErrorCode).
+ * `data`: what the caller needs to go on, when there is something (a
+ * proposal confirmed over a shop that changed: the new one).
+ */
 export class VetrinaError extends Error {
   constructor(
     readonly code: VetrinaErrorCode,
     message: string,
     readonly status?: number,
+    readonly data?: unknown,
   ) {
     super(message);
     this.name = "VetrinaError";

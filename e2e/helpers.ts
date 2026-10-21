@@ -1,4 +1,27 @@
-import { expect, type Locator, type Page } from "@playwright/test";
+import { expect, type APIRequestContext, type Locator, type Page } from "@playwright/test";
+
+/** The programmatic API's token on the test server (playwright.config.ts gives it to the app). */
+export const API_TOKEN = process.env.E2E_API_TOKEN ?? "e2e-api-token-0123456789abcdef";
+
+/**
+ * A call to the Hub's API (/api/v1) with the token: its `data` once the
+ * answer is the status expected, else the test fails on the answer itself.
+ */
+export async function api<T = unknown>(
+  request: APIRequestContext,
+  method: "GET" | "POST",
+  path: string,
+  { body, status = method === "GET" ? 200 : 202 }: { body?: unknown; status?: number } = {},
+): Promise<T> {
+  const res = await request.fetch(`/api/v1${path}`, {
+    method,
+    headers: { authorization: `Bearer ${API_TOKEN}` },
+    ...(body !== undefined ? { data: body } : {}),
+  });
+  const json = (await res.json()) as { ok: boolean; data?: T; error?: string };
+  expect(res.status(), json.error ?? "").toBe(status);
+  return json.data as T;
+}
 
 /**
  * Opens a page and waits until its streamed parts are revealed. React sends

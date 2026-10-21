@@ -23,7 +23,7 @@ import {
   useLastShown,
 } from "../catalog/act/parts";
 import { Badge, SourcePicker, type PickedSource } from "./SourcePicker";
-import { useSectionWrites, type SourceBefore } from "./use-section-writes";
+import { useSectionWrites } from "./use-section-writes";
 
 /**
  * "Cambia cosa mostra": a section pointed at another category, brand or
@@ -42,8 +42,6 @@ export interface SourceRequest {
   expectedModifiedGmt: string;
   expectedAttrsHash: string;
   button: { text: string };
-  /** What "Annulla" puts back; null when what it shows now cannot be named again (a fixed list, a tag). */
-  before: SourceBefore | null;
   /** Changes not published yet in the section editor: they are lost. */
   unpublished?: number;
 }
@@ -101,7 +99,6 @@ function SourceContent({
       source: picked.source,
       name: picked.name,
       fields: title.trim() !== request.title ? { title: title.trim() } : undefined,
-      before: request.before,
       onKey: onChanged,
     });
     setBusy(false);

@@ -1,4 +1,4 @@
-import type { OperationKind } from "@/lib/vetrina/catalog-ops";
+import type { ActionKind } from "@/lib/vetrina/catalog-ops";
 import { changedFields } from "@/lib/vetrina/fields";
 import { sameState } from "@/lib/vetrina/order";
 import type { SectionDraft } from "@/lib/vetrina/types";
@@ -12,11 +12,23 @@ import type { SectionDraft } from "@/lib/vetrina/types";
 /**
  * A pin, a product hidden or shown, one put in or out of a category, a tag an
  * automatic category reads — and the shop's own positions, which a section in
- * "Negozio" order follows after its pinned products.
+ * "Negozio" order follows after its pinned products. And a section's own
+ * settings, published or put back from the log.
  */
-const MOVERS = new Set<OperationKind>(["pin", "hide", "show", "categorize", "uncategorize", "tag", "untag", "order", "sourceOrder"]);
+const MOVERS = new Set<ActionKind>([
+  "pin",
+  "hide",
+  "show",
+  "categorize",
+  "uncategorize",
+  "tag",
+  "untag",
+  "order",
+  "sourceOrder",
+  "sectionEdit",
+]);
 
-export function movesSection(kind: OperationKind): boolean {
+export function movesSection(kind: ActionKind): boolean {
   return MOVERS.has(kind);
 }
 

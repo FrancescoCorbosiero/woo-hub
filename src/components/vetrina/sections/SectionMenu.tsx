@@ -58,7 +58,7 @@ export function SectionMenu({
     if (!shown) return;
     const next = moveKey(keys, shown.key, delta);
     onClose();
-    if (next) void writes.arrange({ keys: next, before: [...keys], expectedModifiedGmt: modifiedGmt });
+    if (next) void writes.move({ key: shown.key, position: index + 1 + delta, expectedModifiedGmt: modifiedGmt });
   }
 
   return (

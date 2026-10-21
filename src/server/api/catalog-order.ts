@@ -110,5 +110,5 @@ export async function order(
   } satisfies OperationInput);
   if (!parsed.ok) throw new VetrinaError("invalid", parsed.error, 400);
   if (body.dryRun) return { dryRun: true, preview: await operations.previewOperation(parsed.data) };
-  return { dryRun: false, operation: await operations.startOperation(parsed.data) };
+  return { dryRun: false, operation: await operations.startOperation(parsed.data, "api") };
 }
