@@ -119,3 +119,31 @@ test("a proposal confirmed over a shop that changed runs nothing, and answers th
   await api(request, "POST", `/operations/${moved.id}/undo`);
   await api(request, "POST", `/operations/${meanwhile.id}/undo`);
 });
+
+test("the reads an assistant starts from: the homepage, the products, the log", async ({ request }) => {
+  const home = await api<{
+    powers: { switchOff: boolean };
+    blocks: { kind: string; key?: string; position?: number; title?: string; shows?: unknown; products?: unknown[] }[];
+  }>(request, "GET", "/homepage");
+  const sections = home.blocks.filter((b) => b.kind === "section");
+  expect(sections[0]).toMatchObject({
+    key: TRENDING_SECTION,
+    position: 1,
+    title: TRENDING_TITLE,
+    shows: { taxonomy: "category", slug: "featured-sneakers-originali-streetwear" },
+  });
+  expect(sections[0].products!.length).toBeGreaterThan(0);
+  expect(home.powers.switchOff).toBe(true);
+
+  const found = await api<{ total: number; products: { id: number; name: string; sections: unknown[] }[] }>(
+    request,
+    "GET",
+    "/catalog/products?q=samba&limit=5",
+  );
+  expect(found.total).toBeGreaterThan(0);
+  expect(found.products[0].name).toMatch(/samba/i);
+
+  const log = await api<{ id: string; via: string }[]>(request, "GET", "/operations?limit=5");
+  expect(Array.isArray(log)).toBe(true);
+  await api(request, "GET", "/operations?limit=0", { status: 400 });
+});
