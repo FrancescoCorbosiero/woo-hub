@@ -17,9 +17,10 @@ import type { AppConfig } from "@core/config";
 import type { CollectionCondition, HoldReason, IndexedAttribute, IndexedTerm } from "@core/collections";
 import type { Plan, PlanItem, ApplyResult, SourceProduct } from "@core/core-spine";
 import type { StoreOverrides } from "@/server/overrides/model";
-import type { ActionInput, ActionKind, OperationVia, OperationView } from "@/lib/vetrina/catalog-ops";
+import type { ActionInput, ActionKind, OperationPreview, OperationVia, OperationView } from "@/lib/vetrina/catalog-ops";
 import type { OperationPageRecord } from "@/lib/vetrina/page-ops";
 import type { OrderSourceItem } from "@/lib/vetrina/order-sources";
+import type { ProposalStatus } from "@/lib/vetrina/proposals";
 import type { MediaImage } from "@/server/woo/media-plan";
 
 /**
@@ -734,6 +735,41 @@ export const vetrinaOperationItems = pgTable(
 );
 
 export type VetrinaOperationItemRow = typeof vetrinaOperationItems.$inferSelect;
+
+/**
+ * Proposals (src/server/vetrina/operations/proposals.ts): an action
+ * previewed for someone outside the screens — an assistant, a script — and
+ * kept until the owner says yes. The preview's fingerprint (`digest`) is
+ * what "confirm" checks the shop against: a different preview makes a new
+ * proposal instead of running. Kept 30 days, like the log.
+ */
+export const vetrinaProposals = pgTable(
+  "vetrina_proposals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kind: text("kind").$type<ActionKind>().notNull(),
+    // As asked; for a homepage action, without the screen's `expected` (the proposal's own preview is the check).
+    input: jsonb("input").$type<ActionInput>().notNull(),
+    via: text("via").$type<OperationVia>().notNull(),
+    // The language its preview was made in: "confirm" makes it again in the same one, to compare.
+    locale: text("locale").notNull(),
+    label: text("label").notNull(),
+    labelParams: jsonb("label_params").$type<OperationLabelParams>().notNull(),
+    preview: jsonb("preview").$type<OperationPreview>().notNull(),
+    digest: text("digest").notNull(),
+    // open | confirming | confirmed | changed | refused (expired is read from expires_at).
+    status: text("status").$type<Exclude<ProposalStatus, "expired">>().notNull().default("open"),
+    error: text("error"),
+    operationId: uuid("operation_id"),
+    replacedBy: uuid("replaced_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+  },
+  (t) => [index("vetrina_proposals_created_idx").on(t.createdAt)],
+);
+
+export type VetrinaProposalRow = typeof vetrinaProposals.$inferSelect;
 
 /**
  * Order sources ("fonti d'ordine", src/server/vetrina/order-sources): a

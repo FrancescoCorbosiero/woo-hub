@@ -251,6 +251,21 @@ export const opsEn: typeof opsIt = {
     notUndoable: "This section showed a fixed list or tags: it cannot be put back from here.",
   },
 
+  proposal: {
+    changes: (count: number) => (count === 0 ? "No product changes." : `It changes ${products(count)}.`),
+    untouched: (parts: readonly string[]) => `Left as they are: ${nameList(parts)}.`,
+    untouchedPart: (reason: string, count: number) => `${n(count)} ${reason}`,
+    example: (name: string, before: string, after: string) => `${name}: ${before} → ${after}`,
+    sampled: (read: number) => `The numbers are an estimate from the first ${products(read)} read from the shop: the action counts exactly.`,
+    prices: (up: number, down: number) => `Prices going up: ${n(up)}; going down: ${n(down)}.`,
+    notFound: "No such proposal.",
+    expired: (minutes: number) => `The proposal has expired (it lasts ${minutes} minutes): ask for a new one.`,
+    confirming: "It is being done already.",
+    changed: "The shop changed since you saw it: here is the new preview, to confirm again.",
+    replaced: "The shop had changed: a new proposal took its place.",
+    refused: (why: string) => `It can no longer be done as asked: ${why}`,
+  },
+
   input: {
     invalid: "Invalid request.",
     operation: "Invalid action.",

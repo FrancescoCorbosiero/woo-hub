@@ -313,6 +313,26 @@ export const opsIt = {
     notUndoable: "Questa sezione mostrava una lista fissa o dei tag: da qui non si rimette com'era.",
   },
 
+  /**
+   * Proposals (src/server/vetrina/operations/proposals.ts): an action's
+   * preview in sentences — what an assistant shows the owner before asking
+   * his yes — and what "confirm" says when it cannot run.
+   */
+  proposal: {
+    changes: (count: number) => (count === 0 ? "Non cambia nessun prodotto." : `Cambia ${products(count)}.`),
+    untouched: (parts: readonly string[]) => `Restano come sono: ${nameList(parts)}.`,
+    untouchedPart: (reason: string, count: number) => `${n(count)} ${reason}`,
+    example: (name: string, before: string, after: string) => `${name}: ${before} → ${after}`,
+    sampled: (read: number) => `I numeri sono una stima sui primi ${products(read)} letti dal negozio: l'azione conta esatto.`,
+    prices: (up: number, down: number) => `Prezzi che salgono: ${n(up)}; che scendono: ${n(down)}.`,
+    notFound: "Questa proposta non c'è.",
+    expired: (minutes: number) => `La proposta è scaduta (vale ${minutes} minuti): chiedine una nuova.`,
+    confirming: "La sto già eseguendo.",
+    changed: "Il negozio è cambiato da quando l'hai vista: ecco la nuova anteprima, da confermare di nuovo.",
+    replaced: "Il negozio era cambiato: al suo posto c'è una nuova proposta.",
+    refused: (why: string) => `Non si può più fare come chiesto: ${why}`,
+  },
+
   /** What the screens sent, checked before anything runs: the problems the owner can fix, in his words. */
   input: {
     invalid: "Richiesta non valida.",
