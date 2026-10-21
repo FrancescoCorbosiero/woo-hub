@@ -27,6 +27,17 @@ const order = async (request: Parameters<typeof api>[0]) =>
 
 const status = async (request: Parameters<typeof api>[0], id: string) => (await api<Operation>(request, "GET", `/operations/${id}`)).status;
 
+test("the actions are described for a script or an assistant", async ({ request }) => {
+  const { actions } = await api<{ actions: { kind: string; scope: string; input: { properties: { kind: { const: string } } } }[] }>(
+    request,
+    "GET",
+    "/actions",
+  );
+  expect(actions.map((a) => a.kind)).toEqual(expect.arrayContaining(["sale", "pin", "sectionSwitch", "sectionEdit"]));
+  for (const action of actions) expect(action.input.properties.kind.const).toBe(action.kind);
+  expect(actions.find((a) => a.kind === "sectionMove")?.scope).toBe("homepage");
+});
+
 test("an action from the API is filed as the API's; its undo puts the shop back", async ({ page, request }) => {
   const before = await order(request);
   expect(before.length).toBeGreaterThan(2);

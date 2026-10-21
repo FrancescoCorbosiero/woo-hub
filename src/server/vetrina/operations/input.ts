@@ -29,39 +29,44 @@ const problem = (key: Problem) => key;
 
 const Id = z.number().int().positive();
 
+// The descriptions are for whoever asks from outside the screens (the API, an assistant): the JSON Schema carries them.
 const TermKeySchema = z
   .string()
   .regex(/^(category|brand):[1-9]\d{0,9}$/, problem("term"))
-  .transform((key) => key as TermKey);
+  .transform((key) => key as TermKey)
+  .describe('A whole category or brand ("category:12", "brand:7"): the action is that term\'s own, and its target must be exactly its query.');
 
 /** A catalog list's query, as the screen holds it: no page (offset, limit) — an action takes every match. */
 const QuerySchema = z
   .object({
-    taxonomy: z.enum(["category", "brand"]).optional(),
+    taxonomy: z.enum(["category", "brand"]).optional().describe("With termId: a category's or brand's products, its sub-terms' included."),
     termId: Id.optional(),
-    view: z.enum(QUICK_VIEWS).optional(),
-    q: z.string().max(100).optional(),
+    view: z.enum(QUICK_VIEWS).optional().describe("A ready-made list: sold out, on sale, hidden, without a photo, without a category, not published."),
+    q: z.string().max(100).optional().describe("Name or SKU, any case."),
     stock: z.enum(["instock", "outofstock"]).optional(),
     visibility: z.enum(["visible", "hidden"]).optional(),
     onSale: z.boolean().optional(),
-    within: Id.optional(),
+    within: Id.optional().describe("A term of the other taxonomy: the brands inside a category, the categories inside a brand."),
     sort: z.enum(CATALOG_SORTS).optional(),
   })
   // A term without its taxonomy would quietly read as a category.
-  .refine((q) => q.termId == null || q.taxonomy != null, { message: problem("term") });
+  .refine((q) => q.termId == null || q.taxonomy != null, { message: problem("term") })
+  .describe("Every product the catalog query matches when the action runs.");
 
-export const TargetSchema = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("ids"),
-    ids: z
-      .array(Id)
-      .min(1, problem("empty"))
-      .superRefine((ids, ctx) => {
-        if (ids.length > MAX_OPERATION_PRODUCTS) ctx.addIssue({ code: "custom", message: problem("tooMany") });
-      }),
-  }),
-  z.object({ kind: z.literal("query"), query: QuerySchema }),
-]);
+export const TargetSchema = z
+  .discriminatedUnion("kind", [
+    z.object({
+      kind: z.literal("ids"),
+      ids: z
+        .array(Id)
+        .min(1, problem("empty"))
+        .superRefine((ids, ctx) => {
+          if (ids.length > MAX_OPERATION_PRODUCTS) ctx.addIssue({ code: "custom", message: problem("tooMany") });
+        }),
+    }),
+    z.object({ kind: z.literal("query"), query: QuerySchema }),
+  ])
+  .describe(`The products it acts on: these ids (at most ${MAX_OPERATION_PRODUCTS}), or every match of a catalog query.`);
 
 const isDay = (value: string) => {
   const ms = Date.parse(`${value}T00:00:00Z`);
