@@ -40,7 +40,7 @@ import { assertSnapshotIsThisStore } from "@/server/woo/site-guard";
 import { forgetVariations, recordPriceWrites, type LedgerWrite } from "@/server/sync/ledger";
 import { STORE_TERMS_HELD, storeTermsForFiling, withStoreTermsIn } from "@/server/pricing/store-terms";
 import { publishing } from "./publishing";
-import { dropMedia, openMediaSkus, queueMedia, setMediaProduct } from "./media";
+import { dropMedia, failedMediaSkus, openMediaSkus, queueMedia, setMediaProduct } from "./media";
 import { isHidden } from "./media-plan";
 
 /**
@@ -72,7 +72,7 @@ export type PublishAction = "create" | "reimport" | "complete" | "skip";
  * non-technical operator in their own language, so the wording belongs in the
  * dictionaries, not in the executor.
  */
-export type PublishSkipReason = "alreadyOnStore" | "feedDelisted" | "inProgress";
+export type PublishSkipReason = "alreadyOnStore" | "feedDelisted" | "inProgress" | "hiddenNoPhoto";
 
 export interface PublishProductReport {
   sku: string;
@@ -262,7 +262,18 @@ export type PublishTarget = Pick<
   sizeless: boolean;
   /** Created, hidden until the photo queue puts it on sale with its first photo. */
   awaitingPhotos: boolean;
+  /** Created, and hidden because no photo could be attached: waits for one added in WooCommerce. */
+  photoFailed: boolean;
 };
+
+/** A catalog product Publish cannot create: none of its sizes is an EU size. */
+export interface UnpublishableTarget {
+  sku: string;
+  title: string;
+}
+
+/** Unpublishable products the tab names; the count covers them all. */
+const UNPUBLISHABLE_LIMIT = 50;
 
 /**
  * Every catalog product the Publisher can act on, flagged with whether the
@@ -278,24 +289,41 @@ export type PublishTarget = Pick<
 export async function listPublishTargets(
   query: PublishQuery = {},
   limit?: number,
-): Promise<PublishPage<PublishTarget> & { hasSnapshot: boolean }> {
+): Promise<
+  PublishPage<PublishTarget> & {
+    hasSnapshot: boolean;
+    /** Off the store and without a single EU size: Publish would only refuse them. */
+    unpublishable: UnpublishableTarget[];
+    unpublishableTotal: number;
+  }
+> {
   const config = await getActiveConfig();
   // The SKU set and the "is there a snapshot at all" flag, WITHOUT the blob:
   // this runs on every render of the tab, including the one that follows each
   // publish call, and deserializing the whole store to ask "does it have X"
   // is how the dev server ran out of heap.
-  const [info, storeSkus, sizeless, rows, photosQueued, inFeed] = await Promise.all([
+  const [info, storeSkus, sizeless, rows, photosQueued, photosFailed, inFeed] = await Promise.all([
     getSnapshotInfo().catch(() => null),
     listStoreSkus(),
     listSizelessStoreSkus(),
     listPublishCandidates(config.source.market),
     openMediaSkus().catch(() => new Set<string>()),
+    failedMediaSkus().catch(() => new Set<string>()),
     activeFeedSkus(GS_FEED),
   ]);
+  const unpublishable: UnpublishableTarget[] = [];
   // Filtered and sliced HERE: the whole delta stays on the server, and only a
   // page of it is serialized into the page the browser has to parse.
   const page = pagePublishTargets(
     rows
+      .filter((r) => {
+        // No size Publish can create, and no feed bringing its own: it would
+        // only be refused ("no EU-sized variants to create") — every run, as
+        // "select all" took it again. Named apart instead of offered.
+        if (r.euSized || inFeed.has(skuKey(r.sku))) return true;
+        if (!storeSkus.has(skuKey(r.sku))) unpublishable.push({ sku: r.sku, title: r.title });
+        return false;
+      })
       .map((r) => ({
       sku: r.sku,
       title: r.title,
@@ -307,12 +335,16 @@ export async function listPublishTargets(
       minAsk: r.minAsk,
       variantCount: r.variantCount,
       // A product with no sizes sells nothing: not published yet. One whose
-      // photos are on their way is: it went out of the Hub's copy of the
-      // store at the last pull (which reads published products only), and
-      // offering it again would only find it there.
-      onStore: (storeSkus.has(skuKey(r.sku)) || photosQueued.has(skuKey(r.sku))) && !sizeless.has(skuKey(r.sku)),
+      // photos are on their way, or could not be attached, is: it went out
+      // of the Hub's copy of the store at the last pull (which reads
+      // published products only), and offering it again would only find it
+      // there, hidden.
+      onStore:
+        (storeSkus.has(skuKey(r.sku)) || photosQueued.has(skuKey(r.sku)) || photosFailed.has(skuKey(r.sku))) &&
+        !sizeless.has(skuKey(r.sku)),
       sizeless: sizeless.has(skuKey(r.sku)),
       awaitingPhotos: photosQueued.has(skuKey(r.sku)),
+      photoFailed: photosFailed.has(skuKey(r.sku)) && !photosQueued.has(skuKey(r.sku)),
     }))
       // A feed product the feed stopped tracking, and not on the store: Publish
       // refuses it (feedDelisted), so it is not offered. It stays in the catalog,
@@ -322,7 +354,12 @@ export async function listPublishTargets(
     query,
     limit,
   );
-  return { ...page, hasSnapshot: info != null };
+  return {
+    ...page,
+    hasSnapshot: info != null,
+    unpublishable: unpublishable.slice(0, UNPUBLISHABLE_LIMIT),
+    unpublishableTotal: unpublishable.length,
+  };
 }
 
 /**
@@ -529,7 +566,8 @@ async function publishClaimed(
       if (onStore && !sizeless && !options.force) {
         report.action = "skip";
         report.storeProductId = onStore.id;
-        report.reason = "alreadyOnStore";
+        // Hidden without a photo: what it lacks is a picture, not a reimport.
+        report.reason = isHidden(onStore.status) && !onStore.images?.length ? "hiddenNoPhoto" : "alreadyOnStore";
         // Close the loop that kept this product on the list: read back what
         // the store actually has and record THAT. Not the plan — the plan is
         // what we would have written, not what is there.

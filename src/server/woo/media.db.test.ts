@@ -382,6 +382,61 @@ describe.skipIf(!enabled)("the photo queue (real SQL)", () => {
     await db.delete(feedItems).where(inArray(feedItems.sku, skus));
   });
 
+  it("offers neither a product with no EU size nor one left hidden for want of a photo", async () => {
+    const { db, catalogProducts, inArray, saveSnapshot, queueMedia, drainMedia, dismissFailedMedia } = await load();
+    const { countUnpublishedCandidates, listPublishCandidates } = await import("@/server/catalog/repo");
+    const variant = (sizeType: string, sizeLabel: string, sizes: { system: string; size: string }[]) => ({
+      stockxVariantId: `${sizeType}-${sizeLabel}`,
+      sizeLabel,
+      sizeType,
+      sizes,
+      offers: [],
+    });
+    // The shapes behind "no EU-sized variants to create", as StockX lists them.
+    const rows = {
+      "EU-1": [variant("us m", "9", [{ system: "us m", size: "US M 9" }, { system: "eu", size: "EU 42.5" }])],
+      "EULABEL-1": [variant("eu", "42 2/3", [])],
+      "BUNDLE-1/BUNDLE-2": [variant("us m", "", [{ system: "us m", size: "US M" }])],
+      "APPAREL-1": [variant("us", "XS", [{ system: "us", size: "US XS" }])],
+      "NOPHOTO-1": [variant("eu", "42", [])],
+    };
+    const skus = Object.keys(rows);
+    await db.delete(catalogProducts).where(inArray(catalogProducts.sku, skus));
+    await db.insert(catalogProducts).values(
+      Object.entries(rows).map(([sku, variants]) => ({
+        market: "ZZ",
+        sku,
+        stockxId: sku,
+        data: { sku, variants } as never,
+        variantCount: variants.length,
+      })),
+    );
+    await saveSnapshot({ products: [] } as never, "rest");
+
+    const listed = new Map((await listPublishCandidates("ZZ")).map((c) => [c.sku, c.euSized]));
+    expect(Object.fromEntries(listed)).toEqual({
+      "EU-1": true,
+      "EULABEL-1": true,
+      "BUNDLE-1/BUNDLE-2": false,
+      "APPAREL-1": false,
+      "NOPHOTO-1": true,
+    });
+    expect(await countUnpublishedCandidates("ZZ")).toBe(3);
+
+    // Created hidden, and no photo the store takes: on the store, not to publish
+    // — after a pull too, which reads published products only.
+    const store = new FakeStore();
+    store.add({ id: 7, sku: "NOPHOTO-1" });
+    await queueMedia({ sku: "NOPHOTO-1", storeProductId: 7, title: "N", urls: [], publish: true });
+    await drainMedia({ budgetMs: 10_000, concurrency: 1, client: store });
+    expect((await jobFor("NOPHOTO-1")).status).toBe("failed");
+    expect(await countUnpublishedCandidates("ZZ")).toBe(2);
+    // Taken off the photo list: the operator has dealt with it, it is offered again.
+    await dismissFailedMedia();
+    expect(await countUnpublishedCandidates("ZZ")).toBe(3);
+    await db.delete(catalogProducts).where(inArray(catalogProducts.sku, skus));
+  });
+
   it("waits out a store that does not answer, without spending the products' tries", async () => {
     const { queueMedia, drainMedia } = await load();
     const store = new FakeStore();

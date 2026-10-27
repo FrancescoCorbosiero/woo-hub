@@ -9,6 +9,7 @@ import {
   publishProducts,
   type PublishOutcome,
   type PublishTarget,
+  type UnpublishableTarget,
 } from "@/server/woo/publish";
 import {
   dismissFailedMedia,
@@ -24,6 +25,9 @@ function errMessage(e: unknown): string {
 
 export interface PublishPageState extends PublishPage<PublishTarget> {
   wooConfigured: boolean;
+  /** Catalog products off the store with no EU size: named, never offered. */
+  unpublishable: UnpublishableTarget[];
+  unpublishableTotal: number;
   /** False when no store snapshot exists — the delta cannot be trusted yet. */
   hasSnapshot: boolean;
   /** The photo queue (null when it cannot be read). */
@@ -55,6 +59,8 @@ export async function getPublishState(query: PublishQuery = {}): Promise<Publish
       counts: EMPTY_COUNTS,
       matched: 0,
       hasSnapshot: false,
+      unpublishable: [],
+      unpublishableTotal: 0,
       media,
       mediaWorker,
     };

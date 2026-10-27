@@ -1196,10 +1196,19 @@ export const it = {
     awaitingPhotos: "in attesa della foto",
     awaitingPhotosHint:
       "Creato sul negozio e ancora nascosto: va in vendita da solo appena arriva la sua prima foto.",
+    photoFailed: "nascosto: manca la foto",
+    photoFailedHint:
+      "È sul negozio, in bozza: nessuna foto della fonte è stata accettata. Aggiungine una in WooCommerce e premi «Riprova» in «Foto in arrivo»: va in vendita con quella. Ripubblicarlo non serve.",
+    unpublishable: (n: number) =>
+      n === 1 ? "1 prodotto del catalogo non è pubblicabile" : `${n} prodotti del catalogo non sono pubblicabili`,
+    unpublishableHint:
+      "Nessuna delle loro taglie è una taglia EU: di solito sono abbinamenti e raffle di StockX (SKU con «/») o abbigliamento S–XL. Non sono nell'elenco qui sotto, e «Seleziona tutti» non li prende.",
+    unpublishableMore: (n: number) => `…e altri ${n}`,
     skipReasons: {
       alreadyOnStore: "già sul negozio — spunta «Forza reimport» per ricostruirlo",
       feedDelisted: "il listino del fornitore non copre più questo SKU — sincronizza prima il feed",
       inProgress: "lo sta già creando una richiesta precedente, ancora in corso — riprova tra qualche minuto",
+      hiddenNoPhoto: "già sul negozio, nascosto perché manca la foto — aggiungila in WooCommerce, poi «Riprova» in «Foto in arrivo»",
     },
     selectAll: "Seleziona tutti",
     selectingAll: "Seleziono…",
@@ -1277,7 +1286,7 @@ export const it = {
       photos: (n: number) => (n === 1 ? "1 con altre foto in arrivo" : `${n} con altre foto in arrivo`),
       failed: (n: number) => (n === 1 ? "1 non riuscito" : `${n} non riusciti`),
       noWorker:
-        "La sincronizzazione automatica è spenta (SCHEDULER=off): la coda avanza solo se uno scheduler esterno chiama /api/cron/media.",
+        "Lo scheduler non è attivo su questo server (è spento in sviluppo con npm run dev, o con SCHEDULER=off): i prodotti restano nascosti finché non lo accendi, o finché uno scheduler esterno non chiama /api/cron/media.",
       progress: (attached: number, total: number) => `${attached}/${total} foto`,
       open: "Apri in WooCommerce",
       more: (n: number) => `…e altri ${n}`,
