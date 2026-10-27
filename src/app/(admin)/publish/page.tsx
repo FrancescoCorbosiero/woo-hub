@@ -72,6 +72,8 @@ export default async function PublishPage({
         matched={state.matched}
         params={params}
         hasSnapshot={state.hasSnapshot}
+        unpublishable={state.unpublishable}
+        unpublishableTotal={state.unpublishableTotal}
         wooConfigured={state.wooConfigured}
         siteUrl={wooSiteUrl()}
         media={state.media}

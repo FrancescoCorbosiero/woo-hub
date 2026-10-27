@@ -1,6 +1,6 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
-import { and, asc, desc, eq, inArray, isNull, lt, lte, notInArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, lte, notInArray, or, sql } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import { mediaJobs, type MediaJobRow } from "@/server/db/schema";
 import { upsertSnapshotProducts } from "@/server/store-json/repo";
@@ -125,6 +125,22 @@ export async function dropMedia(sku: string): Promise<void> {
 /** SKUs whose photos are still on their way: hidden products count as published. */
 export async function openMediaSkus(): Promise<Set<string>> {
   const rows = await db.select({ sku: mediaJobs.sku }).from(mediaJobs).where(eq(mediaJobs.status, "pending"));
+  return new Set(rows.map((r) => r.sku));
+}
+
+/**
+ * SKUs created on the store whose photos could not be attached (the job
+ * stopped, and nothing newer was filed): hidden products, not missing ones.
+ * The store pull reads published products only, so without this a product
+ * left hidden for want of a photo came back to the Publish list at the next
+ * pull — and publishing it again only met it on the store. Dismissing the
+ * job ("Togli dall'elenco") offers it again.
+ */
+export async function failedMediaSkus(): Promise<Set<string>> {
+  const rows = await db
+    .select({ sku: mediaJobs.sku })
+    .from(mediaJobs)
+    .where(and(eq(mediaJobs.status, "failed"), isNotNull(mediaJobs.storeProductId), latestForSku));
   return new Set(rows.map((r) => r.sku));
 }
 

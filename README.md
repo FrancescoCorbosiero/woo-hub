@@ -202,7 +202,9 @@ Publish filter/sort/paginate in SQL.
   its own, and after a lost answer the product is looked at before anything
   is resent. A photo the store refuses is tried once more, then left out (the
   next one becomes the main photo); a product with no usable photo stays
-  hidden, listed under "Photos on their way" on the tab with a Retry. The
+  hidden, listed under "Photos on their way" on the tab with a Retry — and
+  stays out of the list of products to publish, pulls or not: it is on the
+  store, waiting for a photo added in WooCommerce, not for a publish. The
   queue is worked by the scheduler (below) or `/api/cron/media`, pauses while
   a store pull runs, and an unreachable store makes it wait without spending
   any product's tries. Variations are planned by the **rebuild
@@ -225,6 +227,10 @@ Publish filter/sort/paginate in SQL.
   and armed only by a dry run of the exact selection. Products whose feed no longer covers them
   are refused: listing a delisted supplier product as sell-on-demand at a
   stale price is worse than not listing it.
+  A catalog product with no EU size at all (a StockX bundle or raffle listing,
+  S–XL apparel) cannot be created — the shop's sizes are EU `pa_taglia` — so
+  it is not offered either: the tab names those apart, and "select all" never
+  takes them.
 - **Margins** (`/pricing`) — the granular margin admin: the scoped pricing
   rules edited in place, from the banded catch-all down to a single SKU. Rules
   are scoped by source, brand, **product family / sub-family** (the catalog's

@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useI18n } from "@/i18n/provider";
 import { listPublishSkus, type PublishActionResult } from "@/server/actions/publish";
-import type { PublishOutcome, PublishProductReport, PublishTarget } from "@/server/woo/publish";
+import type { PublishOutcome, PublishProductReport, PublishTarget, UnpublishableTarget } from "@/server/woo/publish";
 import { hasMixedSources, type PublishCounts, type PublishSourceLens } from "@/lib/publish-page";
 import { mergeQuery, type QueryParams } from "@/lib/qs";
 import { FIRST_BATCH, nextBatchSize, nextPace } from "@/lib/publish-batching";
@@ -94,6 +94,8 @@ export function PublishWorkspace({
   matched,
   params,
   hasSnapshot,
+  unpublishable,
+  unpublishableTotal,
   wooConfigured,
   siteUrl,
   media,
@@ -108,6 +110,9 @@ export function PublishWorkspace({
   /** Current URL params — the base every filter update merges over. */
   params: QueryParams;
   hasSnapshot: boolean;
+  /** Off the store with no EU size: named here, never in the list (Publish would refuse them). */
+  unpublishable: UnpublishableTarget[];
+  unpublishableTotal: number;
   wooConfigured: boolean;
   siteUrl: string;
   /** The photo queue: products created hidden, going on sale with their first photo. */
@@ -412,6 +417,28 @@ export function PublishWorkspace({
         </div>
       )}
 
+      {unpublishableTotal > 0 && (
+        <details className="rounded-xl border border-line bg-surface px-4 py-3 text-xs text-muted">
+          <summary className="cursor-pointer text-sm font-medium">
+            {t.publish.unpublishable(unpublishableTotal)}
+          </summary>
+          <p className="mt-2 leading-snug">{t.publish.unpublishableHint}</p>
+          <ul className="mt-2 space-y-0.5">
+            {unpublishable.map((u) => (
+              <li key={u.sku} className="flex gap-2 text-[11px]">
+                <span className="font-mono text-faint">{u.sku}</span>
+                <span className="min-w-0 flex-1 truncate">{u.title}</span>
+              </li>
+            ))}
+          </ul>
+          {unpublishableTotal > unpublishable.length && (
+            <p className="mt-1 text-[11px] text-faint">
+              {t.publish.unpublishableMore(unpublishableTotal - unpublishable.length)}
+            </p>
+          )}
+        </details>
+      )}
+
       {/* Delta summary + source lens */}
       <div className="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface px-4 py-3">
         <span className="text-sm font-semibold">{t.publish.deltaTitle(counts.missing)}</span>
@@ -657,6 +684,10 @@ export function PublishWorkspace({
                 {c.awaitingPhotos ? (
                   <Badge variant="warn" title={t.publish.awaitingPhotosHint}>
                     {t.publish.awaitingPhotos}
+                  </Badge>
+                ) : c.photoFailed ? (
+                  <Badge variant="skip" title={t.publish.photoFailedHint}>
+                    {t.publish.photoFailed}
                   </Badge>
                 ) : (
                   c.onStore && <Badge variant="skip">{t.publish.alreadyOnStore}</Badge>

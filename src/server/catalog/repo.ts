@@ -154,7 +154,33 @@ export interface PublishCandidate {
   minAsk: number | null;
   variantCount: number;
   addedAt: string;
+  /**
+   * At least one size the Publisher can turn into an EU size (see euSized).
+   * Without one, Publish refuses the product ("no EU-sized variants"), unless
+   * the supplier feed owns it and brings its own sizes.
+   */
+  euSized: boolean;
 }
+
+/**
+ * True when some variant of the catalog row has a size the Publisher can
+ * create: an EU entry in its conversions, or an EU-system label — the test
+ * the rebuild planner applies per variant (euSize, else the label when the
+ * size type is EU; then humanEuSize's formats). Read from the stored jsonb so
+ * the list and the dock count skip, without a store call, what Publish would
+ * only refuse: StockX bundles ("A/B" SKUs), raffle listings, apparel S–XL.
+ */
+const EU_SIZE_RE = String.raw`^\s*(eu\s*)?(\d+\s+\d+/\d+|\d+-\d+-\d+|\d+[.,-]\d+|\d+)\s*$`;
+export const euSized = (data: SQL) => sql`exists (
+  select 1 from jsonb_array_elements(case when jsonb_typeof(${data}->'variants') = 'array'
+                                          then ${data}->'variants' else '[]'::jsonb end) as v
+  where exists (
+          select 1 from jsonb_array_elements(case when jsonb_typeof(v->'sizes') = 'array' then v->'sizes' else '[]'::jsonb end) as s
+          where (s->>'system' ~* '(^|[^a-z])eu([^a-z]|$)' or s->>'system' = 'euro')
+            and s->>'size' ~* ${EU_SIZE_RE}
+        )
+     or (v->>'sizeType' ~* 'eu' and v->>'sizeLabel' ~* ${EU_SIZE_RE})
+)`;
 
 /**
  * Every catalog product that could be published to the store, newest first.
@@ -179,6 +205,7 @@ export async function listPublishCandidates(market: string): Promise<PublishCand
         minAsk: catalogProducts.minAsk,
         variantCount: catalogProducts.variantCount,
         addedAt: catalogProducts.addedAt,
+        euSized: sql<boolean>`${euSized(sql`${catalogProducts.data}`)}`.mapWith(Boolean),
       })
       .from(catalogProducts)
       .where(
@@ -233,14 +260,24 @@ export async function countUnpublishedCandidates(market: string): Promise<number
           select 1 from ${feedItems} f
           where f.feed = 'goldensneakers' and f.sku = upper(trim(c.sku)) and f.active
         ))
+        -- A size Publish can create, or the feed's own sizes: the rest it
+        -- would only refuse ("no EU-sized variants"), so it is not offered.
+        and (${euSized(sql`c.data`)} or exists (
+          select 1 from ${feedItems} f
+          where f.feed = 'goldensneakers' and f.sku = upper(trim(c.sku)) and f.active
+        ))
         and not exists (
           select 1 from store_skus ss where ss.sku = upper(trim(c.sku)) and ss.sizes > 0
         )
-        -- Created and hidden until its photos land: published, as the Publish
-        -- tab counts it — unless it is the copy's product without sizes.
+        -- Created and hidden until its photos land, or hidden because none
+        -- could be attached: on the store, as the Publish tab counts it —
+        -- unless it is the copy's product without sizes.
         and not exists (
           select 1 from ${mediaJobs} m
-          where m.sku = upper(trim(c.sku)) and m.status = 'pending'
+          where m.sku = upper(trim(c.sku))
+            and (m.status = 'pending' or (m.status = 'failed' and m.store_product_id is not null and not exists (
+              select 1 from ${mediaJobs} newer where newer.sku = m.sku and newer.created_at > m.created_at
+            )))
             and not exists (select 1 from store_skus ss where ss.sku = m.sku and ss.sizes = 0)
         )
     `);

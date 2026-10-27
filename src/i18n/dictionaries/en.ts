@@ -1159,10 +1159,19 @@ export const en: Dictionary = {
     alreadyOnStore: "on the store",
     awaitingPhotos: "awaiting its photo",
     awaitingPhotosHint: "Created on the store and still hidden: it goes on sale by itself as soon as its first photo lands.",
+    photoFailed: "hidden: no photo",
+    photoFailedHint:
+      "On the store as a draft: none of the source's photos was accepted. Add one in WooCommerce and press “Retry” under “Photos on their way”: it goes on sale with it. Publishing it again does nothing.",
+    unpublishable: (n: number) =>
+      n === 1 ? "1 catalog product cannot be published" : `${n} catalog products cannot be published`,
+    unpublishableHint:
+      "None of their sizes is an EU size: usually StockX bundles and raffles (SKUs with “/”) or S–XL apparel. They are not in the list below, and “Select all” leaves them out.",
+    unpublishableMore: (n: number) => `…and ${n} more`,
     skipReasons: {
       alreadyOnStore: "already on the store — tick “Force reimport” to rebuild it",
       feedDelisted: "the supplier feed no longer covers this SKU — sync the feed first",
       inProgress: "an earlier request is still creating it — try again in a few minutes",
+      hiddenNoPhoto: "already on the store, hidden for want of a photo — add one in WooCommerce, then “Retry” under “Photos on their way”",
     },
     selectAll: "Select all",
     selectingAll: "Selecting…",
@@ -1234,7 +1243,7 @@ export const en: Dictionary = {
       photos: (n) => (n === 1 ? "1 with more photos on the way" : `${n} with more photos on the way`),
       failed: (n) => (n === 1 ? "1 stopped" : `${n} stopped`),
       noWorker:
-        "The automatic sync is off (SCHEDULER=off): the queue moves only when an external scheduler calls /api/cron/media.",
+        "The scheduler is not running on this server (it is off in development with npm run dev, or with SCHEDULER=off): products stay hidden until it runs, or until an external scheduler calls /api/cron/media.",
       progress: (attached, total) => `${attached}/${total} photos`,
       open: "Open in WooCommerce",
       more: (n) => `…and ${n} more`,
