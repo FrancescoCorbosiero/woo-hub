@@ -13,7 +13,7 @@ server, previewed, filed in the log, and undoable. Two families:
 
 | Scope | Kinds | Runs |
 |---|---|---|
-| **catalog** — products | `hide`, `show`, `sale`, `unsale`, `tag`, `untag`, `categorize`, `uncategorize`, `pin`, `margin`, `order`, `sourceOrder` | in the background, one at a time, product by product (`operations/runner.ts`, `writes.ts`) |
+| **catalog** — products | `hide`, `show`, `sale`, `unsale`, `tag`, `untag`, `categorize`, `uncategorize`, `pin`, `margin`, `order`, `sourceOrder`, `delete` | in the background, one at a time, product by product (`operations/runner.ts`, `writes.ts`, `remove.ts`) |
 | **homepage** — sections and blocks | `sectionSwitch`, `sectionMove`, `sectionsArrange`, `sectionAdd`, `sectionRemove`, `sectionSource`, `sectionEdit`, `blockEdit` | at once: one write to the page, a WordPress revision (`operations/page.ts`) |
 
 The types are in `src/lib/vetrina/catalog-ops.ts` and `page-ops.ts`. One

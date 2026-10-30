@@ -22,7 +22,9 @@ import {
 /**
  * "Nascondi" or "Mostra", confirmed with the preview: the products named,
  * the other categories and brands they disappear from, the homepage
- * sections that lose them. A hidden product's link keeps working.
+ * sections that lose them. A hidden product's link keeps working. Under the
+ * button, for a selection, the way to "Elimina": where an owner who wants
+ * products gone looks first.
  */
 
 export type VisibilityMode = "hide" | "show";
@@ -39,6 +41,8 @@ export interface VisibilitySheetProps extends ActSheetProps {
   termKey?: TermKey;
   /** Only for "show": leave hidden what another whole category's or brand's hide holds (a term panel's "Mostra i N nascosti"). */
   keepHeld?: boolean;
+  /** Offers "Elimina" for the same products, under the button (a selection's sheet). */
+  onDelete?: () => void;
 }
 
 export function VisibilitySheet(props: VisibilitySheetProps) {
@@ -59,6 +63,7 @@ function VisibilityContent({
   switchable = true,
   termKey,
   keepHeld = false,
+  onDelete,
 }: VisibilitySheetProps & { target: OperationTarget }) {
   const { t } = useI18n();
   const v = t.vetrinaCatalog.act.visibility;
@@ -102,6 +107,16 @@ function VisibilityContent({
         >
           {count ? v.start[mode](count) : v.plain[mode]}
         </PrimaryButton>
+        {onDelete && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onDelete}
+            className="h-11 w-full text-[15px] font-medium text-red-600 transition-opacity active:opacity-50 disabled:opacity-30 dark:text-red-400"
+          >
+            {v.deleteInstead(target.kind === "ids" ? target.ids.length : count || 2)}
+          </button>
+        )}
       </SheetFooter>
     </>
   );

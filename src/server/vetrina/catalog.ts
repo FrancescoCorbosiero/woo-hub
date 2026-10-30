@@ -29,6 +29,7 @@ import { readIndexFacts, readIndexRowsById, type IndexFacts } from "@/server/col
 import { getRunnerStatus } from "@/server/collections/runner";
 import { collectionsByTerm, freshen } from "@/server/collections/service";
 import { demoMode, storeClient, storeReady } from "@/server/collections/store";
+import { activeFeedSkus, GS_FEED } from "@/server/feeds/repo";
 import { lockedPriceCounts } from "@/server/overrides/model";
 import { getOverrides } from "@/server/overrides/repo";
 import { readHome } from "./service";
@@ -822,7 +823,7 @@ export async function search(q: string): Promise<CatalogSearch> {
 
 /** A product's place in the shop, for its sheet: categories (with their rule), brands, homepage sections. */
 export async function readPlacement(id: number): Promise<ProductPlacement> {
-  const [[row], ctx] = await Promise.all([readIndexRowsById([id]), loadContext()]);
+  const [[row], ctx, fed] = await Promise.all([readIndexRowsById([id]), loadContext(), activeFeedSkus(GS_FEED)]);
   if (!row) {
     throw new VetrinaError(
       "not_found",
@@ -841,5 +842,6 @@ export async function readPlacement(id: number): Promise<ProductPlacement> {
     categories: categories.sort((a, b) => collator.compare(a.path, b.path) || a.id - b.id),
     brands: row.brands.map((b) => named(b, ctx.brand)),
     sections: ctx.presence.products.get(row.id) ?? [],
+    fromFeed: row.sku !== "" && fed.has(skuKey(row.sku)),
   };
 }

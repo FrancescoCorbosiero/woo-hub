@@ -120,3 +120,12 @@ export function OrderLines({ className }: IconProps) {
     </svg>
   );
 }
+
+/** Deleted for good: a bin. */
+export function Trash({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className} {...stroke}>
+      <path d="M4 7h16M9.5 7V4.5h5V7M6 7l1 12.2A2 2 0 0 0 9 21h6a2 2 0 0 0 2-1.8L18 7M10 11v6M14 11v6" />
+    </svg>
+  );
+}

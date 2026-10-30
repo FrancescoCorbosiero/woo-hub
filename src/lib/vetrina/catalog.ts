@@ -169,6 +169,12 @@ export interface ProductPlacement {
   categories: { id: number; name: string; path: string; automatic: boolean }[];
   brands: { id: number; name: string }[];
   sections: ProductSection[];
+  /**
+   * The supplier's feed (GoldenSneakers) carries it: the sheet offers no
+   * "Elimina", the feed would only put it back. Optional (added with
+   * "Elimina"): absent reads as not.
+   */
+  fromFeed?: boolean;
 }
 
 const RAIL_TAXONOMIES = new Map<string, CatalogTaxonomy>([

@@ -34,14 +34,17 @@ import {
  * A product's place in the shop, in its sheet, and the actions on this one
  * product: whether customers see it (a switch), its categories (a manual one
  * comes off with its ×, "+ Categoria" adds one), its brands, the homepage
- * sections showing it ("Metti in homepage"), and its sale. Every chip still
+ * sections showing it ("Metti in homepage"), its sale — and, under them,
+ * "Elimina il prodotto" for one the shop no longer sells (none for the
+ * supplier's feed's: the feed would put it back). Every chip still
  * opens its screen, so the sheet is also a way into the catalog and the
  * section editor.
  *
  * The actions are the catalog's own (../act): previewed, run in the
  * background, followed by the pill, undone with "Annulla". Hiding the
  * product, or taking it out of a category, asks first with the preview's
- * warnings (the homepage sections it leaves); showing it again is the exact
+ * warnings (the homepage sections it leaves), and so does deleting it,
+ * which closes the sheet once started; showing it again is the exact
  * way back, so it starts at once. The rest open the action sheets. When an
  * action ends, the section reads the product again and tells the sheet
  * (onActed).
@@ -388,6 +391,20 @@ export function PlacementSection({
         </p>
       )}
 
+      {p.fromFeed ? (
+        <p className="mt-1.5 px-1 text-[12px] leading-snug opacity-50">{s.fromFeed}</p>
+      ) : (
+        can && (
+          <button
+            type="button"
+            onClick={() => setConfirm({ input: { kind: "delete", target }, ...s.confirm.delete })}
+            className={`${SHEET_CARD} mt-4 flex h-12 w-full items-center justify-center text-[16px] text-red-600 transition-opacity active:opacity-50 dark:text-red-400`}
+          >
+            {s.deleteProduct}
+          </button>
+        )
+      )}
+
       {ops && (
         <>
           <ActSheets request={act} onClose={() => setAct(null)} onStarted={(view) => follow(view, null)} />
@@ -398,6 +415,8 @@ export function PlacementSection({
               const res = await start(request.input);
               if (!res.ok) return res.error;
               setConfirm(null);
+              // The product is on its way out: the pill and the toast's "Annulla" take it from here.
+              if (request.input.kind === "delete") onLeave();
               return null;
             }}
           />

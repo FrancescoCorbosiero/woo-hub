@@ -748,6 +748,39 @@ export async function getCatalogSources(
   return out;
 }
 
+/**
+ * A catalog row as kept for a way back: the whole row, its dates as JSON
+ * strings once it has been through jsonb.
+ */
+export type CatalogRowRecord = Omit<typeof catalogProducts.$inferSelect, "addedAt" | "fetchedAt" | "updatedAt"> & {
+  addedAt: string | Date;
+  fetchedAt: string | Date;
+  updatedAt: string | Date;
+};
+
+/**
+ * Take products out of the catalog, every market's row of each SKU, and
+ * answer what was there. The one exception to "entries never leave": a
+ * product the owner deleted from the shop ("Elimina"), which no route may
+ * offer again. A deliberate import brings it back; "Annulla" puts these rows
+ * back (restoreCatalogRows).
+ */
+export async function takeCatalogRows(skus: string[]): Promise<CatalogRowRecord[]> {
+  const keys = [...new Set(skus.map(skuKey).filter(Boolean))];
+  if (keys.length === 0) return [];
+  return db.delete(catalogProducts).where(inArray(catalogProducts.sku, keys)).returning();
+}
+
+/** Put back rows takeCatalogRows took; a row written for the SKU since (an import, a feed) is the newer word, and stays. */
+export async function restoreCatalogRows(rows: readonly CatalogRowRecord[]): Promise<void> {
+  if (rows.length === 0) return;
+  const date = (v: string | Date) => (v instanceof Date ? v : new Date(v));
+  await db
+    .insert(catalogProducts)
+    .values(rows.map((r) => ({ ...r, addedAt: date(r.addedAt), fetchedAt: date(r.fetchedAt), updatedAt: date(r.updatedAt) })))
+    .onConflictDoNothing({ target: [catalogProducts.market, catalogProducts.sku] });
+}
+
 /** Surface the underlying pg message (drizzle wraps it) for actionable logs. */
 function describeDbError(e: unknown): string {
   const cause = (e as { cause?: { message?: string } })?.cause;

@@ -40,6 +40,7 @@ export const opsEn: typeof opsIt = {
     reorder: (count: number, term: string) => `Arranged by hand · ${term}: ${count === 1 ? "1 product moved" : `${n(count)} products moved`}`,
     sourceOrder: (count: number, source: string, what: string) =>
       `Like “${source}” · ${what}: ${count === 1 ? "1 product moved" : `${n(count)} products moved`}`,
+    delete: (count: number) => (count === 1 ? "1 product deleted" : `${n(count)} products deleted`),
     sectionSwitch: (section: string, on: boolean) => (on ? `“${section}” back on the site` : `“${section}” switched off on the site`),
     sectionMove: (section: string, position: number) => `“${section}” moved to place ${n(position)}`,
     sectionsArrange: (count: number) => (count === 1 ? "1 section moved" : `${n(count)} sections moved`),
@@ -75,6 +76,8 @@ export const opsEn: typeof opsIt = {
     inPlace: (count: number) => (count === 1 ? "already in its place" : "already in their place"),
     notRanked: (count: number, source: string) =>
       `not in “${source}”: ${count === 1 ? "stays after, in its place" : "stay after, as they are"}`,
+    fromFeed: (count: number) =>
+      count === 1 ? "comes from the GoldenSneakers feed, which would put it back" : "come from the GoldenSneakers feed, which would put them back",
   },
 
   state: {
@@ -96,6 +99,7 @@ export const opsEn: typeof opsIt = {
     noEnd: "no end",
     addedTo: (category: string) => `In “${category}”, then pinned`,
     place: (position: number) => `#${n(position)}`,
+    deleted: "Deleted",
   },
 
   warning: {
@@ -112,6 +116,10 @@ export const opsEn: typeof opsIt = {
     alsoElsewhere: (count: number, names: string[], total: number) =>
       `${count === 1 ? "1 is" : `${n(count)} are`} also in ${nameList(names, total)}: ${count === 1 ? "it disappears" : "they disappear"} there too.`,
     sectionsLose: (sections: string[]) => `The homepage loses products in ${nameList(sections)}.`,
+    deleteForGood: (count: number) =>
+      `${count === 1 ? "It leaves" : "They leave"} the shop and the Hub: into WordPress's trash, which empties itself after 30 days, and the Hub no longer offers ${count === 1 ? "it" : "them"} for publishing. “Undo” brings ${count === 1 ? "it" : "them"} back as ${count === 1 ? "it was" : "they were"} within 7 days.`,
+    deleteHasSales: (count: number) =>
+      `${count === 1 ? "1 has" : `${n(count)} have`} already sold: the orders stay, with the product's name.`,
     sectionsShow: (sections: string[]) => `On the homepage: ${nameList(sections)}.`,
     repricing: (count: number) =>
       `For ${products(count)} the Hub keeps repricing on sale: the full price may change during the sale (the discounted one stays).`,
@@ -166,6 +174,10 @@ export const opsEn: typeof opsIt = {
     empty: "No product chosen.",
     inOrder: "They are already in these positions.",
     notInTerm: (term: string) => `None of these products is in “${term}”.`,
+    feedOnly: (count: number) =>
+      count === 1
+        ? "This product comes from the GoldenSneakers feed: it can't be deleted, the feed would put it back. To take it out of sight, use “Hide”."
+        : "These products come from the GoldenSneakers feed: they can't be deleted, the feed would put them back. To take them out of sight, use “Hide”.",
     alreadyHidden: (term: string) => `The products of “${term}” are already hidden: use “Show” to bring them back.`,
     automatic: (category: string) => `“${category}” is automatic: its rule decides its products.`,
     categoryGone: "This category is no longer in the shop.",

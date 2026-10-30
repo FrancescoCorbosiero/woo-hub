@@ -58,6 +58,13 @@ export const PATCHED_AT = "hub_patched_at";
  */
 export const AS_OF = "hub_as_of";
 
+/**
+ * Where the snapshot remembers the products the Hub took out of it, by id:
+ * when (see removeSnapshotProducts). Like a patch, a removal made after a
+ * pull started outlives that pull; the pull after it no longer reads them.
+ */
+const REMOVED = "hub_removed";
+
 /** A product's stamp, as epoch ms; null when it has none. */
 function stampOf(product: StoreProductModel, key: string): number | null {
   const at = (product as Record<string, unknown>)[key];
@@ -199,10 +206,17 @@ export async function saveSnapshotKeepingPatches(
     const patched = rowsOf<{ product: StoreProductModel }>(res).map((r) => r.product);
     const ids = new Set(patched.map((p) => p.id));
     const keys = new Set(patched.map((p) => (p.sku ?? "").trim().toUpperCase()).filter(Boolean));
+    // Taken out of the copy after the pull started: the pull may have read them first.
+    const gone = await tx.execute(sql`
+      select key as id
+      from ${storeSnapshot} s, jsonb_each_text(coalesce(s.data->${REMOVED}, '{}'::jsonb))
+      where s.id = ${SINGLETON} and value::timestamptz >= ${since.toISOString()}::timestamptz
+    `);
+    const removed = new Set(rowsOf<{ id: string }>(gone).map((r) => Number(r.id)));
     const readSince = since.toISOString();
     const products = [
       ...model.products
-        .filter((p) => !ids.has(p.id) && !keys.has((p.sku ?? "").trim().toUpperCase()))
+        .filter((p) => !ids.has(p.id) && !removed.has(p.id) && !keys.has((p.sku ?? "").trim().toUpperCase()))
         .map((p) => ({ ...p, [AS_OF]: readSince })),
       ...patched,
     ];
@@ -606,14 +620,26 @@ export async function patchSnapshotProducts(
   });
 }
 
-/** Drop products from the snapshot by store id (e.g. a duplicate just trashed). */
+/**
+ * Drop products from the snapshot by store id (a duplicate just trashed, a
+ * product deleted from the Vetrina), and remember when: a pull reading the
+ * store right now may have read them before they went, and must not bring
+ * them back (see saveSnapshotKeepingPatches).
+ */
 export async function removeSnapshotProducts(storeProductIds: number[]): Promise<void> {
   if (storeProductIds.length === 0) return;
-  await withSnapshotWriteLock((tx) =>
-    rewriteProducts(
+  const now = new Date().toISOString();
+  const removed = Object.fromEntries(storeProductIds.map((id) => [String(id), now]));
+  await withSnapshotWriteLock(async (tx) => {
+    await rewriteProducts(
       tx,
       sql`${productId} not in (select jsonb_array_elements_text(${JSON.stringify(storeProductIds)}::jsonb)::bigint)`,
       [],
-    ),
-  );
+    );
+    await tx.execute(sql`
+      update ${storeSnapshot} s
+      set data = s.data || jsonb_build_object(${REMOVED}::text, coalesce(s.data->${REMOVED}, '{}'::jsonb) || ${JSON.stringify(removed)}::jsonb)
+      where s.id = ${SINGLETON}
+    `);
+  });
 }

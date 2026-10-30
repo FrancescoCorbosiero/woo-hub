@@ -275,8 +275,8 @@ function sortBy(fallback: RailFallback): (a: DemoProduct, b: DemoProduct) => num
   }
 }
 
-/** Shown in the shop's lists: WooCommerce leaves "hidden" and "search only" products out of them. */
-const listed = (p: DemoProduct) => p.visibility !== "hidden" && p.visibility !== "search";
+/** Shown in the shop's lists: WooCommerce leaves "hidden" and "search only" products out of them, and the trash. */
+const listed = (p: DemoProduct) => !p.trashed && p.visibility !== "hidden" && p.visibility !== "search";
 
 /** Visible members in automatic order — what ghb_hub_rail_visible_ids() returns. */
 function visibleIds(rail: DemoRail, fallback: RailFallback): number[] {

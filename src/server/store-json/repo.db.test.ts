@@ -86,3 +86,38 @@ describe.skipIf(!enabled)("patching many products of the snapshot (real SQL)", (
     expect(await patchSnapshotProducts([1], () => undefined)).toBe(0);
   });
 });
+
+describe.skipIf(!enabled)("a product taken out of the snapshot while a pull reads the store (real SQL)", () => {
+  const product = (id: number) => ({ id, sku: `GONE-${id}`, name: `Gone ${id}`, variations: [size(id * 10 + 1)] });
+
+  it("stays out of the pull's copy: the pull may have read it before it went", async () => {
+    const { saveSnapshot, saveSnapshotKeepingPatches, removeSnapshotProducts, getSnapshotProductsByIds } = await load();
+    await saveSnapshot({ products: [product(1), product(2)] } as never, "rest");
+    const pullStarted = new Date(Date.now() - 60_000);
+    // Deleted from the Vetrina while the pull ran: the pull had read both products.
+    await removeSnapshotProducts([1]);
+    await saveSnapshotKeepingPatches({ products: [product(1), product(2)] } as never, pullStarted);
+    expect((await getSnapshotProductsByIds([1, 2])).map((p) => p.id)).toEqual([2]);
+  });
+
+  it("a removal from before the pull started does not hold: the pull's own reading stands", async () => {
+    const { saveSnapshot, saveSnapshotKeepingPatches, removeSnapshotProducts, getSnapshotProductsByIds } = await load();
+    await saveSnapshot({ products: [product(1), product(2)] } as never, "rest");
+    await removeSnapshotProducts([1]);
+    // Put back in the shop since, and read by a pull started after the removal.
+    await saveSnapshotKeepingPatches({ products: [product(1), product(2)] } as never, new Date(Date.now() + 1000));
+    expect((await getSnapshotProductsByIds([1, 2])).map((p) => p.id).sort()).toEqual([1, 2]);
+  });
+
+  it("a product put back by the Hub during the pull (a patch) wins over its removal", async () => {
+    const { saveSnapshot, saveSnapshotKeepingPatches, removeSnapshotProducts, upsertSnapshotProducts, getSnapshotProductsByIds } = await load();
+    await saveSnapshot({ products: [product(1), product(2)] } as never, "rest");
+    const pullStarted = new Date(Date.now() - 60_000);
+    await removeSnapshotProducts([1]);
+    // "Annulla": the product back, and in the Hub's copy again.
+    await upsertSnapshotProducts([{ ...product(1), name: "Back" }] as never);
+    await saveSnapshotKeepingPatches({ products: [product(1), product(2)] } as never, pullStarted);
+    const [back] = await getSnapshotProductsByIds([1]);
+    expect(back?.name).toBe("Back");
+  });
+});

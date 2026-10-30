@@ -59,6 +59,7 @@ export const opsIt = {
     /** "Disponi come «X»" on a term, or on the whole catalog (`what`). */
     sourceOrder: (count: number, source: string, what: string) =>
       `Come «${source}» · ${what}: ${agreed(count, "prodotto spostato", "prodotti spostati")}`,
+    delete: (count: number) => agreed(count, "prodotto eliminato", "prodotti eliminati"),
     /** The homepage's own actions, on its sections and blocks. */
     sectionSwitch: (section: string, on: boolean) => (on ? `«${section}» riaccesa sul sito` : `«${section}» spenta sul sito`),
     sectionMove: (section: string, position: number) => `«${section}» spostata al ${n(position)}° posto`,
@@ -101,6 +102,9 @@ export const opsIt = {
     /** A term's products a source does not rank: after the ranked ones, in their order. */
     notRanked: (count: number, source: string): string =>
       `${count === 1 ? "non è" : "non sono"} in «${source}»: ${count === 1 ? "resta dopo, al suo posto" : "restano dopo, come sono"}`,
+    /** "Elimina" on a product the supplier's feed carries: the feed would put it back. */
+    fromFeed: (count: number): string =>
+      count === 1 ? "arriva dal feed GoldenSneakers, che lo rimetterebbe" : "arrivano dal feed GoldenSneakers, che li rimetterebbe",
   },
 
   /** A product's state, before → after, in a preview's sample. */
@@ -124,6 +128,8 @@ export const opsIt = {
     addedTo: (category: string) => `In «${category}», poi fissato`,
     /** A product's place among a category's or brand's positions. */
     place: (position: number) => `#${n(position)}`,
+    /** "Elimina": where the product ends up. */
+    deleted: "Eliminato",
   },
 
   warning: {
@@ -145,6 +151,12 @@ export const opsIt = {
     alsoElsewhere: (count: number, names: string[], total: number) =>
       `${count === 1 ? "1 è" : `${n(count)} sono`} anche in ${nameList(names, total)}: ${count === 1 ? "sparisce" : "spariscono"} anche lì.`,
     sectionsLose: (sections: string[]) => `La homepage perde prodotti in ${nameList(sections)}.`,
+    /** What "Elimina" does, said before it runs: the trash, the Hub forgetting them, the way back. */
+    deleteForGood: (count: number) =>
+      `${count === 1 ? "Esce" : "Escono"} dal negozio e dall'Hub: ${count === 1 ? "va" : "vanno"} nel cestino di WordPress, che si svuota da solo dopo 30 giorni, e l'Hub non ${count === 1 ? "lo propone" : "li propone"} più da pubblicare. Con «Annulla» ${count === 1 ? "torna com'era" : "tornano com'erano"} entro 7 giorni.`,
+    /** Products on sale: their orders stay, as orders in WooCommerce always do. */
+    deleteHasSales: (count: number) =>
+      `${count === 1 ? "1 è già stato venduto" : `${n(count)} sono già stati venduti`}: gli ordini restano, con il nome del prodotto.`,
     sectionsShow: (sections: string[]) => `In homepage: ${nameList(sections)}.`,
     repricing: (count: number) =>
       `Per ${products(count)} l'Hub ricalcola il prezzo anche in saldo: durante il saldo il prezzo pieno può cambiare (quello scontato resta).`,
@@ -210,6 +222,11 @@ export const opsIt = {
     /** "Posiziona" with nothing to move. */
     inOrder: "Sono già in queste posizioni.",
     notInTerm: (term: string) => `Nessuno di questi prodotti è in «${term}».`,
+    /** "Elimina" with nothing it may delete: every product comes from the supplier's feed. */
+    feedOnly: (count: number): string =>
+      count === 1
+        ? "Questo prodotto arriva dal feed GoldenSneakers: non si elimina, il feed lo rimetterebbe. Per toglierlo dalla vista usa «Nascondi»."
+        : "Questi prodotti arrivano dal feed GoldenSneakers: non si eliminano, il feed li rimetterebbe. Per toglierli dalla vista usa «Nascondi».",
     alreadyHidden: (term: string) => `I prodotti di «${term}» sono già nascosti: per rimetterli in vista usa «Mostra».`,
     automatic: (category: string) => `«${category}» è automatica: i suoi prodotti li decide la regola.`,
     categoryGone: "Questa categoria non c'è più nel negozio.",

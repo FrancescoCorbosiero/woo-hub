@@ -112,7 +112,7 @@ function view(p: DemoProduct): WooIndexProduct {
     sku: p.sku,
     name: p.name,
     type: "simple",
-    status: "publish",
+    status: p.trashed ? "trash" : "publish",
     permalink: `https://demo.shop/prodotto/${p.id}`,
     categories: p.categories.flatMap((slug) => categories.filter((c) => c.slug === slug)),
     tags: p.tags.flatMap((slug) => tags.filter((t) => t.slug === slug)),
@@ -134,7 +134,8 @@ function view(p: DemoProduct): WooIndexProduct {
 export function fixtureClient(): WooClient {
   const client = {
     async getProductIndexPage(opts: { page: number; perPage: number; modifiedAfter?: Date; include?: number[] }) {
-      let list = [...demoShop().products];
+      // Any status but the trash, as WooCommerce's "any" reads.
+      let list = demoShop().products.filter((p) => !p.trashed);
       if (opts.include) list = list.filter((p) => opts.include!.includes(p.id));
       else if (opts.modifiedAfter) {
         const after = opts.modifiedAfter.getTime();
@@ -167,7 +168,18 @@ export function fixtureClient(): WooClient {
     async updateProduct(id: number, body: Record<string, unknown>) {
       const p = demoShop().byId.get(id);
       if (!p) throw Object.assign(new Error("Invalid ID."), { status: 404 });
+      // Out of the trash with a status, as WordPress takes one back ("Annulla" of "Elimina").
+      if (typeof body.status === "string") p.trashed = body.status === "trash";
       applyFields(p, body);
+      touch(p);
+    },
+
+    // "Elimina": to the trash, as WooCommerce's DELETE without force does; a second time it answers 410.
+    async deleteProduct(id: number) {
+      const p = demoShop().byId.get(id);
+      if (!p) throw Object.assign(new Error("Invalid ID."), { status: 404 });
+      if (p.trashed) throw Object.assign(new Error("The product has already been deleted."), { status: 410 });
+      p.trashed = true;
       touch(p);
     },
 

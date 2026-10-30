@@ -20,7 +20,9 @@ import type { ProductSelection } from "./selection";
  * — how many are chosen, "Seleziona tutti (N)" for everything the list's
  * query matches, "Annulla" to leave; then Saldo, Nascondi or Mostra, Tag,
  * Categoria, Homepage — and Ordina on a category's or brand's list — each
- * opening its sheet on the selection. Starting an
+ * opening its sheet on the selection; Nascondi's and Mostra's lead on to
+ * Elimina (a seventh button would leave none of their words whole on a
+ * phone). Starting an
  * action leaves selection: the progress pill and the toast take it from
  * there.
  */
@@ -175,6 +177,7 @@ export function SelectionBar({
       <ActSheets
         request={request}
         onClose={() => setRequest(null)}
+        onSwitch={setRequest}
         onStarted={(view) => {
           selection.exit();
           onStarted?.(view);

@@ -1,8 +1,10 @@
 import "server-only";
 import { hubConfig } from "@/config";
 import type { OperationInput, OperationKind, OperationPreview, TermKey } from "@/lib/vetrina/catalog-ops";
+import { skuKey } from "@/lib/skus";
 import { decodeEntities, type IndexRow } from "@/server/collections/index-rows";
 import { collectionsByTerm } from "@/server/collections/service";
+import { activeFeedSkus, GS_FEED } from "@/server/feeds/repo";
 import { storeClient } from "@/server/collections/store";
 import { followSaleRuleFor } from "@/server/overrides/model";
 import { getOverrides } from "@/server/overrides/repo";
@@ -415,6 +417,50 @@ async function assessPin(ctx: Ctx, input: Extract<OperationInput, { kind: "pin" 
 }
 
 /* ---------------------------------------------------------------- *
+ * Delete
+ * ---------------------------------------------------------------- */
+
+/**
+ * "Elimina": every product but the ones the supplier's feed carries — the
+ * feed decides what is in the shop, and would put them back. Said before it
+ * runs: where they go (the trash, out of the Hub), the way back, the sales
+ * they had, the homepage sections that lose them.
+ */
+async function assessDelete(ctx: Ctx, input: Extract<OperationInput, { kind: "delete" }>): Promise<Assessment> {
+  const { w } = ctx;
+  const fed = await activeFeedSkus(GS_FEED);
+  const todo = ctx.rows.filter((r) => !fed.has(skuKey(r.sku)));
+  const untouched = new Map<Reason, number>();
+  bump(untouched, w.untouched.fromFeed, ctx.rows.length - todo.length);
+  const sample = todo.slice(0, SAMPLE).map((r) => ({
+    id: r.id,
+    name: r.name,
+    before: w.state.visibility(r.visibility || "visible"),
+    after: w.state.deleted,
+  }));
+  const warnings: string[] = [];
+  if (todo.length > 0) {
+    warnings.push(w.warning.deleteForGood(todo.length));
+    const sold = todo.filter((r) => r.totalSales > 0).length;
+    if (sold > 0) warnings.push(w.warning.deleteHasSales(sold));
+    const sections = sectionCounts(
+      todo.map((r) => r.id),
+      (await homepagePresence()).products,
+    );
+    if (sections.length > 0) warnings.push(w.warning.sectionsLose(sections));
+  }
+  // Nothing it may delete: said why, rather than a button for nothing.
+  const refusal = todo.length === 0 && ctx.rows.length > 0 ? w.error.feedOnly(ctx.rows.length) : null;
+  return {
+    preview: preview("delete", ctx, { changes: todo.length, untouched, sample, warnings }, refusal),
+    label: labelParams(input, { count: todo.length }),
+    termKey: null,
+    total: ctx.ids.length,
+    refusal,
+  };
+}
+
+/* ---------------------------------------------------------------- *
  * Entry
  * ---------------------------------------------------------------- */
 
@@ -445,5 +491,7 @@ export async function assess(input: OperationInput, opts: { live: boolean }): Pr
       return assessCategories(ctx, input);
     case "pin":
       return assessPin(ctx, input);
+    case "delete":
+      return assessDelete(ctx, input);
   }
 }

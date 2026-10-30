@@ -37,6 +37,8 @@ export const sheetEn: typeof sheetIt = {
   noCategories: "In no category",
   automatic: "automatic, decided by its rule",
   automaticHint: "Automatic: decided by its rule. The product comes and goes on its own and can't be taken out by hand.",
+  deleteProduct: "Delete the product",
+  fromFeed: "Comes from the GoldenSneakers feed: it can't be deleted, the feed would put it back. To take it out of sight, switch off “Visible in the shop”.",
   addCategory: "Category",
   addCategoryLabel: "Add to a category",
   removeCategory: (name: string) => `Take out of “${name}”`,
@@ -76,6 +78,11 @@ export const sheetEn: typeof sheetIt = {
       title: (name: string) => `Take out of “${name}”?`,
       body: (name: string) => `It no longer shows among the products of “${name}”.`,
       confirm: "Take out",
+    },
+    delete: {
+      title: "Delete the product?",
+      body: "For a product you no longer sell. To only take it out of sight, switch off “Visible in the shop”.",
+      confirm: "Delete",
     },
   },
 

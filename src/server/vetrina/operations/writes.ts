@@ -34,6 +34,7 @@ import {
 } from "./plan";
 import { repriceMoved, runMargin, undoMargin, type TermMove } from "./margin";
 import { runOrder, runSourceOrder, undoOrder } from "./order";
+import { runDelete, undoDelete } from "./remove";
 import { findTag } from "./preview";
 import * as repo from "./repo";
 import { pinnable, railFill, sectionMembers } from "./sections";
@@ -531,6 +532,8 @@ export async function runOperation(ctx: RunCtx): Promise<void> {
       return runTerms(ctx, ids, "categories", { remove: input.categoryId });
     case "pin":
       return runPin(ctx, ids, trees, input.sectionKey);
+    case "delete":
+      return runDelete(ctx, ids);
   }
 }
 
@@ -766,7 +769,7 @@ export async function runUndo(ctx: RunCtx, items: Item[], section: OperationSect
   const out: UndoTally = { restored: new Set(), kept: new Set(), failed: new Set(), held: new Set() };
   const of = (field: Item["field"]) => items.filter((i) => i.field === field);
   ctx.tally.done = 0;
-  ctx.tally.total = (["visibility", "tags", "categories", "sale", "menu_order"] as const).reduce((n, f) => n + productsOf(of(f)).length, 0);
+  ctx.tally.total = (["visibility", "tags", "categories", "sale", "menu_order", "deleted"] as const).reduce((n, f) => n + productsOf(of(f)).length, 0);
   await ctx.step();
   // The section first: its pins are what a "Metti in homepage" was about; the categories it added follow.
   if (section) await undoSection(section);
@@ -775,6 +778,7 @@ export async function runUndo(ctx: RunCtx, items: Item[], section: OperationSect
   await undoTerms(ctx, of("categories"), "categories", out);
   await undoSales(ctx, of("sale"), out);
   await undoOrder(ctx, of("menu_order"), out);
+  await undoDelete(ctx, of("deleted"), out);
   return {
     restored: out.restored.size,
     kept: out.kept.size,

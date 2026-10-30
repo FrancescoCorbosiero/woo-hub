@@ -120,7 +120,16 @@ export type OperationInput =
       kind: "sourceOrder";
       sourceId: string;
       term: { taxonomy: CatalogTaxonomy; id: number } | null;
-    };
+    }
+  /**
+   * "Elimina": products off the shop for good — into WordPress's trash
+   * (emptied by WordPress after 30 days) — and out of the Hub: its copy of
+   * the shop, its catalog (Publish no longer offers them), their photos'
+   * queue. Refused for a product the supplier's feed carries (GoldenSneakers):
+   * the feed decides what is in the shop, and would only bring it back.
+   * "Annulla" takes it out of the trash, sizes and all.
+   */
+  | { kind: "delete"; target: OperationTarget };
 
 export type OperationKind = OperationInput["kind"];
 

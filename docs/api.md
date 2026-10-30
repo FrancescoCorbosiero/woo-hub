@@ -10,7 +10,7 @@ actions, the log, proposals — is in [operations.md](operations.md).
   (`/catalog/order`), the log (`/operations`).
 - **Every action, described**: `/actions` — the catalog's on products (hide,
   sale, tags, categories, a place on the homepage, a margin, the shop's
-  order…) and the homepage's on its sections and blocks.
+  order, delete…) and the homepage's on its sections and blocks.
 - **Proposals**, the safe way to act: `/proposals` previews an action and
   keeps it; `/proposals/{id}/confirm` runs it, only if the shop still gives
   that preview, and only once.
