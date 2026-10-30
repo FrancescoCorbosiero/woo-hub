@@ -673,13 +673,18 @@ export const it = {
       lastRepriced: (n: number) => `${n} ri-prezzati`,
       lastRepaired: (n: number) => `${n} riparati`,
       written: (n: number) => (n === 1 ? "1 modifica al negozio" : `${n} modifiche al negozio`),
+      waiting: (n: number) => `${n} in attesa della prossima esecuzione`,
       feeds: (minutes: number) => `Listini: aggiornati ogni ${minutes} min`,
       feedsDaily: "Listini: aggiornati con la sincronizzazione giornaliera",
       feedsLast: (when: string) => `ultimo ${when}`,
       feedsErrorPrefix: "Aggiornamento dei listini:",
-      autoSyncOn: (max: number) => `Negozio: aggiornato in automatico (fino a ${max} modifiche per volta)`,
-      autoSyncFeed: (max: number) =>
-        `Negozio: prodotti del feed aggiornati in automatico (fino a ${max} modifiche per volta), gli altri dalla scheda Sync`,
+      // feedMax: null without a feed cycle.
+      autoSyncOn: (storeMax: number, feedMax: number | null) =>
+        feedMax == null
+          ? `Negozio: aggiornato in automatico con la sincronizzazione giornaliera, ${storeMax} modifiche per volta: il resto la volta dopo`
+          : `Negozio: aggiornato in automatico — i prodotti del feed a ogni ciclo (oltre ${feedMax} modifiche il ciclo non scrive nulla e aspetta la scheda Sync), gli altri con la sincronizzazione giornaliera, ${storeMax} modifiche per volta: il resto la volta dopo`,
+      autoSyncFeed: (feedMax: number) =>
+        `Negozio: prodotti del feed aggiornati in automatico (oltre ${feedMax} modifiche il ciclo non scrive nulla e aspetta la scheda Sync), gli altri dalla scheda Sync`,
       autoSyncOff: "Negozio: aggiornato a mano, dalla scheda Sync",
       orders: (minutes: number) => `Ordini: aggiornati ogni ${minutes} min`,
       ordersOff: "Ordini: aggiornati solo a mano",

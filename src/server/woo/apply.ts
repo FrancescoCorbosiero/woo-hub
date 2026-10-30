@@ -18,6 +18,7 @@ import { getOverrides } from "@/server/overrides/repo";
 import { forgetVariations, noteStoreEdits, recordPriceWrites, type LedgerWrite } from "@/server/sync/ledger";
 import type { StoreProductModel, StoreVariation } from "@/server/store-json/model";
 import { chunk } from "@/server/adapters/http";
+import { withinBudget } from "@/lib/chunk";
 import { skuKey } from "@/lib/skus";
 import { normalizeGtin } from "@/lib/gtin";
 import { getWooClient } from "./client";
@@ -118,6 +119,14 @@ export interface ApplyOptions {
    */
   addSizes?: "all" | "feed";
   /**
+   * The most changes this run writes — price and stock writes plus missing
+   * sizes, counted by product: whole products in the run's order, as long as
+   * they fit (see withinBudget). The rest is left out, and the next run plans
+   * it again. The whole-store sync's instalment (see scheduler.ts); unset, the
+   * run writes everything selected.
+   */
+  maxChanges?: number;
+  /**
    * A live run's progress: once the products to write are known, then after
    * each one. The Sync tab shows it while the apply runs in the background
    * (see sync/apply-job.ts).
@@ -217,6 +226,8 @@ export interface ApplyOutcome {
   keptOnSale: number;
   /** Sizes the products were missing: planned, and (live) actually added. */
   sizes: { planned: number; added: number; sample: NewSize[] };
+  /** Changes left for the next run by maxChanges (0 without one). */
+  deferred: number;
 }
 
 /** One product's missing sizes, as the run planned them against the snapshot. */
@@ -474,7 +485,7 @@ export async function applySync(options: ApplyOptions): Promise<ApplyOutcome> {
   }
   const { planIds, isSelected } = await resolveSelection(options);
   const allChanges = await collectChanges(planIds, isSelected, { gtinByVariation, backfillGtins: backfill });
-  const changes = allChanges.filter((c) => !deletedIds.has(c.storeVariationId));
+  let changes = allChanges.filter((c) => !deletedIds.has(c.storeVariationId));
   const droppedByCleanup = allChanges.length - changes.length;
 
   const priceByProduct = new Map<number, ApplyChange[]>();
@@ -487,7 +498,24 @@ export async function applySync(options: ApplyOptions): Promise<ApplyOutcome> {
   // 3. The sizes the products are missing (selected "create" rows).
   const sizeWork = options.addSizes ? await collectMissingSizes(options.runId, isSelected, options.addSizes) : [];
   const sizesByProduct = new Map(sizeWork.map((w) => [w.storeProductId, w]));
-  const sizesPlanned = sizeWork.flatMap((w) => w.planned);
+
+  // The run's instalment (ApplyOptions.maxChanges): the products past it are
+  // left out whole — prices, stock and sizes. A cleanup is not a change it
+  // counts, and none is dropped.
+  let deferred = 0;
+  if (options.maxChanges != null) {
+    const cut = withinBudget(
+      [...new Set([...priceByProduct.keys(), ...sizesByProduct.keys()])],
+      (id) => (priceByProduct.get(id)?.length ?? 0) + (sizesByProduct.get(id)?.planned.length ?? 0),
+      options.maxChanges,
+    );
+    deferred = cut.deferred;
+    const taken = new Set(cut.taken);
+    for (const id of [...priceByProduct.keys()]) if (!taken.has(id)) priceByProduct.delete(id);
+    for (const id of [...sizesByProduct.keys()]) if (!taken.has(id)) sizesByProduct.delete(id);
+    changes = changes.filter((c) => taken.has(c.storeProductId));
+  }
+  const sizesPlanned = [...sizesByProduct.values()].flatMap((w) => w.planned);
 
   const productIds = [...new Set([...opsByProduct.keys(), ...priceByProduct.keys(), ...sizesByProduct.keys()])];
   const cleanup = options.sanitize ? summarizeCleanup(cleanupOps) : null;
@@ -543,6 +571,7 @@ export async function applySync(options: ApplyOptions): Promise<ApplyOutcome> {
       keptStoreEdits: 0,
       keptOnSale: 0,
       sizes: { planned: sizesPlanned.length, added: 0, sample: sizesPlanned.slice(0, OUTCOME_SAMPLE) },
+      deferred,
     };
   }
 
@@ -824,6 +853,7 @@ export async function applySync(options: ApplyOptions): Promise<ApplyOutcome> {
       added: sizesAdded.length,
       sample: sizesAdded.slice(0, OUTCOME_SAMPLE).map(({ variationId: _v, euNorm: _e, ...size }) => size),
     },
+    deferred,
   };
 }
 
@@ -848,6 +878,7 @@ function emptyOutcome(cleanup: CleanupSummary | null): ApplyOutcome {
     keptStoreEdits: 0,
     keptOnSale: 0,
     sizes: { planned: 0, added: 0, sample: [] },
+    deferred: 0,
   };
 }
 

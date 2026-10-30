@@ -283,7 +283,8 @@ runs four cadences:
   1. the **store pull** (the Hub's copy of every product on WooCommerce);
   2. the GoldenSneakers complete sync;
   3. a KicksDB re-pricing pass;
-  4. with `AUTO_SYNC=on`, the **store sync** of the whole store (below);
+  4. with `AUTO_SYNC=on`, the **store sync** of the whole store, a few at a
+     time, the feed's products left to the feed cycle (below);
   5. the **automatic categories**, against a full read of the store;
   6. self-repair (with `AUTO_REPAIR=on`), metadata backfill and
      recategorization.
@@ -322,7 +323,8 @@ WooCommerce. `AUTO_SYNC` decides where it runs:
   feed owns them, and keeping the store in step with it is the cycle's job.
   The daily sync writes nothing;
 - `AUTO_SYNC=on`: in the daily sync too, for the whole store (KicksDB prices
-  and missing sizes included);
+  and missing sizes included). While the feed cycle runs, the daily sync
+  leaves the feed's products to it: the two never write the same product;
 - `AUTO_SYNC=off`: nowhere. Every change is applied by hand in the Sync tab.
 
 It is narrower than the tab on purpose:
@@ -333,10 +335,19 @@ It is narrower than the tab on purpose:
   Sync tab does, KicksDB-priced ones included: a size StockX started listing
   after the product was published, created as Publish creates every size it
   lists and sold on demand like the product's other sizes.
-- A run that would change more than `AUTO_SYNC_MAX_CHANGES` variations
+- A feed cycle that would change more than `AUTO_SYNC_MAX_CHANGES` variations
   (default 500) writes nothing. The Feeds tab shows the reason, and the change
-  is reviewed and applied by hand in the Sync tab. A change that large is a
-  pricing edit or a broken feed.
+  is reviewed and applied by hand in the Sync tab. In a quarter of an hour, a
+  change that large is a new price list or a broken feed.
+- The daily sync writes at most `AUTO_SYNC_STORE_MAX_CHANGES` variations a
+  run (default: `AUTO_SYNC_MAX_CHANGES`), whole products, and leaves the rest
+  for the next run; the Feeds tab shows how many are waiting. It used to
+  write nothing past its limit, like the cycle — but a whole store's KicksDB
+  prices move by thousands of sizes from one day to the next, and what a run
+  refused was still there the next day, with that day's on top: past the
+  limit once, the store was never synced again. Size it to what the prices
+  move between two runs, or run the daily sync more often
+  (`SCHEDULER_TIMES=04:30,12:30,20:30`).
 - Manual price locks are honored, as in the tab.
 - **A price changed on the store is never written over.** The plan keeps the
   ones the snapshot already shows; and since the snapshot is up to a day old

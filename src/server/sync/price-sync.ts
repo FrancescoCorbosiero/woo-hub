@@ -41,8 +41,20 @@ export interface PriceSyncOptions {
   liveCheck?: boolean;
   /** With liveCheck: sizes written even where the store moved (see DecidedPrices). */
   decided?: DecidedPrices;
-  /** Plan, then write nothing when more variations than this would change. */
+  /**
+   * Plan, then write nothing when more variations than this would change —
+   * or, with `instalments`, write that many and leave the rest to the next run.
+   */
   maxChanges?: number;
+  /**
+   * Over maxChanges, write that many — whole products, sizes included — and
+   * leave the rest to the next run, instead of writing nothing. The
+   * whole-store sync's choice: what it has to write grows between two runs,
+   * and a run that refused it would make the next one larger still, so it
+   * would never write again (see scheduler.ts). The feed cycle keeps the
+   * refusal: a change that large in a quarter of an hour is a broken feed.
+   */
+  instalments?: boolean;
   /** Steps of 250 SKUs before giving up. Default: what the run needs, and some. */
   maxSteps?: number;
   /**
@@ -66,6 +78,8 @@ export interface PriceSyncResult {
    * must never hold up the stock the store sells on.
    */
   sizesHeld: number | null;
+  /** Changes left for the next run by an instalment (see `instalments`); null when none were. */
+  deferred: number | null;
 }
 
 /** Throws when the run cannot be planned to the end: a half-read store is not a plan. */
@@ -88,13 +102,14 @@ export async function runPriceSync(opts: PriceSyncOptions = {}): Promise<PriceSy
     const report = progress.result!;
     const updates = report.totals?.update ?? 0;
     // Missing sizes count as changes too (an overestimate: a sold-out size is
-    // never added). Over the cap they wait for the Sync tab; the prices don't.
+    // never added). Over the cap they wait for the Sync tab; the prices don't —
+    // unless the run goes in instalments, which count them with their product.
     const creates = opts.addSizes ? (report.totals?.create ?? 0) : 0;
-    if (updates + creates === 0) return { report, outcome: null, capped: null, sizesHeld: null };
-    if (opts.maxChanges != null && updates > opts.maxChanges) {
-      return { report, outcome: null, capped: updates, sizesHeld: null };
+    if (updates + creates === 0) return { report, outcome: null, capped: null, sizesHeld: null, deferred: null };
+    if (!opts.instalments && opts.maxChanges != null && updates > opts.maxChanges) {
+      return { report, outcome: null, capped: updates, sizesHeld: null, deferred: null };
     }
-    const holdSizes = opts.maxChanges != null && updates + creates > opts.maxChanges;
+    const holdSizes = !opts.instalments && opts.maxChanges != null && updates + creates > opts.maxChanges;
     const outcome = await applySync({
       runId,
       priceScope: "all",
@@ -104,8 +119,15 @@ export async function runPriceSync(opts: PriceSyncOptions = {}): Promise<PriceSy
       liveCheck: opts.liveCheck,
       decided: decidedBy(opts.decided),
       addSizes: holdSizes ? undefined : opts.addSizes,
+      maxChanges: opts.instalments ? opts.maxChanges : undefined,
     });
-    return { report, outcome, capped: null, sizesHeld: holdSizes ? creates : null };
+    return {
+      report,
+      outcome,
+      capped: null,
+      sizesHeld: holdSizes ? creates : null,
+      deferred: outcome.deferred > 0 ? outcome.deferred : null,
+    };
   } finally {
     await deleteRunPlans(runId)
       .then(() => deleteSyncRun(runId))

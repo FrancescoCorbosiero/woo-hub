@@ -197,6 +197,7 @@ function SchedulerCard({ status }: { status: FeedsState["scheduler"] }) {
                   {status.lastGsSkus != null && ` · ${s.lastGs(status.lastGsSkus)}`}
                   {status.lastRefreshed != null && ` · ${s.lastRepriced(status.lastRefreshed)}`}
                   {status.lastWritten != null && ` · ${s.written(status.lastWritten)}`}
+                  {status.lastDeferred != null && ` · ${s.waiting(status.lastDeferred)}`}
                   {status.lastRepaired != null && ` · ${s.lastRepaired(status.lastRepaired)}`}
                 </div>
               )}
@@ -211,7 +212,7 @@ function SchedulerCard({ status }: { status: FeedsState["scheduler"] }) {
               </div>
               <div className="text-faint">
                 {status.autoSync === "all"
-                  ? s.autoSyncOn(status.autoSyncMax)
+                  ? s.autoSyncOn(status.autoSyncStoreMax, status.feedsEveryMinutes > 0 ? status.autoSyncMax : null)
                   : status.autoSync === "feed"
                     ? s.autoSyncFeed(status.autoSyncMax)
                     : s.autoSyncOff}
