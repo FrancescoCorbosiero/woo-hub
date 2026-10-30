@@ -655,13 +655,17 @@ export const en: Dictionary = {
       lastRepriced: (n) => `${n} re-priced`,
       lastRepaired: (n: number) => `${n} repaired`,
       written: (n) => (n === 1 ? "1 store change" : `${n} store changes`),
+      waiting: (n) => `${n} waiting for the next run`,
       feeds: (minutes) => `Feeds: refreshed every ${minutes} min`,
       feedsDaily: "Feeds: refreshed with the daily sync",
       feedsLast: (when) => `last ${when}`,
       feedsErrorPrefix: "Feed refresh:",
-      autoSyncOn: (max) => `Store: updated automatically (up to ${max} changes at a time)`,
-      autoSyncFeed: (max) =>
-        `Store: feed products updated automatically (up to ${max} changes at a time), the rest from the Sync tab`,
+      autoSyncOn: (storeMax, feedMax) =>
+        feedMax == null
+          ? `Store: updated automatically by the daily sync, ${storeMax} changes a run: the rest the next run`
+          : `Store: updated automatically — the feed's products every cycle (past ${feedMax} changes a cycle writes nothing and waits for the Sync tab), the rest by the daily sync, ${storeMax} changes a run: the rest the next run`,
+      autoSyncFeed: (feedMax) =>
+        `Store: feed products updated automatically (past ${feedMax} changes a cycle writes nothing and waits for the Sync tab), the rest from the Sync tab`,
       autoSyncOff: "Store: updated by hand, from the Sync tab",
       orders: (minutes) => `Orders: refreshed every ${minutes} min`,
       ordersOff: "Orders: refreshed by hand only",

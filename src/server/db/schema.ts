@@ -401,8 +401,9 @@ export const schedulerRuns = pgTable(
     status: text("status", { enum: ["running", "ok", "failed", "interrupted"] })
       .notNull()
       .default("running"),
-    // Per step: { ok, count?, note? } — what the run did, or why a step failed.
-    summary: jsonb("summary").$type<Record<string, { ok: boolean; count?: number; note?: string }>>(),
+    // Per step: { ok, count?, note?, deferred? } — what the run did, or why a
+    // step failed; deferred: what the whole-store sync left for its next run.
+    summary: jsonb("summary").$type<Record<string, { ok: boolean; count?: number; note?: string; deferred?: number }>>(),
     error: text("error"),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
     finishedAt: timestamp("finished_at", { withTimezone: true }),

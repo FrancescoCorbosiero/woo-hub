@@ -26,7 +26,9 @@ import { schedulerRuns, type SchedulerRunRow } from "@/server/db/schema";
  *   2. the GoldenSneakers complete sync;
  *   3. a KicksDB re-pricing pass, so whatever the sync registered is priced;
  *   4. with AUTO_SYNC=on, the store sync of the whole store: every price and
- *      stock change the sources now call for, written to it (see syncStore);
+ *      stock change the sources now call for, written to it a few at a time
+ *      (AUTO_SYNC_STORE_MAX_CHANGES a run) — the feed's products left to the
+ *      feed cycle while there is one (see syncStore);
  *   5. the automatic categories, against a full read of the store;
  *   6. self-repair (AUTO_REPAIR=on only), metadata backfill, recategorize.
  * A step that fails does not stop the others, and is retried an hour later
@@ -95,7 +97,8 @@ const MEDIA_CONCURRENCY = 2;
 const DAILY_STEPS = ["pull", "gs", "kicksdb", "storeSync", "collections", "repair", "backfill", "recategorize"] as const;
 const FEED_STEPS = ["gs", "feedSync"] as const;
 type StepName = (typeof DAILY_STEPS)[number] | (typeof FEED_STEPS)[number];
-type StepOutcome = { ok: boolean; count?: number; note?: string };
+/** `deferred`: changes the whole-store sync left for its next run. */
+type StepOutcome = { ok: boolean; count?: number; note?: string; deferred?: number };
 
 const LABEL: Record<StepName, string> = {
   pull: "store pull",
@@ -140,9 +143,11 @@ export interface SchedulerStatus {
   lastRefreshed: number | null; // entries re-priced in the last pass
   lastRepaired: number | null; // products healed in the last pass (null = off)
   lastWritten: number | null; // variations the last store sync wrote (null = not run)
+  lastDeferred: number | null; // …and the changes it left for the next run (null = none)
   lastError: string | null;
   autoSync: AutoSync; // what the runs write to the store unattended
-  autoSyncMax: number; // …at most this many variations per run
+  autoSyncMax: number; // a feed cycle past this many changes writes nothing
+  autoSyncStoreMax: number; // the whole-store sync writes this many a run, the rest at the next
   feedsEveryMinutes: number; // 0 = no feed cycle
   feedsNextAt: number | null;
   feedsLastAt: number | null;
@@ -178,9 +183,11 @@ function store(): SchedulerState {
     lastRefreshed: null,
     lastRepaired: null,
     lastWritten: null,
+    lastDeferred: null,
     lastError: null,
     autoSync: "off",
     autoSyncMax: DEFAULT_MAX_CHANGES,
+    autoSyncStoreMax: DEFAULT_MAX_CHANGES,
     feedsEveryMinutes: 0,
     feedsNextAt: null,
     feedsLastAt: null,
@@ -229,16 +236,24 @@ async function refreshCatalog(): Promise<{ refreshed: number; error: string | nu
 
 /**
  * The store sync, unattended: the same preview the Sync tab runs, then its
- * apply — what an operator does by pressing "apply all" — over the whole
- * store (the daily run) or the products the feed has ever listed (the feed
- * cycle; dropped ones included, so their sizes go to 0).
+ * apply — what an operator does by pressing "apply all" — over the products
+ * the feed has ever listed (the feed cycle; dropped ones included, so their
+ * sizes go to 0) or the whole store (the daily run), which leaves those to the
+ * feed cycle while there is one: the two never write the same product.
  *
  * Narrower than the tab, on purpose: prices, stock and the sizes a product is
- * missing — no size cleanup (it deletes variations) and no identifiers. A run
- * that would change more than AUTO_SYNC_MAX_CHANGES variations writes nothing:
- * a change that large is a pricing edit or a broken feed, and either is
- * reviewed in the Sync tab first. Every write lands in the Sync tab's history
- * like a manual apply.
+ * missing — no size cleanup (it deletes variations) and no identifiers. Every
+ * write lands in the Sync tab's history like a manual apply. And bounded:
+ *  - a feed cycle that would change more than AUTO_SYNC_MAX_CHANGES
+ *    variations writes nothing. In a quarter of an hour a change that large is
+ *    a broken feed or a new price list, and either is reviewed in the Sync tab
+ *    first;
+ *  - the whole-store run writes AUTO_SYNC_STORE_MAX_CHANGES at most — whole
+ *    products — and leaves the rest to the next run. It used to write nothing
+ *    past its limit, like the cycle; but a whole store's KicksDB prices move
+ *    by more than that from one day to the next, and what a run refused was
+ *    still there for the next one, larger: past the limit once, it never wrote
+ *    again.
  *
  * And more careful, because nobody is watching: a price changed on the store
  * is never written over. The plan keeps the ones the snapshot already shows
@@ -248,7 +263,8 @@ async function refreshCatalog(): Promise<{ refreshed: number; error: string | nu
  * prices changed on WordPress, for a person to decide.
  */
 async function syncStore(scope: "store" | "feed"): Promise<StepOutcome | null> {
-  const writes = store().autoSync;
+  const s = store();
+  const writes = s.autoSync;
   if (writes === "off" || (scope === "store" && writes !== "all")) return null;
   const { wooConfigured } = await import("@/server/woo/client");
   if (!wooConfigured()) return null;
@@ -262,59 +278,79 @@ async function syncStore(scope: "store" | "feed"): Promise<StepOutcome | null> {
     return { ok: true, count: 0, note: "a store pull was running: the next cycle writes" };
   }
 
+  // The feed's products are the feed cycle's, under its own limit. While there
+  // is a cycle, the whole-store run leaves them to it: a broken feed it refused
+  // must not reach the store through the daily run's instalments instead.
   let skus: string[] | undefined;
-  if (scope === "feed") {
+  if (scope === "feed" || s.feedsEveryMinutes > 0) {
     const { GS_FEED, knownFeedSkus } = await import("@/server/feeds/repo");
     const { listStoreSkuSpellings } = await import("@/server/store-json/repo");
     const { skuKey } = await import("@/lib/skus");
     const known = await knownFeedSkus(GS_FEED);
-    skus = (await listStoreSkuSpellings()).filter((sku) => known.has(skuKey(sku)));
-    if (skus.length === 0) return { ok: true, count: 0, note: "no feed products on the store" };
+    const fed = (sku: string) => known.has(skuKey(sku));
+    const onStore = await listStoreSkuSpellings();
+    skus = scope === "feed" ? onStore.filter(fed) : onStore.filter((sku) => !fed(sku));
+    // Never handed on empty: no SKUs is the whole store, to the sync.
+    if (skus.length === 0) {
+      return {
+        ok: true,
+        count: 0,
+        note: scope === "feed" ? "no feed products on the store" : "every product on the store follows the feed",
+      };
+    }
   }
 
   const { runPriceSync } = await import("@/server/sync/price-sync");
-  const limit = store().autoSyncMax;
+  const limit = scope === "store" ? s.autoSyncStoreMax : s.autoSyncMax;
   // The sizes a product lacks are added too. The whole-store run adds every
   // one, as the Sync tab does: KicksDB-priced sizes included, sold on demand
   // like the rest of those products' sizes. The feed cycle, every quarter of
   // an hour, only the feed's: their stock is real, where KicksDB lists every
   // size StockX has an ask for.
-  const { outcome, capped, sizesHeld } = await runPriceSync({
+  const { outcome, capped, sizesHeld, deferred } = await runPriceSync({
     skus,
     liveCheck: true,
     maxChanges: limit,
+    instalments: scope === "store",
     addSizes: scope === "store" ? "all" : "feed",
   });
   if (capped != null) {
     throw new Error(
-      `${capped} changes planned, more than the ${limit} an automatic run may write (AUTO_SYNC_MAX_CHANGES): ` +
+      `${capped} changes planned, more than the ${limit} a feed cycle may write (AUTO_SYNC_MAX_CHANGES): ` +
         "nothing written. Review and apply them in the Sync tab.",
     );
   }
   const held = sizesHeld != null ? `${sizesHeld} missing size(s) wait for the Sync tab (more than ${limit} changes at once)` : null;
   if (held) console.log(`[scheduler] store sync: ${held}`);
+  const waiting =
+    deferred != null ? `${deferred} more wait for the next run (${limit} a run: AUTO_SYNC_STORE_MAX_CHANGES)` : null;
   if (!outcome) return { ok: true, count: 0, ...(held ? { note: held } : {}) };
   if (outcome.failedTotal > 0) {
     throw new Error(
       `${outcome.updated} of ${outcome.variations} changes written, ${outcome.failedTotal} failed: ` +
-        (outcome.failed[0]?.error ?? "no reason given"),
+        (outcome.failed[0]?.error ?? "no reason given") +
+        (waiting ? ` (${waiting})` : ""),
     );
   }
   const kept = outcome.keptStoreEdits;
   const added = outcome.sizes.added;
+  const products = scope === "feed" ? "feed products" : skus ? "products outside the feed" : "whole store";
   console.log(
-    `[scheduler] store sync: ${outcome.updated} change(s) written (${scope === "feed" ? "feed products" : "whole store"})` +
+    `[scheduler] store sync: ${outcome.updated} change(s) written (${products})` +
       (added > 0 ? `, ${added} missing size(s) added` : "") +
-      (kept > 0 ? `, ${kept} price(s) changed on the store since the last pull kept` : ""),
+      (kept > 0 ? `, ${kept} price(s) changed on the store since the last pull kept` : "") +
+      (waiting ? `; ${waiting}` : ""),
   );
   const notes = [
     ...(added > 0 ? [`${added} missing size(s) added`] : []),
     ...(held ? [held] : []),
+    ...(waiting ? [waiting] : []),
     ...(kept > 0 ? [`${kept} price(s) changed on the store kept`] : []),
   ];
   return {
     ok: true,
     count: outcome.updated + added,
+    ...(deferred != null ? { deferred } : {}),
     ...(notes.length > 0 ? { note: notes.join(", ") } : {}),
   };
 }
@@ -497,6 +533,8 @@ async function loadHistory(s: SchedulerState): Promise<Date | null> {
       const outcome = last.summary?.[step];
       if (outcome?.ok) s[counter] = outcome.count ?? null;
     }
+    const sync = last.summary?.storeSync;
+    if (sync?.ok) s.lastDeferred = sync.deferred ?? null;
   }
 
   const [cycle] = await db
@@ -597,6 +635,10 @@ async function run(job: Job): Promise<StepName[] | null> {
           const outcome = summary[step];
           s[COUNTER[step as keyof typeof COUNTER]] = outcome?.ok ? (outcome.count ?? null) : null;
         }
+      }
+      if (job.steps.includes("storeSync")) {
+        const sync = summary.storeSync;
+        s.lastDeferred = sync?.ok ? (sync.deferred ?? null) : null;
       }
     }
     await history.close(id, summary, error);
@@ -795,6 +837,7 @@ export function startScheduler(): void {
   s.feedsEveryMinutes = feeds.feedsEveryMinutes;
   s.autoSync = feeds.autoSync;
   s.autoSyncMax = env.AUTO_SYNC_MAX_CHANGES ?? DEFAULT_MAX_CHANGES;
+  s.autoSyncStoreMax = env.AUTO_SYNC_STORE_MAX_CHANGES ?? s.autoSyncMax;
 
   const enabled =
     env.SCHEDULER === "on" || (env.SCHEDULER === undefined && process.env.NODE_ENV === "production");
@@ -805,8 +848,13 @@ export function startScheduler(): void {
   s.started = true;
   s.enabled = true;
 
-  const sync = s.autoSync === "all" ? `, store sync (up to ${s.autoSyncMax} changes)` : "";
-  const feedSync = s.autoSync === "off" ? "" : ` + store sync of the feed's products (up to ${s.autoSyncMax} changes)`;
+  const sync =
+    s.autoSync === "all"
+      ? `, store sync (${s.autoSyncStoreMax} changes a run, the rest at the next` +
+        (s.feedsEveryMinutes > 0 ? "; the feed's products left to the feed cycle)" : ")")
+      : "";
+  const feedSync =
+    s.autoSync === "off" ? "" : ` + store sync of the feed's products (a cycle past ${s.autoSyncMax} changes writes nothing)`;
   console.log(
     `[scheduler] on — daily sync at ${s.times.join(", ")} (${s.timeZone}): store pull, GS sync, KicksDB re-pricing${sync}; ` +
       (s.feedsEveryMinutes > 0 ? `feeds every ${s.feedsEveryMinutes} min${feedSync}; ` : "") +

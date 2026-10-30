@@ -110,10 +110,15 @@ const EnvSchema = z.object({
   // store's (KicksDB prices included): that one is the operator's decision, as
   // with AUTO_REPAIR. Off, nothing is written unattended.
   AUTO_SYNC: z.enum(["on", "off"]).optional(),
-  // An automatic run that would change more variations than this writes
-  // nothing and says so on the Feeds tab: a change that large is reviewed in
-  // the Sync tab first. Default 500.
+  // A feed cycle that would change more variations than this writes nothing
+  // and says so on the Feeds tab: in a quarter of an hour, a change that large
+  // is a broken feed, reviewed in the Sync tab first. Default 500.
   AUTO_SYNC_MAX_CHANGES: blankIsUnset(z.coerce.number().int().min(1).optional()),
+  // The whole-store sync of AUTO_SYNC=on writes at most this many variations a
+  // run — whole products — and leaves the rest to the next run, so what it
+  // has to write never piles up past what it may. Size it to what the KicksDB
+  // prices move between two runs. Default: AUTO_SYNC_MAX_CHANGES.
+  AUTO_SYNC_STORE_MAX_CHANGES: blankIsUnset(z.coerce.number().int().min(1).optional()),
 
   // GoldenSneakers feed — the flat-assortment endpoint (include VAT/markup
   // query params there: presented_price arrives FINAL) and its bearer token.

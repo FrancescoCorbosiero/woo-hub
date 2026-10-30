@@ -233,17 +233,25 @@ below). To get an email when a daily sync fails or never runs:
 
 **The store sync** writes to WooCommerce on its own. By default it writes
 the feed's products' changes every feed cycle, and the daily sync writes
-nothing. **`AUTO_SYNC=on`** has the daily sync write the whole store's changes
+nothing: a KicksDB-priced product's new price waits in the Sync tab.
+**`AUTO_SYNC=on`** has the daily sync write the rest of the store's changes
 too, KicksDB prices included. **`AUTO_SYNC=off`** writes nothing: the runs
 refresh the Hub and you apply the changes yourself in the Sync tab. When it
 writes:
 - **What it writes:** the price and stock changes the Sync tab would apply,
   manual price locks honored. Only prices and stock: no size cleanup, never
   a deletion.
-- **The limit:** a run that would change more than `AUTO_SYNC_MAX_CHANGES`
-  variations (default 500) writes nothing, and the Feeds tab says why. Review
-  it in the Sync tab and apply it there: a change that big is a pricing edit
-  or a broken feed.
+- **The limits:** a feed cycle that would change more than
+  `AUTO_SYNC_MAX_CHANGES` variations (default 500) writes nothing, and the
+  Feeds tab says why. Review it in the Sync tab and apply it there: in a
+  quarter of an hour, a change that big is a new price list or a broken feed.
+  The daily sync of `AUTO_SYNC=on` writes at most
+  `AUTO_SYNC_STORE_MAX_CHANGES` variations a run (default: the same 500) and
+  leaves the rest for the next run; the Feeds tab shows how many are waiting.
+  The KicksDB prices of a whole store move a lot from one day to the next
+  (thousands of sizes on a 2,000-product store), so size it to that, or run
+  the daily sync more than once a day (`SCHEDULER_TIMES`). While the feed
+  cycle runs, the daily sync leaves the feed's products to it.
 - **The record:** every write appears in the Sync tab's history.
 - **Edits in WordPress:** a price changed by hand in WooCommerce is seen at
   the next store pull (the daily sync). For a product the feed owns, the
