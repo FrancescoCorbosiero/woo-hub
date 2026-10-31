@@ -152,6 +152,7 @@ export const OperationInputSchema = z.discriminatedUnion("kind", [
     sourceId: z.uuid(),
     term: z.object({ taxonomy: z.enum(["category", "brand"], { message: problem("term") }), id: Id }).nullable(),
   }),
+  z.object({ kind: z.literal("delete"), target: TargetSchema }),
 ]);
 
 /** A problem met, in the owner's words: ours by key, zod's own as "Richiesta non valida". */

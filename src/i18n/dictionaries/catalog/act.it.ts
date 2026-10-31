@@ -141,6 +141,19 @@ export const actIt = {
       show: (count: number) => `Mostra ${products(count)}`,
     },
     plain: { hide: "Nascondi", show: "Mostra" },
+    /** Under the button, for a selection: the way on to "Elimina". */
+    deleteInstead: (count: number): string => (count === 1 ? "Non lo vendi più? Eliminalo" : "Non li vendi più? Eliminali"),
+  },
+
+  /** "Elimina": for products the shop no longer sells; "Nascondi" is for the ones only out of sight. */
+  delete: {
+    title: "Elimina",
+    hint: (count: number): string =>
+      count === 1
+        ? "Per un prodotto che non vendi più. Se vuoi solo toglierlo dalla vista, usa «Nascondi»."
+        : "Per i prodotti che non vendi più. Se vuoi solo toglierli dalla vista, usa «Nascondi».",
+    start: (count: number) => `Elimina ${products(count)}`,
+    plain: "Elimina",
   },
 
   tag: {
@@ -282,6 +295,7 @@ export const actIt = {
       margin: "Cambio il ricarico",
       order: "Sposto i prodotti",
       sourceOrder: "Dispongo come la classifica",
+      delete: "Elimino",
     },
     undoing: "Annullo…",
     progress: (what: string, done: number, total: number) => `${what} · ${n(done)}/${n(total)}`,

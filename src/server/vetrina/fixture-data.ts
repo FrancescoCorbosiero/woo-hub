@@ -31,6 +31,8 @@ export interface DemoProduct {
   totalSales: number;
   inStock: boolean;
   image: string;
+  /** In WordPress's trash ("Elimina"): out of every list, still readable by its id, back with its status. */
+  trashed?: boolean;
 }
 
 /** Brand tree: child → parent (a brand rail includes its sub-brands). */

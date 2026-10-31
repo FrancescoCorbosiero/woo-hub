@@ -122,6 +122,22 @@ export async function dropMedia(sku: string): Promise<void> {
     .where(and(eq(mediaJobs.sku, skuKey(sku)), eq(mediaJobs.status, "pending"), isNull(mediaJobs.storeProductId)));
 }
 
+/**
+ * The products were deleted from the shop ("Elimina"): their photos have
+ * nothing to go to — and must never land, since the first one puts its
+ * product on sale, which would take it out of the trash. Called before the
+ * product is trashed; a failed job goes too, or the tab would offer a Retry.
+ */
+export async function cancelMedia(skus: string[]): Promise<void> {
+  const keys = [...new Set(skus.map(skuKey).filter(Boolean))];
+  if (keys.length === 0) return;
+  const now = new Date();
+  await db
+    .update(mediaJobs)
+    .set({ status: "cancelled", lastError: "the product was deleted from the shop", finishedAt: now, updatedAt: now })
+    .where(and(inArray(mediaJobs.sku, keys), inArray(mediaJobs.status, ["pending", "failed"])));
+}
+
 /** SKUs whose photos are still on their way: hidden products count as published. */
 export async function openMediaSkus(): Promise<Set<string>> {
   const rows = await db.select({ sku: mediaJobs.sku }).from(mediaJobs).where(eq(mediaJobs.status, "pending"));

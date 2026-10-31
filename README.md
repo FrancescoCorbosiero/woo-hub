@@ -506,8 +506,11 @@ list that changed since it was opened — reload, then edit.
 and brands on the phone (the Vetrina's Catalogo tab) and acts on one product
 or many — hide and show (a whole category or brand too, its products hidden
 everywhere, newcomers included, and "Mostra" restoring exactly), sales,
-tags, categories, homepage pins, a category's or brand's margin — each with a
-preview, a background run and "Annulla". Its price actions never write a
+tags, categories, homepage pins, a category's or brand's margin, and deleting
+a product the shop no longer sells (to WordPress's trash and out of the Hub,
+so Publish never offers it again; refused for the supplier's feed's products,
+which the feed would put back) — each with a preview, a background run and
+"Annulla". Its price actions never write a
 regular price: a sale is the sale price only, and a margin is a store-term
 rule in this list, applied by the engine. The design, the decisions and the
 price contract with the engine: [docs/vetrina-catalog.md](docs/vetrina-catalog.md).

@@ -575,6 +575,8 @@ describe.skipIf(!enabled)("the Vetrina catalog's reads (real SQL)", () => {
         { id: 102, name: "Nike Air Force 1" },
       ],
       sections: [],
+      // No supplier's feed carries it: its sheet offers "Elimina".
+      fromFeed: false,
     });
     expect((await readPlacement(1)).sections).toEqual([
       { key: "category:basse#0", title: "BASSE", position: 2, pinned: true },

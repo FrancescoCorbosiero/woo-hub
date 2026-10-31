@@ -460,6 +460,7 @@ export function labelParams(input: OperationInput, names: LabelNames): Operation
     case "pin":
       return { ...base, section: names.section ?? input.sectionKey };
     case "show":
+    case "delete":
       return base;
     case "margin":
       // No percent: the term went back to the standard margin.
@@ -504,6 +505,8 @@ export function labelText(p: OperationLabelParams, w: Words = words()): string {
       return p.reordered ? w.label.reorder(p.count, p.term ?? "") : w.label.order(p.count, p.term ?? "", p.position ?? null);
     case "sourceOrder":
       return w.label.sourceOrder(p.count, p.source ?? "", p.term || w.source.wholeCatalog);
+    case "delete":
+      return w.label.delete(p.count);
     case "sectionSwitch":
       return w.label.sectionSwitch(p.section ?? "", p.on ?? false);
     case "sectionMove":

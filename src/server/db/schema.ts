@@ -726,9 +726,10 @@ export const vetrinaOperationItems = pgTable(
     // its pricing rule before and after here, on product 0 (operations/repo.ts
     // fileMarginRecord). 'member' is none either: a product a whole term's
     // hide found already hidden — nothing to put back, but no newcomer to the
-    // term either (operations/standing.ts). The column is plain text: the
-    // list is TypeScript's only.
-    field: text("field", { enum: ["visibility", "tags", "categories", "sale", "margin", "member", "menu_order"] }).notNull(),
+    // term either (operations/standing.ts). 'deleted' is a product sent to
+    // the trash: before is what bringing it back needs (operations/remove.ts).
+    // The column is plain text: the list is TypeScript's only.
+    field: text("field", { enum: ["visibility", "tags", "categories", "sale", "margin", "member", "menu_order", "deleted"] }).notNull(),
     before: jsonb("before").$type<unknown>(),
     after: jsonb("after").$type<unknown>(),
   },

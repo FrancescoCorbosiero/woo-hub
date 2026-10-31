@@ -125,6 +125,17 @@ export const actEn: typeof actIt = {
       show: (count: number) => `Show ${products(count)}`,
     },
     plain: { hide: "Hide", show: "Show" },
+    deleteInstead: (count: number) => (count === 1 ? "No longer selling it? Delete it" : "No longer selling them? Delete them"),
+  },
+
+  delete: {
+    title: "Delete",
+    hint: (count: number) =>
+      count === 1
+        ? "For a product you no longer sell. To only take it out of sight, use “Hide”."
+        : "For products you no longer sell. To only take them out of sight, use “Hide”.",
+    start: (count: number) => `Delete ${products(count)}`,
+    plain: "Delete",
   },
 
   tag: {
@@ -258,6 +269,7 @@ export const actEn: typeof actIt = {
       margin: "Changing the margin",
       order: "Moving the products",
       sourceOrder: "Arranging like the ranking",
+      delete: "Deleting",
     },
     undoing: "Undoing…",
     progress: (what: string, done: number, total: number) => `${what} · ${n(done)}/${n(total)}`,

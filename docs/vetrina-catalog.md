@@ -273,7 +273,24 @@ As built (phase 3, `src/components/vetrina/catalog/act/`):
   products has a Hub price it stays as a quiet row saying so.
 - **The product sheet**: its visibility (switched back on, as it was before
   its hide), its categories (add, remove), its tags (saved as a change over
-  the product's tags as they are now), its sale, "Metti in homepage".
+  the product's tags as they are now), its sale, "Metti in homepage", and
+  "Elimina il prodotto" (below).
+- **Elimina** (`operations/remove.ts`): for a product the shop no longer
+  sells, from its sheet or from a selection (Nascondi's and Mostra's sheets
+  lead on to it: a seventh button in the bar would leave none of the others'
+  words whole on a phone). The product goes to WordPress's trash — each one
+  its own request: the store's batch endpoint deletes for good — and out of
+  the Hub at once: its copy of the shop (a pull running meanwhile does not
+  bring it back), the store index, the catalog (so Publish never offers it
+  again; a deliberate import brings it back), its photos' queue (the first
+  photo to land would put it back on sale). A product the supplier's feed
+  carries is refused, and its sheet offers no "Elimina": the feed decides
+  what is in the shop and would put it back — hiding it is the way. Its
+  status, its sizes' statuses and its catalog rows are filed before it goes:
+  "Annulla" takes it out of the trash with its status, then its sizes with
+  theirs (WooCommerce trashes them with their product, and a restore through
+  the API brings back the product alone), and the Hub knows it again. One
+  emptied from the trash since cannot come back, and says so.
 - **New automatic category** from the catalog's "+", or from a term's ⋯ menu
   with the screen's filters as its rule. The rule of a category a section
   shows is edited in its own sheet, from the section editor or the

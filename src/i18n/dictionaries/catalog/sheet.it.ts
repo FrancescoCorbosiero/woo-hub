@@ -44,6 +44,10 @@ export const sheetIt = {
   noCategories: "In nessuna categoria",
   automatic: "automatica, decisa dalla sua regola",
   automaticHint: "Automatica: decisa dalla sua regola. Il prodotto entra ed esce da solo, non si toglie a mano.",
+  /** For a product the shop no longer sells: out of the shop and of the Hub ("Nascondi" only takes it out of sight). */
+  deleteProduct: "Elimina il prodotto",
+  /** A product of the supplier's feed: no "Elimina" — the feed would put it back. */
+  fromFeed: "Arriva dal feed GoldenSneakers: non si elimina, il feed lo rimetterebbe. Per toglierlo dalla vista, spegni «Visibile nel negozio».",
   addCategory: "Categoria",
   addCategoryLabel: "Aggiungi a una categoria",
   removeCategory: (name: string) => `Togli da «${name}»`,
@@ -86,6 +90,11 @@ export const sheetIt = {
       title: (name: string) => `Togliere da «${name}»?`,
       body: (name: string) => `Non compare più tra i prodotti di «${name}».`,
       confirm: "Togli",
+    },
+    delete: {
+      title: "Eliminare il prodotto?",
+      body: "Per un prodotto che non vendi più. Se vuoi solo toglierlo dalla vista, spegni «Visibile nel negozio».",
+      confirm: "Elimina",
     },
   },
 
