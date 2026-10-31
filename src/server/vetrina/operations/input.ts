@@ -1,6 +1,6 @@
 import "server-only";
 import { z } from "zod";
-import { CATALOG_SORTS, QUICK_VIEWS } from "@/lib/vetrina/catalog";
+import { CATALOG_SORTS, PRODUCT_SOURCES, QUICK_VIEWS } from "@/lib/vetrina/catalog";
 import {
   MARGIN_PERCENT_MAX,
   MARGIN_PERCENT_MIN,
@@ -47,6 +47,12 @@ const QuerySchema = z
     visibility: z.enum(["visible", "hidden"]).optional(),
     onSale: z.boolean().optional(),
     within: Id.optional().describe("A term of the other taxonomy: the brands inside a category, the categories inside a brand."),
+    source: z
+      .enum(PRODUCT_SOURCES)
+      .optional()
+      .describe(
+        "Where the products come from: goldensneakers (the supplier's feed carries them), kicksdb (added from the Hub), delisted (the feed dropped them), woo (made in the shop).",
+      ),
     sort: z.enum(CATALOG_SORTS).optional(),
   })
   // A term without its taxonomy would quietly read as a category.

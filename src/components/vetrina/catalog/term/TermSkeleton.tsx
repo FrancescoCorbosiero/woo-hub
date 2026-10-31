@@ -81,8 +81,9 @@ const tile = <span className={`${box} h-[30px] w-[30px] rounded-[8px]`} />;
  * the navbar with its search, then the parts the real screen will have, in
  * the places and at the heights they take. For a term, what the catalog's
  * home (or an earlier visit) told of it: its rule, its homepage sections,
- * its actions, its sub-terms, the other taxonomy's chips. For a quick view,
- * its own line. The panel's fixed words are drawn as ghosts of themselves.
+ * its actions, its sub-terms, the sources' and the other taxonomy's chips.
+ * For a quick view, its own line (and the hidden products' sources). The
+ * panel's fixed words are drawn as ghosts of themselves.
  */
 export function TermSkeleton({ taxonomy }: { taxonomy: CatalogTaxonomy | null }) {
   const { t } = useI18n();
@@ -108,8 +109,10 @@ export function TermSkeleton({ taxonomy }: { taxonomy: CatalogTaxonomy | null })
           </p>
         )}
         <div className="space-y-0.5 py-1">
-          {/* The status chips (terms only), then the other taxonomy's, when they narrow the list. */}
+          {/* The status chips (terms only), the sources' (always on the hidden products), then the other
+              taxonomy's, when they narrow the list. */}
           {taxonomy && <ChipsSkeleton widths={[72, 104, 92, 96, 88]} />}
+          {(shape ? shape.sources !== false : view === "hidden") && <ChipsSkeleton widths={[76, 148, 96, 132]} />}
           {(!shape || shape.within) && <ChipsSkeleton widths={[88, 64, 112, 80]} />}
         </div>
         <div className="flex min-h-11 items-center justify-between pe-4 ps-5 pt-2">

@@ -50,6 +50,12 @@ describe("ruleFromList", () => {
     expect(prefill.notes).toEqual(["hidden"]);
   });
 
+  it("leaves the source out too — the Hub's knowledge, not the shop's — and says so", () => {
+    const prefill = ruleFromList({ ...nike, status: "hidden", source: "kicksdb" });
+    expect(prefill.conditions).toHaveLength(1);
+    expect(prefill.notes).toEqual(["hidden", "source"]);
+  });
+
   it("turns the search into one 'name contains' per word, each word once", () => {
     const prefill = ruleFromList({ ...nike, q: "  Dunk low DUNK " });
     expect(prefill.conditions.slice(1)).toEqual([

@@ -21,6 +21,7 @@ export const rulesIt = {
   notes: {
     hidden: "Il filtro «Nascosti» resta fuori: una regola non guarda se un prodotto è nascosto.",
     search: "La ricerca diventa «il nome contiene»: lo SKU non conta.",
+    source: "Il filtro «Provenienza» resta fuori: una regola guarda solo quello che il negozio sa di un prodotto.",
   },
 
   nameTaken: (name: string) =>

@@ -169,7 +169,10 @@ export const termEn: typeof termIt = {
   views: {
     soldout: { title: "Sold out", hint: "No size available: they can't be bought on the site." },
     onsale: { title: "On sale", hint: "Products with a discounted price right now." },
-    hidden: { title: "Hidden", hint: "Hidden from the shop: they show neither in the site's lists nor in its search." },
+    hidden: {
+      title: "Hidden",
+      hint: "They show neither in the site's lists nor in its search. GS ones are the supplier's: they can't be deleted, only shown again. The others, if you no longer sell them, delete them.",
+    },
     nophoto: { title: "No photo", hint: "They show with an empty image on the site: add a photo from WordPress." },
     nocategory: { title: "No category", hint: "They can't be found on the site by browsing the categories." },
     unpublished: { title: "Not published", hint: "Drafts, products in review and private ones: not visible on the site." },

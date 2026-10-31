@@ -17,6 +17,7 @@ import { isActive } from "../act/model";
 import { OperationsContext, useOperationSettled } from "../act/operations-context";
 import { House } from "../term/glyphs";
 import { termHref } from "../term/list-model";
+import { SourceBadge } from "../source";
 import { ConfirmDialog, type ConfirmRequest } from "./ConfirmDialog";
 import { sectionHref } from "./links";
 import { HEADING, ROW, ROW_INNER, ROWS, SHEET_CARD, SHEET_LIST, SHEET_LIST_COLORS } from "./look";
@@ -32,7 +33,9 @@ import {
 
 /**
  * A product's place in the shop, in its sheet, and the actions on this one
- * product: whether customers see it (a switch), its categories (a manual one
+ * product. First where it comes from, in its colour and in words — whose
+ * product it is, and whether "Elimina" takes it — then whether customers see
+ * it (a switch), its categories (a manual one
  * comes off with its ×, "+ Categoria" adds one), its brands, the homepage
  * sections showing it ("Metti in homepage"), its sale — and, under them,
  * "Elimina il prodotto" for one the shop no longer sells (none for the
@@ -115,6 +118,7 @@ export function PlacementSection({
 }) {
   const { t } = useI18n();
   const s = t.vetrinaCatalog.sheet;
+  const o = t.vetrinaCatalog.origin;
   // The catalog's tracker, mounted in the Vetrina's shell. Without it the section only shows.
   const ops = React.useContext(OperationsContext);
   const [state, setState] = React.useState<State>({ phase: "loading" });
@@ -253,6 +257,22 @@ export function PlacementSection({
     <section>
       <h3 className={HEADING}>{s.title}</h3>
       <List strong inset dividers colors={SHEET_LIST_COLORS} className={SHEET_LIST}>
+        {/* Whose product it is, before the switch that hides it. */}
+        {p.source && (
+          <ListItem
+            strongTitle={false}
+            media={<SourceBadge source={p.source} />}
+            title={
+              <span className="block py-0.5">
+                <span className="block text-[16px] leading-tight">
+                  <span className="sr-only">{o.label}: </span>
+                  {o.name[p.source]}
+                </span>
+                <span className={`mt-1 block text-[14px] leading-snug ${SECONDARY}`}>{o.hint[p.source]}</span>
+              </span>
+            }
+          />
+        )}
         {!published && (
           <ListItem
             strongTitle={false}

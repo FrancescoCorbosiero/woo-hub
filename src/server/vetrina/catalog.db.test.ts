@@ -430,6 +430,8 @@ describe.skipIf(!enabled)("the Vetrina catalog's reads (real SQL)", () => {
         { key: "category:basse#0", title: "BASSE", position: 2, pinned: true },
         { key: "brand:nike#0", title: "Nike", position: 1, pinned: false },
       ],
+      // No feed or catalog row for it here: made in the shop.
+      source: "woo",
     });
     expect(page.products.find((p) => p.id === 3)).toMatchObject({
       locks: 0,
@@ -470,6 +472,8 @@ describe.skipIf(!enabled)("the Vetrina catalog's reads (real SQL)", () => {
       outofstock: 1,
       hidden: 0,
       onSale: 1,
+      // Only the sold-out one, like the brands: tapping a source keeps "Esauriti" on.
+      sources: { goldensneakers: 0, kicksdb: 0, delisted: 0, woo: 1 },
       children: [
         { id: 11, name: "Basse", count: 3 },
         { id: 13, name: "Alte", count: 1 },
@@ -577,6 +581,7 @@ describe.skipIf(!enabled)("the Vetrina catalog's reads (real SQL)", () => {
       sections: [],
       // No supplier's feed carries it: its sheet offers "Elimina".
       fromFeed: false,
+      source: "woo",
     });
     expect((await readPlacement(1)).sections).toEqual([
       { key: "category:basse#0", title: "BASSE", position: 2, pinned: true },

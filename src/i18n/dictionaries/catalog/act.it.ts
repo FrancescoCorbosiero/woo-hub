@@ -48,6 +48,8 @@ export const actIt = {
       category: "Categoria",
       pin: "Homepage",
       order: "Posiziona",
+      /** On the hidden products' list only: where the owner checks them before they go. */
+      delete: "Elimina",
     },
   },
 

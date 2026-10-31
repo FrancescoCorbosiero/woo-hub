@@ -1,4 +1,5 @@
 import "server-only";
+import type { ProductSource } from "@/lib/vetrina/catalog";
 
 /**
  * The demo shop behind VETRINA_SOURCE=fixture: the real homepage's blocks
@@ -33,6 +34,20 @@ export interface DemoProduct {
   image: string;
   /** In WordPress's trash ("Elimina"): out of every list, still readable by its id, back with its status. */
   trashed?: boolean;
+  /** Where it comes from: the demo's stand-in for the Hub's feed and catalog (src/server/vetrina/sources.ts). */
+  source: ProductSource;
+}
+
+/**
+ * The demo's mix of sources, as a shop selling both the supplier's feed and
+ * its own KicksDB picks has it: most from the two, a few the feed dropped,
+ * a few made in the shop.
+ */
+function demoSource(r: number): ProductSource {
+  if (r < 0.45) return "goldensneakers";
+  if (r < 0.83) return "kicksdb";
+  if (r < 0.92) return "delisted";
+  return "woo";
 }
 
 /** Brand tree: child → parent (a brand rail includes its sub-brands). */
@@ -136,6 +151,8 @@ export function demoProducts(): DemoProduct[] {
   // A second sequence for what was added later (tags), so the first one —
   // and with it every demo product as it always was — stays the same.
   const later = rng(20261005);
+  // A third, for the sources: the tags stay as they were too.
+  const origin = rng(20261031);
   const now = Date.parse("2026-09-30T12:00:00Z");
   const out: DemoProduct[] = [];
   let id = 1001;
@@ -172,6 +189,7 @@ export function demoProducts(): DemoProduct[] {
         totalSales: Math.floor(random() * 300),
         inStock: id % 9 !== 0,
         image: demoImage(label, model.tint),
+        source: demoSource(origin()),
       });
       id += 1;
     });

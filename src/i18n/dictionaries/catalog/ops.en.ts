@@ -116,6 +116,8 @@ export const opsEn: typeof opsIt = {
     alsoElsewhere: (count: number, names: string[], total: number) =>
       `${count === 1 ? "1 is" : `${n(count)} are`} also in ${nameList(names, total)}: ${count === 1 ? "it disappears" : "they disappear"} there too.`,
     sectionsLose: (sections: string[]) => `The homepage loses products in ${nameList(sections)}.`,
+    hidesFeed: (count: number) =>
+      `${count === 1 ? "1 comes" : `${n(count)} come`} from the GoldenSneakers feed (GS): hidden, ${count === 1 ? "it isn't" : "they aren't"} sold, though the supplier still has ${count === 1 ? "it" : "them"}.`,
     deleteForGood: (count: number) =>
       `${count === 1 ? "It leaves" : "They leave"} the shop and the Hub: into WordPress's trash, which empties itself after 30 days, and the Hub no longer offers ${count === 1 ? "it" : "them"} for publishing. “Undo” brings ${count === 1 ? "it" : "them"} back as ${count === 1 ? "it was" : "they were"} within 7 days.`,
     deleteHasSales: (count: number) =>

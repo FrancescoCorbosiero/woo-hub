@@ -1,5 +1,5 @@
 import type { CollectionCondition } from "@core/collections";
-import type { CatalogTaxonomy } from "@/lib/vetrina/catalog";
+import type { CatalogTaxonomy, ProductSource } from "@/lib/vetrina/catalog";
 import { searchWords, type StatusFilter } from "../term/list-model";
 
 /**
@@ -20,14 +20,20 @@ export interface ListFilters {
   within: { id: number; name: string } | null;
   /** The words searched. */
   q: string;
+  /** The "Provenienza" chip. */
+  source?: ProductSource | null;
 }
 
 /** What could not go into the rule as it stands on the list. */
-export type LeftOut = "hidden" | "search";
+export type LeftOut = "hidden" | "search" | "source";
 
 export interface RulePrefill {
   conditions: CollectionCondition[];
-  /** "hidden": no rule reads visibility. "search": the list also finds by SKU, a rule reads names only. */
+  /**
+   * "hidden": no rule reads visibility. "search": the list also finds by SKU,
+   * a rule reads names only. "source": a rule reads what the shop says of a
+   * product, and where it comes from is the Hub's.
+   */
   notes: LeftOut[];
 }
 
@@ -40,7 +46,8 @@ const OTHER: Record<CatalogTaxonomy, CatalogTaxonomy> = { category: "brand", bra
  * - Disponibili / Esauriti: "available" / "sold out" (back-orderable counts as available on both sides);
  * - In saldo: "on sale";
  * - the search: one "name contains" per word, since the list finds the words in any order.
- * Nascosti has no condition: a rule does not read visibility, so it is left out and said.
+ * Nascosti has no condition: a rule does not read visibility, so it is left out and said; nor has
+ * the source, the Hub's own knowledge of a product.
  */
 export function ruleFromList(list: ListFilters): RulePrefill {
   const conditions: CollectionCondition[] = [
@@ -68,6 +75,7 @@ export function ruleFromList(list: ListFilters): RulePrefill {
     case "all":
       break;
   }
+  if (list.source) notes.push("source");
 
   const words = uniqueWords(searchWords(list.q));
   if (words.length > 0) {

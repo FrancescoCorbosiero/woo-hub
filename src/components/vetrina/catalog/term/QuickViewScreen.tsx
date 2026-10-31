@@ -19,16 +19,19 @@ import { CATALOG_HOME, filterQuery, hasFilters, NO_FILTER, type ListState } from
 import { ProductList } from "./ProductList";
 import { SortActions } from "./SortActions";
 
-/** The search and the brand chip, as the view's counts know them: "|" is the whole view. */
-const countKey = (q: string, within: number | null) => `${q}|${within ?? ""}`;
-const WHOLE_VIEW = countKey("", null);
+/** The search, the brand chip and the source chip, as the view's counts know them: "||" is the whole view. */
+const countKey = (q: string, within: number | null, source: string | null | undefined) => `${q}|${within ?? ""}|${source ?? ""}`;
+const WHOLE_VIEW = countKey("", null, null);
 
 /**
  * A list across categories and brands: sold out, on sale, hidden, without a
  * photo, without a category, not published. One line says what it means on
- * the site; the brands chips narrow it, the search looks inside it, and its
- * products can be chosen and acted on together. A view with nothing in it is
- * the good news it mostly is: said so, with no search or sort to offer.
+ * the site; the sources' and brands' chips narrow it, the search looks inside
+ * it, and its products can be chosen and acted on together. The hidden
+ * products are where the owner checks what to delete: their sources' row
+ * always shows, the supplier's products apart, and "Elimina" is in the
+ * selection bar. A view with nothing in it is the good news it mostly is:
+ * said so, with no search or sort to offer.
  */
 export function QuickViewScreen({
   view,
@@ -58,15 +61,15 @@ export function QuickViewScreen({
     [view, q, sort, filter],
   );
 
-  // How many the list holds, and for which search and brand: the facets of a
-  // quick view (status always "all") add up to its total.
-  const listKey = countKey(q, filter.within?.id ?? null);
+  // How many the list holds, and for which search, brand and source: the
+  // facets of a quick view (status always "all") add up to its total.
+  const listKey = countKey(q, filter.within?.id ?? null, filter.source);
   const keyNow = React.useRef(listKey);
   React.useEffect(() => {
     keyNow.current = listKey;
   });
   const [counted, setCounted] = React.useState<{ key: string; total: number } | null>(() =>
-    initial ? { key: countKey(start.q, start.within), total: initial.total } : null,
+    initial ? { key: countKey(start.q, start.within, start.source), total: initial.total } : null,
   );
   const setFacets = controls.setFacets;
   const onFacets = React.useCallback(
@@ -79,7 +82,7 @@ export function QuickViewScreen({
   );
   // The server read the view again (after an action): its count is the newer word.
   const pageChanged = useChanged(page);
-  if (pageChanged && page.ok) setCounted({ key: countKey(served.q, served.within), total: page.data.total });
+  if (pageChanged && page.ok) setCounted({ key: countKey(served.q, served.within, served.source), total: page.data.total });
 
   const total = counted?.key === listKey ? counted.total : null;
   const empty = page.ok && listKey === WHOLE_VIEW && counted?.key === WHOLE_VIEW && counted.total === 0;
@@ -113,8 +116,15 @@ export function QuickViewScreen({
 
           {page.ok ? (
             <>
-              {/* A view already is a status: only the brands narrow it further. */}
-              <FilterChips facets={controls.facets} filter={filter} onChange={setFilter} taxonomy="category" statuses={false} />
+              {/* A view already is a status: only the sources and the brands narrow it further. */}
+              <FilterChips
+                facets={controls.facets}
+                filter={filter}
+                onChange={setFilter}
+                taxonomy="category"
+                statuses={false}
+                sources={view === "hidden"}
+              />
               <ProductList
                 query={query}
                 initial={initial}

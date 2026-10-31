@@ -1,7 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { blockConfig } from "@/config";
-import { CATALOG_PAGE_MAX, CATALOG_SORTS, QUICK_VIEWS } from "@/lib/vetrina/catalog";
+import { CATALOG_PAGE_MAX, CATALOG_SORTS, PRODUCT_SOURCES, QUICK_VIEWS } from "@/lib/vetrina/catalog";
 import { railCategory } from "@/lib/collections/rail";
 import { editableFields } from "@/lib/vetrina/fields";
 import { railSourceOf } from "@/lib/vetrina/sections";
@@ -88,6 +88,7 @@ export const ProductsQuery = z.object({
   visibility: z.enum(["visible", "hidden"]).optional(),
   onSale: z.enum(["true", "false"]).transform((v) => v === "true").optional(),
   within: Id.optional(),
+  source: z.enum(PRODUCT_SOURCES).optional(),
   sort: z.enum(CATALOG_SORTS).optional(),
   offset: z.coerce.number().int().min(0).default(0),
   limit: z.coerce.number().int().min(1).max(CATALOG_PAGE_MAX).default(40),
@@ -108,6 +109,8 @@ export async function readProducts(query: z.infer<typeof ProductsQuery>) {
       stockStatus: p.stockStatus,
       visibility: p.visibility,
       status: p.status,
+      // Where it comes from; "goldensneakers" is the supplier's feed, which a delete refuses.
+      source: p.source ?? null,
       categories: p.categories.map((c) => c.name),
       brands: p.brands.map((b) => b.name),
       tags: p.tags.map((t) => t.name),

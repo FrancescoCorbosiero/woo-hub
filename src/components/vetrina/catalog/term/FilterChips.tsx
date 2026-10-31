@@ -7,7 +7,8 @@ import { useI18n } from "@/i18n/provider";
 import type { CatalogPage, CatalogTaxonomy } from "@/lib/vetrina/catalog";
 import { ChevronRight } from "../../icons";
 import { formatCount } from "../format";
-import { STATUS_FILTERS, statusCount, withinChips, type ListFilter } from "./list-model";
+import { SourceDot } from "../source";
+import { sourceChips, sourceRowShown, STATUS_FILTERS, statusCount, withinChips, type ListFilter } from "./list-model";
 
 const IDLE = {
   fillBgIos: "bg-black/[0.06] dark:bg-white/10",
@@ -25,10 +26,12 @@ const ACTIVE = {
 
 /**
  * The chips over a list: one status at a time (Tutti, Disponibili, Esauriti,
- * Nascosti, In saldo) and, in a second row, the other taxonomy's terms (the
- * brands inside a category, the categories inside a brand). Counts come from
- * the facets, where each chip leaves only its own choice out: a chip's
- * number is what tapping it shows, the other row staying as it is.
+ * Nascosti, In saldo); one source at a time ("Provenienza": GoldenSneakers,
+ * KicksDB…, each with its colour's dot), when the list holds more than one;
+ * and the other taxonomy's terms (the brands inside a category, the
+ * categories inside a brand). Counts come from the facets, where each chip
+ * leaves only its own choice out: a chip's number is what tapping it shows,
+ * the other rows staying as they are.
  */
 export function FilterChips({
   facets,
@@ -36,20 +39,25 @@ export function FilterChips({
   onChange,
   taxonomy,
   statuses = true,
+  sources = false,
 }: {
   facets: CatalogPage["facets"] | null;
   filter: ListFilter;
   onChange: (next: ListFilter) => void;
-  /** The list's own taxonomy: the second row holds the other one's terms. */
+  /** The list's own taxonomy: the last row holds the other one's terms. */
   taxonomy: CatalogTaxonomy;
   /** The status chips; a quick view already is one. */
   statuses?: boolean;
+  /** The sources' row even with one source: a list checked by source (the hidden products, before they go). */
+  sources?: boolean;
 }) {
   const { t, locale } = useI18n();
   const f = t.vetrinaCatalog.term.filters;
+  const o = t.vetrinaCatalog.origin;
   const shownCount = (n: number | null) => (n == null ? null : formatCount(n, locale));
   const within = facets ? withinChips(facets.within, filter.within) : [];
   const showWithin = withinRowShown(facets, filter);
+  const showSources = sourceRowShown(facets, filter, sources);
 
   return (
     <div className="space-y-0.5 py-1">
@@ -66,6 +74,30 @@ export function FilterChips({
                 active={active}
                 disabled={!active && n === 0}
                 onClick={() => !active && onChange({ ...filter, status })}
+              />
+            );
+          })}
+        </ChipRow>
+      )}
+      {showSources && (
+        <ChipRow label={o.label}>
+          <FilterChip
+            label={o.all}
+            count={null}
+            active={filter.source == null}
+            onClick={() => filter.source != null && onChange({ ...filter, source: null })}
+          />
+          {sourceChips(facets, filter.source).map(({ source, count }) => {
+            const active = filter.source === source;
+            return (
+              <FilterChip
+                key={source}
+                icon={<SourceDot source={source} />}
+                label={o.name[source]}
+                count={shownCount(count)}
+                active={active}
+                // Tapping the chosen one again lets it go, like "Tutte".
+                onClick={() => onChange({ ...filter, source: active ? null : source })}
               />
             );
           })}
@@ -131,6 +163,7 @@ function FilterChip({
   count,
   active,
   disabled = false,
+  icon,
   onClick,
 }: {
   label: string;
@@ -138,6 +171,8 @@ function FilterChip({
   count: string | null;
   active: boolean;
   disabled?: boolean;
+  /** Before the label: a source's dot. */
+  icon?: React.ReactNode;
   onClick: () => void;
 }) {
   return (
@@ -149,6 +184,7 @@ function FilterChip({
       className="shrink-0 py-1.5 transition-opacity active:opacity-60 disabled:opacity-35"
     >
       <Chip component="span" colors={active ? ACTIVE : IDLE} className="!h-8 gap-1.5 !px-3.5 text-[14px] font-medium">
+        {icon}
         <span className="max-w-[12rem] truncate">{label}</span>
         {count != null && <span className="tabular-nums opacity-60">{count}</span>}
       </Chip>

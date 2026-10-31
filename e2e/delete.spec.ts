@@ -19,6 +19,19 @@ async function names(page: Page): Promise<string[]> {
     .evaluateAll((rows) => rows.map((row) => row.querySelector(".line-clamp-2")?.textContent?.trim() ?? ""));
 }
 
+/** The products "Elimina" takes, by name: the Hub's own (KicksDB), never the supplier's feed's. */
+async function deletable(page: Page): Promise<string[]> {
+  return page
+    .getByRole("list")
+    .last()
+    .getByRole("listitem")
+    .evaluateAll((rows) =>
+      rows
+        .filter((row) => row.querySelector("[data-source]")?.getAttribute("data-source") === "kicksdb")
+        .map((row) => row.querySelector(".line-clamp-2")?.textContent?.trim() ?? ""),
+    );
+}
+
 async function shot(page: Page, name: string) {
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/${name}.png` });
 }
@@ -30,7 +43,7 @@ test.beforeEach(async ({ page }) => {
 
 test("Nascondi leads on to Elimina, which takes the products out of the shop; Annulla brings them back", async ({ page }) => {
   const before = await names(page);
-  const target = before[1];
+  const target = (await deletable(page))[0];
 
   await page.getByRole("button", { name: "Seleziona dei prodotti per agire su tutti insieme" }).click();
   await page.getByRole("list").last().getByRole("listitem").filter({ hasText: target }).click();
@@ -58,7 +71,7 @@ test("Nascondi leads on to Elimina, which takes the products out of the shop; An
 
 test("a product's sheet deletes it, asked first; Annulla brings it back", async ({ page }) => {
   const before = await names(page);
-  const target = before[2];
+  const target = (await deletable(page))[1];
 
   await page.getByRole("list").last().getByRole("listitem").filter({ hasText: target }).getByText(target).click();
   const button = page.getByRole("button", { name: "Elimina il prodotto" });

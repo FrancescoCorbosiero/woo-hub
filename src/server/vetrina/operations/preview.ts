@@ -1,16 +1,16 @@
 import "server-only";
 import { hubConfig } from "@/config";
 import type { OperationInput, OperationKind, OperationPreview, TermKey } from "@/lib/vetrina/catalog-ops";
-import { skuKey } from "@/lib/skus";
+import { isDeletable } from "@/lib/vetrina/catalog";
 import { decodeEntities, type IndexRow } from "@/server/collections/index-rows";
 import { collectionsByTerm } from "@/server/collections/service";
-import { activeFeedSkus, GS_FEED } from "@/server/feeds/repo";
 import { storeClient } from "@/server/collections/store";
 import { followSaleRuleFor } from "@/server/overrides/model";
 import { getOverrides } from "@/server/overrides/repo";
 import { defaultCategoryIds, homepagePresence, withDescendants, type CatalogTrees } from "@/server/vetrina/catalog";
 import { readRail } from "@/server/vetrina/service";
 import { VetrinaError } from "@/server/vetrina/source";
+import { productSource, readSourceFacts } from "@/server/vetrina/sources";
 import type { OperationLabelParams } from "@/server/db/schema";
 import { mapLimit, parseTermKey, resolveTarget, rowsInOrder, termName, wholeTermAction } from "./context";
 import { readSizes } from "./live";
@@ -60,6 +60,8 @@ export interface Assessment {
   termKey: TermKey | null;
   /** Products it acts on, as resolved now. */
   total: number;
+  /** Those products, for an action filed on exactly them ("Elimina"). */
+  ids?: number[];
   /** Why it cannot start; the preview says it first among its warnings. */
   refusal: string | null;
 }
@@ -166,6 +168,12 @@ async function assessVisibility(ctx: Ctx, input: Extract<OperationInput, { kind:
       (await homepagePresence()).products,
     );
     if (sections.length > 0) warnings.push(w.warning.sectionsLose(sections));
+    // A supplier's product hidden for one of the shop's own: said before it runs. Best-effort, a warning only.
+    if (ctx.live && todo.length > 0) {
+      const sources = await readSourceFacts().catch(() => null);
+      const fed = sources ? todo.filter((r) => productSource(r.sku, sources) === "goldensneakers").length : 0;
+      if (fed > 0) warnings.push(w.warning.hidesFeed(fed));
+    }
   }
   return {
     preview: preview(kind, ctx, { changes: todo.length, untouched, sample, warnings }, refusal),
@@ -422,14 +430,16 @@ async function assessPin(ctx: Ctx, input: Extract<OperationInput, { kind: "pin" 
 
 /**
  * "Elimina": every product but the ones the supplier's feed carries — the
- * feed decides what is in the shop, and would put them back. Said before it
+ * feed decides what is in the shop, and would put them back. The rule is
+ * the sources' (sources.ts), the one the rows are coloured by, read
+ * strictly: a feed that cannot be read refuses the action. Said before it
  * runs: where they go (the trash, out of the Hub), the way back, the sales
  * they had, the homepage sections that lose them.
  */
 async function assessDelete(ctx: Ctx, input: Extract<OperationInput, { kind: "delete" }>): Promise<Assessment> {
   const { w } = ctx;
-  const fed = await activeFeedSkus(GS_FEED);
-  const todo = ctx.rows.filter((r) => !fed.has(skuKey(r.sku)));
+  const sources = await readSourceFacts();
+  const todo = ctx.rows.filter((r) => isDeletable(productSource(r.sku, sources)));
   const untouched = new Map<Reason, number>();
   bump(untouched, w.untouched.fromFeed, ctx.rows.length - todo.length);
   const sample = todo.slice(0, SAMPLE).map((r) => ({
@@ -456,6 +466,7 @@ async function assessDelete(ctx: Ctx, input: Extract<OperationInput, { kind: "de
     label: labelParams(input, { count: todo.length }),
     termKey: null,
     total: ctx.ids.length,
+    ids: ctx.ids,
     refusal,
   };
 }

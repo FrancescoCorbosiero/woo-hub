@@ -15,6 +15,7 @@ import {
   forgetHomepagePresence,
   homepagePresence,
   inView,
+  matchingIds,
   presenceOf,
   productMatcher,
   rankProducts,
@@ -23,8 +24,10 @@ import {
   selectPage,
   termTree,
   withDescendants,
+  withSources,
   type StoreTerm,
 } from "./catalog";
+import type { SourceFacts } from "./sources";
 
 const CATEGORIES: StoreTerm[] = [
   { id: 1, name: "Senza categoria", slug: "senza-categoria", parent: 0 },
@@ -317,6 +320,55 @@ describe("a page of products", () => {
     const many = Array.from({ length: 150 }, (_, i) => facts({ id: i + 1 }));
     expect(selectPage(many, {}, t).ids).toHaveLength(40);
     expect(selectPage(many, { limit: 500 }, t).ids).toHaveLength(100);
+  });
+});
+
+describe("sources", () => {
+  // 1 and 4 the feed's (4 hidden), 2 and 3 KicksDB's (3 hidden, sold out), 5 dropped by the feed, 6 made in the shop.
+  const sources: SourceFacts = {
+    carried: new Set(["SKU-1", "SKU-4"]),
+    listed: new Set(["SKU-1", "SKU-4", "SKU-5"]),
+    catalog: new Map([
+      ["SKU-2", "kicksdb"],
+      ["SKU-3", "kicksdb"],
+    ]),
+    pinned: new Set(),
+  };
+  const list = withSources(
+    [
+      facts({ id: 1, categories: [10] }),
+      facts({ id: 2, categories: [10], menuOrder: 1 }),
+      facts({ id: 3, categories: [10], menuOrder: 2, visibility: "hidden", stockStatus: "outofstock" }),
+      facts({ id: 4, categories: [10], menuOrder: 3, visibility: "hidden" }),
+      facts({ id: 5, categories: [10], menuOrder: 4, visibility: "hidden" }),
+      facts({ id: 6, categories: [10], menuOrder: 5 }),
+    ],
+    sources,
+  );
+
+  it("narrows to one source, the hidden view's own question: which hidden products may go", () => {
+    const t = trees();
+    expect(list.map((f) => f.source)).toEqual(["goldensneakers", "kicksdb", "kicksdb", "goldensneakers", "delisted", "woo"]);
+    expect(selectPage(list, { view: "hidden", source: "kicksdb" }, t).ids).toEqual([3]);
+    expect(selectPage(list, { view: "hidden", source: "goldensneakers" }, t).ids).toEqual([4]);
+    expect(matchingIds(list, { view: "hidden", source: "delisted" }, t)).toEqual([5]);
+  });
+
+  it("counts each source with the other chips on, never itself — and the other chips with the source on", () => {
+    const t = trees();
+    const hidden = selectPage(list, { taxonomy: "category", termId: 10, visibility: "hidden", source: "kicksdb" }, t);
+    expect(hidden.ids).toEqual([3]);
+    // The sources count the hidden products: tapping one keeps "Nascosti" on.
+    expect(hidden.facets.sources).toEqual({ goldensneakers: 1, kicksdb: 1, delisted: 1, woo: 0 });
+    // The status chips count KicksDB's products only.
+    expect(hidden.facets).toMatchObject({ instock: 1, outofstock: 1, hidden: 1 });
+  });
+
+  it("has no counts of sources, and matches none, for products read without them", () => {
+    const t = trees();
+    const plain = [facts({ id: 1 }), facts({ id: 2 })];
+    expect(selectPage(plain, {}, t).facets.sources).toBeUndefined();
+    expect(matchingIds(plain, { source: "woo" }, t)).toEqual([]);
   });
 });
 

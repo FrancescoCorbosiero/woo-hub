@@ -3,6 +3,7 @@ import { withAncestors, type TermParents } from "@core/collections";
 import {
   CATALOG_PAGE_MAX,
   CATALOG_PAGE_SIZE,
+  PRODUCT_SOURCES,
   QUICK_VIEWS,
   isListed,
   railTaxonomy,
@@ -18,6 +19,7 @@ import {
   type FacetCount,
   type ProductPlacement,
   type ProductSection,
+  type ProductSource,
   type QuickView,
   type SectionRef,
 } from "@/lib/vetrina/catalog";
@@ -29,16 +31,16 @@ import { readIndexFacts, readIndexRowsById, type IndexFacts } from "@/server/col
 import { getRunnerStatus } from "@/server/collections/runner";
 import { collectionsByTerm, freshen } from "@/server/collections/service";
 import { demoMode, storeClient, storeReady } from "@/server/collections/store";
-import { activeFeedSkus, GS_FEED } from "@/server/feeds/repo";
 import { lockedPriceCounts } from "@/server/overrides/model";
 import { getOverrides } from "@/server/overrides/repo";
 import { readHome } from "./service";
 import { VetrinaError } from "./source";
+import { productSource, readSourceFacts, type SourceFacts } from "./sources";
 
 /**
  * The Vetrina's catalog, read side: the shop by category and brand, from the
- * store index, the store's two term trees, the automatic categories and the
- * homepage's sections.
+ * store index, the store's two term trees, the automatic categories, the
+ * homepage's sections and where each product comes from (sources.ts).
  *
  * Every answer reads the light columns of the whole index once (10 000
  * products in a few tens of milliseconds) and does the rest in memory: counts
@@ -313,6 +315,33 @@ export function compareFacts(sort: CatalogSort): (a: IndexFacts, b: IndexFacts) 
 }
 
 /* ---------------------------------------------------------------- *
+ * Sources
+ * ---------------------------------------------------------------- */
+
+/** A product of the index, with where it comes from when the answer read the sources. */
+export type CatalogFacts = IndexFacts & { source?: ProductSource };
+
+/** The index's products, each with its source. */
+export function withSources(facts: readonly IndexFacts[], sources: SourceFacts): CatalogFacts[] {
+  return facts.map((f) => ({ ...f, source: productSource(f.sku, sources) }));
+}
+
+/** The "Provenienza" chips: one source at a time. */
+function sourceFilter(query: CatalogQuery): (f: CatalogFacts) => boolean {
+  return (f) => !query.source || f.source === query.source;
+}
+
+/** How many products come from each source; none when these products were read without their sources. */
+function sourceCounts(facts: readonly CatalogFacts[]): Record<ProductSource, number> | undefined {
+  const out = Object.fromEntries(PRODUCT_SOURCES.map((s) => [s, 0])) as Record<ProductSource, number>;
+  for (const f of facts) {
+    if (!f.source) return undefined;
+    out[f.source] += 1;
+  }
+  return out;
+}
+
+/* ---------------------------------------------------------------- *
  * A page of products
  * ---------------------------------------------------------------- */
 
@@ -366,22 +395,28 @@ function withChosen(list: FacetCount[], chosen: number | undefined, tree: TermTr
 
 /**
  * Each chip counts what tapping it would show, the other chips staying on:
- * the status chips over the chosen brand (or category), that row's chips
- * over the chosen status. A chip never counts itself in.
+ * the status chips over the chosen brand (or category) and source, that
+ * row's chips over the chosen status and source, the sources over the other
+ * two. A chip never counts itself in.
  */
-function facetsOf(base: readonly IndexFacts[], query: CatalogQuery, trees: CatalogTrees): CatalogPage["facets"] {
+function facetsOf(base: readonly CatalogFacts[], query: CatalogQuery, trees: CatalogTrees): CatalogPage["facets"] {
   const taxonomy = query.taxonomy ?? "category";
   const own = trees[taxonomy];
   const otherName = otherTaxonomy(taxonomy);
   const other = trees[otherName];
-  const forStatus = base.filter(withinFilter(query, trees));
-  const forWithin = base.filter(statusFilter(query));
+  const byStatus = statusFilter(query);
+  const byWithin = withinFilter(query, trees);
+  const bySource = sourceFilter(query);
+  const forStatus = base.filter((f) => byWithin(f) && bySource(f));
+  const forWithin = base.filter((f) => byStatus(f) && bySource(f));
+  const sources = sourceCounts(base.filter((f) => byStatus(f) && byWithin(f)));
   const outofstock = forStatus.filter(isSoldOut).length;
   return {
     instock: forStatus.length - outofstock,
     outofstock,
     hidden: forStatus.filter((f) => !isListed(f.visibility)).length,
     onSale: forStatus.filter((f) => f.onSale).length,
+    ...(sources ? { sources } : {}),
     children:
       query.termId != null ? facetList(rollUp(base, taxonomy, own.parents), own.children.get(query.termId) ?? [], own) : [],
     // Rolled up like the counts: "Nike" holds what "Nike Dunk" holds.
@@ -401,11 +436,12 @@ const wholeOr = (value: number | undefined, fallback: number) =>
   value != null && Number.isFinite(value) ? Math.floor(value) : fallback;
 
 /** Which products a query shows, in which order, and the counts around them — before any row is read. */
-export function selectPage(facts: readonly IndexFacts[], query: CatalogQuery, trees: CatalogTrees): PageSelection {
+export function selectPage(facts: readonly CatalogFacts[], query: CatalogQuery, trees: CatalogTrees): PageSelection {
   const base = facts.filter(baseFilter(query, trees));
   const byStatus = statusFilter(query);
   const byWithin = withinFilter(query, trees);
-  const matching = base.filter((f) => byStatus(f) && byWithin(f)).sort(compareFacts(query.sort ?? "shop"));
+  const bySource = sourceFilter(query);
+  const matching = base.filter((f) => byStatus(f) && byWithin(f) && bySource(f)).sort(compareFacts(query.sort ?? "shop"));
   const offset = Math.max(0, wholeOr(query.offset, 0));
   const limit = Math.min(CATALOG_PAGE_MAX, Math.max(1, wholeOr(query.limit, CATALOG_PAGE_SIZE)));
   return {
@@ -419,14 +455,16 @@ export function selectPage(facts: readonly IndexFacts[], query: CatalogQuery, tr
 /**
  * Every product a query matches, in its order, with no page cut — what an
  * action on "all of them" acts on: the same filters, chips and sort as the
- * list the owner is looking at.
+ * list the owner is looking at. A query for a source needs facts read with
+ * their sources: without, it matches nothing.
  */
-export function matchingIds(facts: readonly IndexFacts[], query: CatalogQuery, trees: CatalogTrees): number[] {
+export function matchingIds(facts: readonly CatalogFacts[], query: CatalogQuery, trees: CatalogTrees): number[] {
   const byBase = baseFilter(query, trees);
   const byStatus = statusFilter(query);
   const byWithin = withinFilter(query, trees);
+  const bySource = sourceFilter(query);
   return facts
-    .filter((f) => byBase(f) && byStatus(f) && byWithin(f))
+    .filter((f) => byBase(f) && byStatus(f) && byWithin(f) && bySource(f))
     .sort(compareFacts(query.sort ?? "shop"))
     .map((f) => f.id);
 }
@@ -553,17 +591,20 @@ interface CatalogContext extends CatalogTrees {
   collections: Record<number, RailCollection>;
   presence: HomepagePresence;
   demo: boolean;
+  /** Where the products come from: read for the answers that list products. */
+  sources?: SourceFacts;
 }
 
-/** Everything around the index an answer needs, read side by side. */
-async function loadContext(): Promise<CatalogContext> {
-  const [trees, collections, presence] = await Promise.all([
+/** Everything around the index an answer needs, read side by side; `sources` for an answer that lists products. */
+async function loadContext(opts: { sources?: boolean } = {}): Promise<CatalogContext> {
+  const [trees, collections, presence, sources] = await Promise.all([
     readCatalogTrees(),
     // Best-effort, like the homepage's: a Hub without the table still browses.
     collectionsByTerm().catch(() => ({})),
     homepagePresence(),
+    opts.sources ? readSourceFacts() : undefined,
   ]);
-  return { ...trees, collections, presence, demo: demoMode() };
+  return { ...trees, collections, presence, demo: demoMode(), ...(sources ? { sources } : {}) };
 }
 
 /** The store's categories and brands as trees: names, parents, sub-terms. */
@@ -629,8 +670,12 @@ export async function resolveQueryTarget(
   query: CatalogQuery,
   cap: number,
 ): Promise<{ ids: number[]; total: number; trees: CatalogTrees }> {
-  const [facts, trees] = await Promise.all([readIndexFacts(), readCatalogTrees()]);
-  const ids = matchingIds(facts, query, trees);
+  const [facts, trees, sources] = await Promise.all([
+    readIndexFacts(),
+    readCatalogTrees(),
+    query.source ? readSourceFacts() : undefined,
+  ]);
+  const ids = matchingIds(sources ? withSources(facts, sources) : facts, query, trees);
   return { ids: ids.slice(0, cap), total: ids.length, trees };
 }
 
@@ -693,6 +738,7 @@ function catalogProduct(row: IndexRow, ctx: CatalogContext, locks: Map<string, n
     hasImage: row.image !== "",
     locks: row.sku ? (locks.get(skuKey(row.sku)) ?? 0) : 0,
     sections: ctx.presence.products.get(row.id) ?? [],
+    ...(ctx.sources ? { source: productSource(row.sku, ctx.sources) } : {}),
   };
 }
 
@@ -763,7 +809,7 @@ async function pageOf(
   ctx: CatalogContext,
   locks: Map<string, number>,
 ): Promise<CatalogPage> {
-  const page = selectPage(facts, query, ctx);
+  const page = selectPage(ctx.sources ? withSources(facts, ctx.sources) : facts, query, ctx);
   return {
     products: await catalogProducts(page.ids, ctx, locks),
     total: page.total,
@@ -780,7 +826,7 @@ export async function readTerm(taxonomy: CatalogTaxonomy, id: number): Promise<C
 
 /** A page of products: a term's, a quick view's or a search's, narrowed, sorted, with its facets. */
 export async function readPage(query: CatalogQuery): Promise<CatalogPage> {
-  const [facts, ctx, locks] = await Promise.all([readIndexFacts(), loadContext(), lockCounts()]);
+  const [facts, ctx, locks] = await Promise.all([readIndexFacts(), loadContext({ sources: true }), lockCounts()]);
   return pageOf(facts, query, ctx, locks);
 }
 
@@ -793,7 +839,7 @@ export async function readTermScreen(
   id: number,
   query: Omit<CatalogQuery, "taxonomy" | "termId" | "view">,
 ): Promise<{ detail: CatalogTermDetail; page: CatalogPage }> {
-  const [facts, ctx, locks] = await Promise.all([readIndexFacts(), loadContext(), lockCounts()]);
+  const [facts, ctx, locks] = await Promise.all([readIndexFacts(), loadContext({ sources: true }), lockCounts()]);
   const detail = termDetail(taxonomy, id, facts, ctx);
   return { detail, page: await pageOf(facts, { ...query, taxonomy, termId: id }, ctx, locks) };
 }
@@ -804,7 +850,7 @@ const SEARCH_PRODUCTS = 20;
 /** The search at the top of every catalog screen: categories, brands and products at once. */
 export async function search(q: string): Promise<CatalogSearch> {
   if (!q.trim()) return { categories: [], brands: [], products: [], totalProducts: 0 };
-  const [facts, ctx, locks] = await Promise.all([readIndexFacts(), loadContext(), lockCounts()]);
+  const [facts, ctx, locks] = await Promise.all([readIndexFacts(), loadContext({ sources: true }), lockCounts()]);
   const termsFound = (taxonomy: CatalogTaxonomy): CatalogTerm[] => {
     const found = rankTerms(ctx[taxonomy], q).slice(0, SEARCH_TERMS);
     if (found.length === 0) return [];
@@ -821,9 +867,9 @@ export async function search(q: string): Promise<CatalogSearch> {
   };
 }
 
-/** A product's place in the shop, for its sheet: categories (with their rule), brands, homepage sections. */
+/** A product's place in the shop, for its sheet: categories (with their rule), brands, homepage sections, where it comes from. */
 export async function readPlacement(id: number): Promise<ProductPlacement> {
-  const [[row], ctx, fed] = await Promise.all([readIndexRowsById([id]), loadContext(), activeFeedSkus(GS_FEED)]);
+  const [[row], ctx] = await Promise.all([readIndexRowsById([id]), loadContext({ sources: true })]);
   if (!row) {
     throw new VetrinaError(
       "not_found",
@@ -835,6 +881,8 @@ export async function readPlacement(id: number): Promise<ProductPlacement> {
     const { name } = named(c, ctx.category);
     return { id: c.id, name, path: ctx.category.paths.get(c.id) ?? name, automatic: ctx.collections[c.id] != null };
   });
+  // The rule "Elimina" follows (sources.ts): the sheet offers it exactly where the action would take it.
+  const source = productSource(row.sku, ctx.sources!);
   return {
     id: row.id,
     status: row.status,
@@ -842,6 +890,7 @@ export async function readPlacement(id: number): Promise<ProductPlacement> {
     categories: categories.sort((a, b) => collator.compare(a.path, b.path) || a.id - b.id),
     brands: row.brands.map((b) => named(b, ctx.brand)),
     sections: ctx.presence.products.get(row.id) ?? [],
-    fromFeed: row.sku !== "" && fed.has(skuKey(row.sku)),
+    fromFeed: source === "goldensneakers",
+    source,
   };
 }

@@ -4,6 +4,7 @@ import { homeEn } from "./home.en";
 import { marginsEn } from "./margins.en";
 import { pickerEn } from "./picker.en";
 import { opsEn } from "./ops.en";
+import { originEn } from "./origin.en";
 import { rulesEn } from "./rules.en";
 import { sectionsEn } from "./sections.en";
 import { sheetEn } from "./sheet.en";
@@ -17,6 +18,7 @@ export const catalogEn: typeof catalogIt = {
   act: actEn,
   rules: rulesEn,
   ops: opsEn,
+  origin: originEn,
   margins: marginsEn,
   sources: sourcesEn,
   sections: sectionsEn,
