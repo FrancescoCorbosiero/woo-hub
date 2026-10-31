@@ -23,7 +23,7 @@ import { TabbarSpacer } from "../TabbarSpacer";
 import { BackButton, rememberShape, SearchEverywhere, SearchField, shapeOf, useListControls, useStart } from "./browse";
 import { ControlPanel } from "./ControlPanel";
 import { ChipRow, FilterChips, NavChip, withinRowShown } from "./FilterChips";
-import { backTarget, CATALOG_HOME, filterQuery, hasFilters, NO_FILTER, termHref, type ListState } from "./list-model";
+import { backTarget, CATALOG_HOME, filterQuery, hasFilters, NO_FILTER, sourceRowShown, termHref, type ListState } from "./list-model";
 import { PositionsPanel } from "./PositionsPanel";
 import { ProductList } from "./ProductList";
 import { SortActions } from "./SortActions";
@@ -104,11 +104,16 @@ function Term({
     setVersion((n) => n + 1);
   }, [router]);
 
-  // Its skeleton, next time, takes the room this screen takes (the chips' row once the facets say).
+  // Its skeleton, next time, takes the room this screen takes (the chips' rows once the facets say).
   const withinShown = controls.facets ? withinRowShown(controls.facets, filter) : null;
+  const sourcesShown = controls.facets ? sourceRowShown(controls.facets, filter) : null;
   React.useEffect(() => {
-    rememberShape(term.taxonomy, term.id, withinShown == null ? shapeOf(term) : { ...shapeOf(term), within: withinShown });
-  }, [term, withinShown]);
+    rememberShape(term.taxonomy, term.id, {
+      ...shapeOf(term),
+      ...(withinShown != null ? { within: withinShown } : {}),
+      ...(sourcesShown != null ? { sources: sourcesShown } : {}),
+    });
+  }, [term, withinShown, sourcesShown]);
 
   /** The list as it is filtered now, as a new automatic category's rule. */
   function saveAsRule() {
@@ -117,6 +122,7 @@ function Term({
       term: { taxonomy: term.taxonomy, id: term.id, path: term.path },
       status: filter.status,
       within: filter.within,
+      source: filter.source,
       q,
     });
     setNewRule({

@@ -3,10 +3,11 @@
 import * as React from "react";
 import { Checkbox, ListItem } from "konsta/react";
 import { useI18n } from "@/i18n/provider";
-import { isListed, type CatalogProduct } from "@/lib/vetrina/catalog";
+import { isListed, type CatalogProduct, type ProductSource } from "@/lib/vetrina/catalog";
 import type { ProductCard } from "@/lib/vetrina/types";
 import { formatEuro, formatFromPrice } from "../../format";
 import { EyeOff, Lock, Pin } from "../../icons";
+import { SourceBadge, sourceRing } from "../source";
 import { House, NoPhoto } from "./glyphs";
 
 // Rows off screen skip layout and paint; the estimate keeps the scrollbar steady.
@@ -25,11 +26,13 @@ const TONES = {
 
 /**
  * One product in a catalog list: its thumbnail, name, price and what is
- * worth knowing at a glance (homepage section, locked price, hidden, sold
- * out, on sale, not published). A tap opens its sheet; a long press starts a
- * selection. While selecting, the row is a checkbox: a tap picks it.
- * Memoised: when a batch of thumbnails arrives, or one row is picked, only
- * the rows that changed draw again.
+ * worth knowing at a glance (where it comes from, homepage section, locked
+ * price, hidden, sold out, on sale, not published). Where it comes from
+ * leads, in its colour, on the badge and around the thumbnail: the
+ * supplier's products must never pass for the shop's own. A tap opens its
+ * sheet; a long press starts a selection. While selecting, the row is a
+ * checkbox: a tap picks it. Memoised: when a batch of thumbnails arrives, or
+ * one row is picked, only the rows that changed draw again.
  */
 export const ProductRow = React.memo(function ProductRow({
   product,
@@ -61,7 +64,14 @@ export const ProductRow = React.memo(function ProductRow({
   const live = card && !card.missing ? card : null;
   const price = live ? formatFromPrice(live, t.vetrina.editor.from, locale) : formatEuro(product.price, locale);
   const press = useLongPress(onLongPress ? () => onLongPress(product) : undefined);
-  const thumb = <Thumb image={card?.image ?? null} hasImage={product.hasImage} noPhotoLabel={t.vetrinaCatalog.term.row.noPhoto} />;
+  const thumb = (
+    <Thumb
+      image={card?.image ?? null}
+      hasImage={product.hasImage}
+      noPhotoLabel={t.vetrinaCatalog.term.row.noPhoto}
+      source={product.source}
+    />
+  );
   const title = <span className="line-clamp-2 leading-snug">{product.name}</span>;
   const subtitle = (
     <>
@@ -187,12 +197,24 @@ function swallowClickAfterRelease(): void {
   window.addEventListener("pointercancel", released, true);
 }
 
-/** A fixed 64px box: the row never moves when its photo arrives. */
-function Thumb({ image, hasImage, noPhotoLabel }: { image: string | null; hasImage: boolean; noPhotoLabel: string }) {
+/** A fixed 64px box, framed in its source's colour: the row never moves when its photo arrives. */
+function Thumb({
+  image,
+  hasImage,
+  noPhotoLabel,
+  source,
+}: {
+  image: string | null;
+  hasImage: boolean;
+  noPhotoLabel: string;
+  source: ProductSource | undefined;
+}) {
   // Before the card arrives, the index already knows a product has no photo.
   const noPhoto = image === null ? !hasImage : image === "";
   return (
-    <span className="relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-xl bg-black/[0.04] dark:bg-white/10">
+    <span
+      className={`relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-xl bg-black/[0.04] dark:bg-white/10 ${sourceRing(source)}`}
+    >
       {image ? (
         <ThumbImage key={image} src={image} />
       ) : noPhoto ? (
@@ -225,9 +247,11 @@ function Meta({ product, price, locks }: { product: CatalogProduct; price: strin
   const r = t.vetrinaCatalog.term.row;
   const [section, ...otherSections] = product.sections;
   return (
-    // The short states first, beside the price; the homepage's pill, the longest, last: when a row runs
-    // out of room it is the pill that moves to the next line, not "In saldo".
+    // Where it comes from first, one column down the list; then the short states, beside the price; the
+    // homepage's pill, the longest, last: when a row runs out of room it is the pill that moves to the next
+    // line, not "In saldo".
     <span className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1">
+      {product.source && <SourceBadge source={product.source} />}
       <span className="me-0.5 text-[14px] font-medium tabular-nums">{price}</span>
       {locks > 0 && (
         <span role="img" aria-label={r.locked} className="inline-flex">

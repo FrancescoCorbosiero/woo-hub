@@ -165,6 +165,13 @@ export function fixtureClient(): WooClient {
       return p ? full(p) : null;
     },
 
+    // This exact SKU, in any status but the trash, as WooCommerce's status=any reads ("Annulla" of "Elimina" asks).
+    async findProductsBySku(sku: string) {
+      return demoShop()
+        .products.filter((p) => !p.trashed && p.sku === sku)
+        .map(full);
+    },
+
     async updateProduct(id: number, body: Record<string, unknown>) {
       const p = demoShop().byId.get(id);
       if (!p) throw Object.assign(new Error("Invalid ID."), { status: 404 });

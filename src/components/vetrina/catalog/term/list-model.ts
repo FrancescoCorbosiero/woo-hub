@@ -2,6 +2,7 @@ import {
   CATALOG_PAGE_MAX,
   CATALOG_PAGE_SIZE,
   CATALOG_SORTS,
+  PRODUCT_SOURCES,
   QUICK_VIEWS,
   type CatalogPage,
   type CatalogProduct,
@@ -10,6 +11,7 @@ import {
   type CatalogTaxonomy,
   type CatalogTermDetail,
   type FacetCount,
+  type ProductSource,
   type QuickView,
 } from "@/lib/vetrina/catalog";
 import type { ActionKind } from "@/lib/vetrina/catalog-ops";
@@ -98,23 +100,29 @@ export interface ListFilter {
   status: StatusFilter;
   /** A term of the other taxonomy, with its name: it stays on its chip even when a search leaves it out of the facets. */
   within: { id: number; name: string } | null;
+  /** One source at a time ("Provenienza"); none is every source. */
+  source?: ProductSource | null;
 }
 
-export const NO_FILTER: ListFilter = { status: "all", within: null };
+export const NO_FILTER: ListFilter = { status: "all", within: null, source: null };
 
 export function hasFilters(f: ListFilter): boolean {
-  return f.status !== "all" || f.within != null;
+  return f.status !== "all" || f.within != null || f.source != null;
 }
+
+type FilterFields = "stock" | "visibility" | "onSale" | "within" | "source";
 
 export function filterQuery(f: {
   status: StatusFilter;
   within: { id: number; name?: string } | null;
-}): Pick<CatalogQuery, "stock" | "visibility" | "onSale" | "within"> {
-  const out: Pick<CatalogQuery, "stock" | "visibility" | "onSale" | "within"> = {};
+  source?: ProductSource | null;
+}): Pick<CatalogQuery, FilterFields> {
+  const out: Pick<CatalogQuery, FilterFields> = {};
   if (f.status === "instock" || f.status === "outofstock") out.stock = f.status;
   if (f.status === "hidden") out.visibility = "hidden";
   if (f.status === "onsale") out.onSale = true;
   if (f.within) out.within = f.within.id;
+  if (f.source) out.source = f.source;
   return out;
 }
 
@@ -132,6 +140,28 @@ export function statusCount(status: StatusFilter, facets: CatalogPage["facets"])
     case "onsale":
       return facets.onSale;
   }
+}
+
+/**
+ * The "Provenienza" chips, each source with what tapping it shows: the
+ * sources the list holds, and the chosen one even at 0, so its chip stays to
+ * be let go. None when the list was read without its sources.
+ */
+export function sourceChips(facets: CatalogPage["facets"] | null, chosen: ProductSource | null | undefined): { source: ProductSource; count: number }[] {
+  const counts = facets?.sources;
+  if (!counts) return [];
+  return PRODUCT_SOURCES.filter((source) => counts[source] > 0 || source === chosen).map((source) => ({ source, count: counts[source] }));
+}
+
+/**
+ * The sources' row shows when a chip would narrow the list — more than one
+ * source in it — or one is chosen, to be let go; or always (`always`: the
+ * hidden products, checked by their source before they go).
+ */
+export function sourceRowShown(facets: CatalogPage["facets"] | null, filter: ListFilter, always = false): boolean {
+  if (filter.source != null) return true;
+  const chips = sourceChips(facets, null);
+  return always ? chips.length > 0 : chips.length > 1;
 }
 
 /** The "within" chips: the facets, plus the chosen term when a search has left it out (count 0). */
@@ -158,17 +188,19 @@ export function summaryParts(
 
 /**
  * A list screen as the owner left it: the search, the chips, the order. It
- * lives in the address (?q=, ?filter=, ?within=, ?sort=), so going back to
- * the screen, the tab bar or a reload opens it the same.
+ * lives in the address (?q=, ?filter=, ?within=, ?source=, ?sort=), so going
+ * back to the screen, the tab bar or a reload opens it the same.
  */
 export interface ListState {
   q: string;
   status: StatusFilter;
   within: number | null;
+  /** Optional: a state built before the sources reads as every source. */
+  source?: ProductSource | null;
   sort: CatalogSort;
 }
 
-export const DEFAULT_LIST: ListState = { q: "", status: "all", within: null, sort: "shop" };
+export const DEFAULT_LIST: ListState = { q: "", status: "all", within: null, source: null, sort: "shop" };
 
 const oneOf = <T extends string>(list: readonly T[], value: string | null): T | null =>
   value != null && (list as readonly string[]).includes(value) ? (value as T) : null;
@@ -179,6 +211,7 @@ export function readListState(params: { get(name: string): string | null }): Lis
     q: searchWords(params.get("q") ?? ""),
     status: oneOf(STATUS_FILTERS, params.get("filter")) ?? "all",
     within: parseTermId(params.get("within") ?? ""),
+    source: oneOf(PRODUCT_SOURCES, params.get("source")),
     sort: oneOf(CATALOG_SORTS, params.get("sort")) ?? "shop",
   };
 }
@@ -189,6 +222,7 @@ export function listParams(state: ListState): Record<string, string | null> {
     q: state.q || null,
     filter: state.status === "all" ? null : state.status,
     within: state.within != null ? String(state.within) : null,
+    source: state.source ?? null,
     sort: state.sort === "shop" ? null : state.sort,
   };
 }
@@ -200,11 +234,11 @@ export function sameList(a: ListState, b: ListState): boolean {
 }
 
 /** What a list state asks the server, the screen's term or view aside. */
-export function listQuery(state: ListState): Pick<CatalogQuery, "q" | "sort" | "stock" | "visibility" | "onSale" | "within"> {
+export function listQuery(state: ListState): Pick<CatalogQuery, "q" | "sort" | FilterFields> {
   return {
     ...(state.q ? { q: state.q } : {}),
     sort: state.sort,
-    ...filterQuery({ status: state.status, within: state.within != null ? { id: state.within } : null }),
+    ...filterQuery({ status: state.status, within: state.within != null ? { id: state.within } : null, source: state.source }),
   };
 }
 
@@ -212,7 +246,7 @@ export function listQuery(state: ListState): Pick<CatalogQuery, "q" | "sort" | "
  * Pages
  * ---------------------------------------------------------------- */
 
-const KEY_FIELDS = ["taxonomy", "termId", "view", "q", "stock", "visibility", "onSale", "within", "sort"] as const;
+const KEY_FIELDS = ["taxonomy", "termId", "view", "q", "stock", "visibility", "onSale", "within", "source", "sort"] as const;
 
 /** Two queries asking for the same list have the same key, whatever their object's shape or paging. */
 export function queryKey(q: CatalogQuery): string {

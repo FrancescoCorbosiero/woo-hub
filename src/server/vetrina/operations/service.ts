@@ -84,9 +84,16 @@ export async function startOperation(input: OperationInput, via: OperationVia = 
   // The refusal first: it says why ("Sono già in quest'ordine"), where "nothing chosen" would not.
   if (assessment.refusal) throw new VetrinaError("invalid", assessment.refusal, 400);
   if (assessment.total === 0) throw new VetrinaError("invalid", words().error.empty, 400);
+  // "Elimina" goes for the products it was confirmed on: a list's "Seleziona tutti" is fixed to what it
+  // matches now, not resolved again when the run's turn comes (a product hidden meanwhile, say, would go
+  // without the owner having seen it).
+  const filed: OperationInput =
+    input.kind === "delete" && input.target.kind === "query" && assessment.ids
+      ? { ...input, target: { kind: "ids", ids: assessment.ids } }
+      : input;
   const row = await repo.insertOperation({
     kind: input.kind,
-    input,
+    input: filed,
     // Italian for the server's own logs; the screens render the parameters in the owner's language.
     label: labelText(assessment.label, words("it")),
     labelParams: assessment.label,

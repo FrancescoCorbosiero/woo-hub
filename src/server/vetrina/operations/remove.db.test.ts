@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OperationInput, OperationView } from "@/lib/vetrina/catalog-ops";
 
 /**
@@ -24,12 +24,15 @@ interface FakeProduct {
   type: "variable" | "simple";
   status: string;
   sizes: { id: number; status: string }[];
+  visibility?: string;
 }
 
 const store = vi.hoisted(() => ({
   products: new Map<number, unknown>(),
   /** Products the store refuses to delete (a 403, say). */
   refuse: new Set<number>(),
+  /** Products whose delete gets no answer (a 502): before the store trashed it, or after. */
+  lost: new Map<number, "before" | "after">(),
   client: null as unknown,
 }));
 
@@ -70,6 +73,9 @@ const load = async () => ({
   ...(await import("@/server/vetrina/catalog")),
   ...(await import("./service")),
   ...(await import("./runner")),
+  ...(await import("./repo")),
+  ...(await import("@/server/overrides/repo")),
+  ...(await import("@/server/overrides/model")),
 });
 
 const products = () => store.products as Map<number, FakeProduct>;
@@ -93,7 +99,7 @@ function view(p: FakeProduct) {
     date_created_gmt: "2026-01-01T00:00:00",
     date_modified_gmt: "2026-10-01T00:00:00",
     images: [],
-    catalog_visibility: "visible",
+    catalog_visibility: p.visibility ?? "visible",
     menu_order: 0,
     total_sales: "0",
   };
@@ -123,8 +129,15 @@ store.client = {
     if (!p) throw httpError("Invalid ID.", 404);
     if (store.refuse.has(productId)) throw httpError("Sorry, you are not allowed to delete this resource.", 403);
     if (p.status === "trash") throw httpError("The product has already been deleted.", 410);
+    const lost = store.lost.get(productId);
+    if (lost === "before") throw httpError("Bad gateway", 502);
     p.status = "trash";
     for (const s of p.sizes) s.status = "trash";
+    if (lost === "after") throw httpError("Bad gateway", 502);
+  },
+  // This exact SKU, any status but the trash, as WooCommerce's status=any reads.
+  async findProductsBySku(sku: string) {
+    return [...products().values()].filter((p) => p.sku === sku && p.status !== "trash").map(view);
   },
   async getProduct(productId: number) {
     const p = products().get(productId);
@@ -192,10 +205,32 @@ async function indexIds(): Promise<number[]> {
 }
 
 describe.skipIf(!enabled)("Elimina (real SQL, stand-in store)", () => {
+  // Its own rows go with it: a photo left on its way would be the next suite's to drain.
+  afterAll(async () => {
+    const { db, catalogProducts, feedItems, mediaJobs, storeOverrides, inArray } = await load();
+    await db.delete(catalogProducts).where(inArray(catalogProducts.sku, SKUS));
+    await db.delete(feedItems).where(inArray(feedItems.sku, SKUS));
+    await db.delete(mediaJobs).where(inArray(mediaJobs.sku, SKUS));
+    await db.delete(storeOverrides);
+  });
+
   beforeEach(async () => {
-    const { db, vetrinaOperations, storeIndex, catalogProducts, feedItems, mediaJobs, inArray, saveSnapshot, upsertIndexRows, toIndexRow, forgetHomepagePresence } =
-      await load();
+    const {
+      db,
+      vetrinaOperations,
+      storeIndex,
+      catalogProducts,
+      feedItems,
+      mediaJobs,
+      storeOverrides,
+      inArray,
+      saveSnapshot,
+      upsertIndexRows,
+      toIndexRow,
+      forgetHomepagePresence,
+    } = await load();
     await db.delete(vetrinaOperations);
+    await db.delete(storeOverrides);
     await db.delete(storeIndex);
     await db.delete(catalogProducts).where(inArray(catalogProducts.sku, SKUS));
     await db.delete(feedItems).where(inArray(feedItems.sku, SKUS));
@@ -204,6 +239,7 @@ describe.skipIf(!enabled)("Elimina (real SQL, stand-in store)", () => {
     forgetHomepagePresence();
     products().clear();
     store.refuse.clear();
+    store.lost.clear();
 
     // A KicksDB product with a size switched off, one sold as one item, and one of the supplier's feed.
     add({ id: 1, sku: KICKS, sizes: [{ id: 11, status: "publish" }, { id: 12, status: "private" }] });
@@ -290,5 +326,112 @@ describe.skipIf(!enabled)("Elimina (real SQL, stand-in store)", () => {
     expect(product(1).status).toBe("publish");
     expect(await catalogSkus()).toEqual([FEED, KICKS].sort());
     expect(await snapshotIds()).toEqual([1, 3]);
+  });
+
+  it("follows the rule the rows are coloured by: a delisted product goes, the feed's stays even when pinned to KicksDB", async () => {
+    const { db, feedItems, previewOperation, readPage, readPlacement, saveOverrides, withProductOwner, emptyOverrides } = await load();
+    // The feed listed SIMPLE once and dropped it; FEED is priced from KicksDB by a pin, but the feed still carries it.
+    await db.insert(feedItems).values({
+      feed: "goldensneakers",
+      sku: SIMPLE,
+      euNorm: "42",
+      sizeLabel: "42",
+      quantity: 0,
+      active: false,
+      presentedPrice: 90,
+      offerPrice: 60,
+      productName: SIMPLE,
+      brandName: "B",
+    });
+    await saveOverrides(withProductOwner(emptyOverrides(), FEED, "kicksdb"));
+
+    const page = await readPage({});
+    expect(Object.fromEntries(page.products.map((p) => [p.id, p.source]))).toEqual({ 1: "kicksdb", 2: "delisted", 3: "goldensneakers" });
+    expect(page.facets.sources).toEqual({ goldensneakers: 1, kicksdb: 1, delisted: 1, woo: 0 });
+    expect(await readPlacement(3)).toMatchObject({ source: "goldensneakers", fromFeed: true });
+    expect(await readPlacement(2)).toMatchObject({ source: "delisted", fromFeed: false });
+
+    const preview = await previewOperation({ kind: "delete", target: ids(1, 2, 3) });
+    expect(preview.changes).toBe(2);
+    expect(preview.untouched).toEqual([{ reason: "arriva dal feed GoldenSneakers, che lo rimetterebbe", count: 1 }]);
+  });
+
+  it("a feed that cannot be read refuses the delete: nothing goes, nothing is offered", async () => {
+    const { db, sql, previewOperation, startOperation, readPlacement } = await load();
+    await db.execute(sql`alter table feed_items rename to feed_items_away`);
+    try {
+      // Read best-effort, an unreadable feed once made every product look deletable — the supplier's included.
+      await expect(previewOperation({ kind: "delete", target: ids(3) })).rejects.toThrow();
+      await expect(startOperation({ kind: "delete", target: ids(1, 3) })).rejects.toThrow();
+      await expect(readPlacement(3)).rejects.toThrow();
+    } finally {
+      await db.execute(sql`alter table feed_items_away rename to feed_items`);
+    }
+    expect(product(1).status).toBe("publish");
+    expect(product(3).status).toBe("publish");
+  });
+
+  it("«Seleziona tutti» on the hidden KicksDB products: filed on what it matched, the feed's left out", async () => {
+    const { upsertIndexRows, toIndexRow, previewOperation, startOperation, idle, loadOperation, getOperation } = await load();
+    for (const id of [1, 3]) product(id).visibility = "hidden";
+    await upsertIndexRows([1, 3].map((id) => toIndexRow(view(product(id)) as never)));
+    const target = { kind: "query" as const, query: { view: "hidden" as const, source: "kicksdb" as const } };
+    expect((await previewOperation({ kind: "delete", target })).changes).toBe(1);
+
+    const started = await startOperation({ kind: "delete", target });
+    // Not the query: a product hidden while the action waits its turn is not taken without having been seen.
+    expect((await getOperation(started.id))?.input).toEqual({ kind: "delete", target: { kind: "ids", ids: [1] } });
+    await idle();
+    expect(await loadOperation(started.id)).toMatchObject({ status: "done", changed: 1 });
+    expect([product(1).status, product(2).status, product(3).status]).toEqual(["trash", "publish", "publish"]);
+  });
+
+  it("a delete that gets no answer is looked at: one the store trashed leaves the Hub with the rest", async () => {
+    store.lost.set(2, "after");
+    const failed = await run({ kind: "delete", target: ids(1, 2) });
+    expect(failed).toMatchObject({ status: "failed", changed: 2 });
+    expect([product(1).status, product(2).status]).toEqual(["trash", "trash"]);
+    // Out of the Hub's copy and the Vetrina's lists at once: the 5-minute check of the index never sees the trash.
+    expect(await snapshotIds()).toEqual([3]);
+    expect(await indexIds()).toEqual([3]);
+    expect(await catalogSkus()).toEqual([FEED]);
+
+    const undone = await undo(failed.id);
+    expect(undone.undo).toMatchObject({ restored: 2, kept: 0, failed: 0 });
+    expect(await catalogSkus()).toEqual([FEED, KICKS, SIMPLE].sort());
+    expect(await indexIds()).toEqual([1, 2, 3]);
+  });
+
+  it("…and one the store never trashed stays in the Hub as it was, with nothing to undo", async () => {
+    store.lost.set(2, "before");
+    const failed = await run({ kind: "delete", target: ids(1, 2) });
+    expect(failed).toMatchObject({ status: "failed", changed: 1 });
+    expect([product(1).status, product(2).status]).toEqual(["trash", "publish"]);
+    // Its catalog rows back: without them the next pull would file it as made in the shop, priced by no one.
+    expect(await catalogSkus()).toEqual([FEED, SIMPLE].sort());
+    expect(await snapshotIds()).toEqual([2, 3]);
+    expect(await indexIds()).toEqual([2, 3]);
+
+    const undone = await undo(failed.id);
+    expect(undone.undo).toMatchObject({ restored: 1, kept: 0, failed: 0 });
+    expect(product(1).status).toBe("publish");
+  });
+
+  it("«Annulla» leaves in the trash a product whose SKU another product carries again: never two of one", async () => {
+    const done = await run({ kind: "delete", target: ids(1) });
+    // Imported and published again meanwhile: WooCommerce does not count the trash's SKUs.
+    add({ id: 9, sku: KICKS });
+    const undone = await undo(done.id);
+    expect(undone.undo).toMatchObject({ restored: 0, kept: 1, failed: 0 });
+    expect(product(1).status).toBe("trash");
+    expect(product(9).status).toBe("publish");
+  });
+
+  it("«Nascondi» says which products are the supplier's before it hides them", async () => {
+    const { previewOperation } = await load();
+    const mixed = await previewOperation({ kind: "hide", target: ids(1, 3) });
+    expect(mixed.warnings).toContain("1 arriva dal feed GoldenSneakers (GS): nascosto non lo vendi, anche se il fornitore lo ha ancora.");
+    const own = await previewOperation({ kind: "hide", target: ids(1, 2) });
+    expect(own.warnings.some((w) => w.includes("GoldenSneakers"))).toBe(false);
   });
 });

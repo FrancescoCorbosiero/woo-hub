@@ -21,6 +21,8 @@ import {
   searchHref,
   searchWords,
   sliceRequests,
+  sourceChips,
+  sourceRowShown,
   statusCount,
   summaryParts,
   termHref,
@@ -110,12 +112,14 @@ describe("the list's address", () => {
     expect(readListState(new URLSearchParams("filter=cheap&sort=random&within=abc&q=%20%20"))).toEqual(DEFAULT_LIST);
   });
 
-  it("reads a search, a chip, a term and an order, and writes them back the same", () => {
-    const state = readListState(new URLSearchParams("q=%20dunk%20&filter=outofstock&within=12&sort=priceAsc"));
-    expect(state).toEqual({ q: "dunk", status: "outofstock", within: 12, sort: "priceAsc" });
+  it("reads a search, a chip, a term, a source and an order, and writes them back the same", () => {
+    const state = readListState(new URLSearchParams("q=%20dunk%20&filter=outofstock&within=12&source=kicksdb&sort=priceAsc"));
+    expect(state).toEqual({ q: "dunk", status: "outofstock", within: 12, source: "kicksdb", sort: "priceAsc" });
     expect(withParams("/vetrina/catalogo/categoria/3", listParams(state))).toBe(
-      "/vetrina/catalogo/categoria/3?q=dunk&filter=outofstock&within=12&sort=priceAsc",
+      "/vetrina/catalogo/categoria/3?q=dunk&filter=outofstock&within=12&source=kicksdb&sort=priceAsc",
     );
+    // A source the app does not know reads as every source.
+    expect(readListState(new URLSearchParams("source=stockx")).source).toBeNull();
     // Back to the defaults, back to a plain address.
     expect(withParams("/vetrina/catalogo/categoria/3?q=dunk&filter=outofstock", listParams(DEFAULT_LIST))).toBe(
       "/vetrina/catalogo/categoria/3",
@@ -143,8 +147,10 @@ describe("the list's address", () => {
       visibility: "hidden",
       within: 4,
     });
+    expect(listQuery({ ...DEFAULT_LIST, source: "goldensneakers" })).toEqual({ sort: "shop", source: "goldensneakers" });
     expect(sameList(DEFAULT_LIST, { ...DEFAULT_LIST })).toBe(true);
     expect(sameList(DEFAULT_LIST, { ...DEFAULT_LIST, within: 4 })).toBe(false);
+    expect(sameList(DEFAULT_LIST, { ...DEFAULT_LIST, source: "delisted" })).toBe(false);
   });
 });
 
@@ -155,12 +161,32 @@ describe("chips", () => {
     expect(filterQuery({ status: "outofstock", within: null })).toEqual({ stock: "outofstock" });
     expect(filterQuery({ status: "hidden", within: { id: 3, name: "Nike" } })).toEqual({ visibility: "hidden", within: 3 });
     expect(filterQuery({ status: "onsale", within: null })).toEqual({ onSale: true });
+    expect(filterQuery({ status: "all", within: null, source: "kicksdb" })).toEqual({ source: "kicksdb" });
   });
 
   it("know when any is on", () => {
     expect(hasFilters(NO_FILTER)).toBe(false);
     expect(hasFilters({ status: "onsale", within: null })).toBe(true);
     expect(hasFilters({ status: "all", within: { id: 1, name: "Nike" } })).toBe(true);
+    expect(hasFilters({ status: "all", within: null, source: "woo" })).toBe(true);
+  });
+
+  it("offer the sources a list holds, the chosen one even at 0 — and show their row when it narrows", () => {
+    const mixed = { ...facets(5, 0), sources: { goldensneakers: 3, kicksdb: 2, delisted: 0, woo: 0 } };
+    expect(sourceChips(mixed, null)).toEqual([
+      { source: "goldensneakers", count: 3 },
+      { source: "kicksdb", count: 2 },
+    ]);
+    expect(sourceChips(mixed, "woo").map((c) => c.source)).toEqual(["goldensneakers", "kicksdb", "woo"]);
+    expect(sourceRowShown(mixed, NO_FILTER)).toBe(true);
+    // One source only: nothing to narrow — unless the list is checked by source (the hidden products).
+    const one = { ...facets(2, 0), sources: { goldensneakers: 0, kicksdb: 2, delisted: 0, woo: 0 } };
+    expect(sourceRowShown(one, NO_FILTER)).toBe(false);
+    expect(sourceRowShown(one, NO_FILTER, true)).toBe(true);
+    expect(sourceRowShown(one, { ...NO_FILTER, source: "kicksdb" })).toBe(true);
+    // Read without sources (a server from before them): no row.
+    expect(sourceChips(facets(2, 0), null)).toEqual([]);
+    expect(sourceRowShown(facets(2, 0), NO_FILTER, true)).toBe(false);
   });
 
   it("count from the facets: all is in stock plus sold out", () => {
@@ -204,6 +230,7 @@ describe("queryKey", () => {
       queryKey({ ...base, onSale: true }),
       queryKey({ ...base, onSale: false }),
       queryKey({ ...base, within: 4 }),
+      queryKey({ ...base, source: "kicksdb" }),
       queryKey({ ...base, sort: "name" }),
       queryKey({ taxonomy: "brand", termId: 3 }),
     ];

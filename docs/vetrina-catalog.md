@@ -250,9 +250,28 @@ As built (phase 3, `src/components/vetrina/catalog/act/`):
 
 - **Selection**: "Seleziona" on any list, or a long press on a row. While
   selecting, an action bar takes the tab bar's place: Saldo, Nascondi /
-  Mostra, Tag, Categoria, Homepage. "Tutti (N)" takes everything the screen's
-  search and chips match — a query, resolved again when the action runs — not
-  only the rows loaded.
+  Mostra, Tag, Categoria, Homepage (and Elimina on the hidden products'
+  list). "Tutti (N)" takes everything the screen's search and chips match — a
+  query, resolved again when the action runs; for Elimina, fixed to what it
+  matched when the action was filed — not only the rows loaded.
+- **Provenienza** (`src/server/vetrina/sources.ts`): where each product comes
+  from, in one colour wherever it shows — a badge leading the row's states and
+  a frame around its thumbnail, a chip's dot, a row of the product sheet with
+  one line of what it means. **GoldenSneakers** (solid yellow, "GS"): the
+  supplier's feed carries it now and decides that it is in the shop.
+  **KicksDB** (blue): added from the Hub, priced from the market. **Ex
+  GoldenSneakers** (yellow faded and dashed, "Ex GS"): the feed listed it and
+  dropped it; the sync keeps it sold out. **Solo negozio** (grey): made in
+  WordPress, no source behind it. Decided by SKU in that order — the feed
+  first, a pin to KicksDB's prices included (a product the feed carries comes
+  back through Publish as soon as the Hub forgets it); the pin only tells
+  KicksDB from Ex GS. One rule for the colour, the "Provenienza" chips (a list
+  holding more than one source; `source` in a query, the API's too) and
+  Elimina: the owner never sees a product deletable that the action refuses.
+  Read strictly: a feed that cannot be read fails the answer rather than
+  colour a supplier's product as the shop's own. "Nascondi" says how many of
+  the products it hides are the supplier's before it runs — hiding them by
+  mistake, unable to tell them apart, is why the colours exist.
 - **Sheets**: one per action, each asking the server for a preview first
   (who changes, before → after, who is left as is and why, what to know)
   and only then offering the button.
@@ -284,13 +303,28 @@ As built (phase 3, `src/components/vetrina/catalog/act/`):
   bring it back), the store index, the catalog (so Publish never offers it
   again; a deliberate import brings it back), its photos' queue (the first
   photo to land would put it back on sale). A product the supplier's feed
-  carries is refused, and its sheet offers no "Elimina": the feed decides
-  what is in the shop and would put it back — hiding it is the way. Its
-  status, its sizes' statuses and its catalog rows are filed before it goes:
-  "Annulla" takes it out of the trash with its status, then its sizes with
-  theirs (WooCommerce trashes them with their product, and a restore through
-  the API brings back the product alone), and the Hub knows it again. One
-  emptied from the trash since cannot come back, and says so.
+  carries (GoldenSneakers, yellow) is refused, and its sheet offers no
+  "Elimina": the feed decides what is in the shop and would put it back —
+  hiding it is the way. Every other source goes: the Hub's KicksDB picks, a
+  product the feed dropped (its next sync registers only what it lists), one
+  made in the shop. Its status, its sizes' statuses and its catalog rows are
+  filed before it goes: "Annulla" takes it out of the trash with its status,
+  then its sizes with theirs (WooCommerce trashes them with their product,
+  and a restore through the API brings back the product alone), and the Hub
+  knows it again. One emptied from the trash since cannot come back, and says
+  so; nor does one whose SKU another product carries again (WooCommerce does
+  not count the trash's SKUs: imported and published again meanwhile, it
+  would be there twice). A request that gets no answer is looked at before
+  the run stops: trashed after all, the product leaves the Hub with the
+  rest; still in the shop, it keeps its catalog rows and nothing is filed.
+  The narrow case left: a photo request already in flight when its product
+  is trashed puts the product back on sale when it lands (its queued photos
+  are cancelled first).
+- **The hidden products** (the "Nascosti" quick view): where the owner
+  checks what to let go before deleting. Their sources' row always shows
+  (GoldenSneakers 3 · KicksDB 12 · …), the view's line says that the
+  supplier's are shown again, never deleted, and "Elimina" is in the
+  selection bar — "KicksDB", "Seleziona tutti", "Elimina".
 - **New automatic category** from the catalog's "+", or from a term's ⋯ menu
   with the screen's filters as its rule. The rule of a category a section
   shows is edited in its own sheet, from the section editor or the

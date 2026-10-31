@@ -10,7 +10,7 @@ import { EyeOff } from "../../icons";
 import { Folder, House, Tag } from "../term/glyphs";
 import { ActSheets, type ActRequest, type ActSheetKind } from "./ActSheets";
 import { useHoldBottomBar } from "./bottom-bar";
-import { Eye, OrderLines, Percent } from "./icons";
+import { Eye, OrderLines, Percent, Trash } from "./icons";
 import type { OrderTerm } from "./OrderSheet";
 import { selectedCount, selectionTarget, visibilityAction, type PickedProduct } from "./model";
 import type { ProductSelection } from "./selection";
@@ -22,7 +22,8 @@ import type { ProductSelection } from "./selection";
  * Categoria, Homepage — and Ordina on a category's or brand's list — each
  * opening its sheet on the selection; Nascondi's and Mostra's lead on to
  * Elimina (a seventh button would leave none of their words whole on a
- * phone). Starting an
+ * phone). The hidden products' list, where the owner checks what to let go,
+ * has no Ordina and Elimina in its place. Starting an
  * action leaves selection: the progress pill and the toast take it from
  * there.
  */
@@ -88,7 +89,7 @@ export function SelectionBar({
         ? b.all(count)
         : b.count(count);
 
-  const actions: { kind: ActSheetKind; label: string; icon: React.ReactNode }[] = [
+  const actions: { kind: ActSheetKind; label: string; icon: React.ReactNode; danger?: boolean }[] = [
     { kind: "sale", label: b.actions.sale, icon: <Percent className={ICON} /> },
     visibility === "show"
       ? { kind: "show", label: b.actions.show, icon: <Eye className={ICON} /> }
@@ -97,6 +98,9 @@ export function SelectionBar({
     { kind: "category", label: b.actions.category, icon: <Folder className={ICON} /> },
     { kind: "pin", label: b.actions.pin, icon: <House className={ICON} /> },
     ...(orderTerm ? [{ kind: "order" as const, label: b.actions.order, icon: <OrderLines className={ICON} /> }] : []),
+    ...(!orderTerm && query.view === "hidden"
+      ? [{ kind: "delete" as const, label: b.actions.delete, icon: <Trash className={ICON} />, danger: true }]
+      : []),
   ];
 
   return (
@@ -161,7 +165,9 @@ export function SelectionBar({
                       type="button"
                       disabled={!canAct}
                       onClick={() => open(action.kind)}
-                      className="flex h-full min-w-0 flex-1 flex-col items-center justify-center gap-1 px-1 text-[11px] font-medium text-black transition-opacity active:opacity-50 disabled:opacity-30 dark:text-white"
+                      className={`flex h-full min-w-0 flex-1 flex-col items-center justify-center gap-1 px-1 text-[11px] font-medium transition-opacity active:opacity-50 disabled:opacity-30 ${
+                        action.danger ? "text-red-600 dark:text-red-400" : "text-black dark:text-white"
+                      }`}
                     >
                       {action.icon}
                       <span className="max-w-full truncate">{action.label}</span>

@@ -151,6 +151,9 @@ export const opsIt = {
     alsoElsewhere: (count: number, names: string[], total: number) =>
       `${count === 1 ? "1 è" : `${n(count)} sono`} anche in ${nameList(names, total)}: ${count === 1 ? "sparisce" : "spariscono"} anche lì.`,
     sectionsLose: (sections: string[]) => `La homepage perde prodotti in ${nameList(sections)}.`,
+    /** "Nascondi" on products of the supplier's feed: the shop stops selling what the supplier still has. */
+    hidesFeed: (count: number) =>
+      `${count === 1 ? "1 arriva" : `${n(count)} arrivano`} dal feed GoldenSneakers (GS): ${count === 1 ? "nascosto non lo vendi" : "nascosti non li vendi"}, anche se il fornitore ${count === 1 ? "lo ha" : "li ha"} ancora.`,
     /** What "Elimina" does, said before it runs: the trash, the Hub forgetting them, the way back. */
     deleteForGood: (count: number) =>
       `${count === 1 ? "Esce" : "Escono"} dal negozio e dall'Hub: ${count === 1 ? "va" : "vanno"} nel cestino di WordPress, che si svuota da solo dopo 30 giorni, e l'Hub non ${count === 1 ? "lo propone" : "li propone"} più da pubblicare. Con «Annulla» ${count === 1 ? "torna com'era" : "tornano com'erano"} entro 7 giorni.`,

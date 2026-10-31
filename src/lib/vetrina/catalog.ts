@@ -13,6 +13,25 @@ export type CatalogTaxonomy = "category" | "brand";
 export const QUICK_VIEWS = ["soldout", "onsale", "hidden", "nophoto", "nocategory", "unpublished"] as const;
 export type QuickView = (typeof QUICK_VIEWS)[number];
 
+/**
+ * Where a product comes from, as the owner tells them apart — each with its
+ * colour — and as "Elimina" decides (src/server/vetrina/sources.ts):
+ *
+ * - goldensneakers: the supplier's feed carries it now. The feed decides what
+ *   is in the shop and would put it back: "Elimina" refuses it.
+ * - kicksdb: added from the Hub, priced from the market (StockX, by KicksDB).
+ * - delisted: the feed carried it and no longer does; the sync keeps it sold
+ *   out ("Ex GS").
+ * - woo: made in the shop (WordPress), with no source behind it.
+ */
+export const PRODUCT_SOURCES = ["goldensneakers", "kicksdb", "delisted", "woo"] as const;
+export type ProductSource = (typeof PRODUCT_SOURCES)[number];
+
+/** "Elimina" takes it: every product but the supplier's feed's, which the feed would put back. */
+export function isDeletable(source: ProductSource): boolean {
+  return source !== "goldensneakers";
+}
+
 /** A homepage section, by its stable key (lib/vetrina/order.ts) and its title. */
 export interface SectionRef {
   key: string;
@@ -94,6 +113,8 @@ export interface CatalogProduct {
   locks: number;
   /** The homepage sections showing it in their visible slots. */
   sections: ProductSection[];
+  /** Where it comes from (its colour on the row). Optional (added with the sources): absent shows none. */
+  source?: ProductSource;
 }
 
 export const CATALOG_SORTS = ["shop", "newest", "bestselling", "priceAsc", "priceDesc", "name"] as const;
@@ -114,6 +135,8 @@ export interface CatalogQuery {
   onSale?: boolean;
   /** A term of the OTHER taxonomy: the brands inside a category, the categories inside a brand. */
   within?: number;
+  /** Only the products from this source. */
+  source?: ProductSource;
   sort?: CatalogSort;
   offset?: number;
   /** CATALOG_PAGE_SIZE by default, at most CATALOG_PAGE_MAX. */
@@ -134,14 +157,18 @@ export interface CatalogPage {
   /**
    * The chips' counts: each one's number is what tapping it shows, the other
    * chips staying as they are. So the stock / visibility / sale counts take in
-   * `within` but not themselves, the `within` counts take in stock /
-   * visibility / sale but not `within`, and `children` ignore every chip.
+   * `within` and `source` but not themselves, the `within` counts take in
+   * stock / visibility / sale and `source` but not `within`, the `sources`
+   * take in the other two rows but not `source`, and `children` ignore every
+   * chip.
    */
   facets: {
     instock: number;
     outofstock: number;
     hidden: number;
     onSale: number;
+    /** Products from each source. Optional (added with the sources): absent shows no row of sources. */
+    sources?: Record<ProductSource, number>;
     /** The term's direct sub-terms that hold any of these products. */
     children: FacetCount[];
     /**
@@ -175,6 +202,8 @@ export interface ProductPlacement {
    * "Elimina"): absent reads as not.
    */
   fromFeed?: boolean;
+  /** Where it comes from; `fromFeed` is its "goldensneakers". Optional (added with the sources). */
+  source?: ProductSource;
 }
 
 const RAIL_TAXONOMIES = new Map<string, CatalogTaxonomy>([

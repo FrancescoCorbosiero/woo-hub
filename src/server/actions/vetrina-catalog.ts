@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   CATALOG_PAGE_MAX,
   CATALOG_SORTS,
+  PRODUCT_SOURCES,
   QUICK_VIEWS,
   type CatalogOverview,
   type CatalogPage,
@@ -42,6 +43,7 @@ const QuerySchema = z
     visibility: z.enum(["visible", "hidden"]).optional(),
     onSale: z.boolean().optional(),
     within: Id.optional(),
+    source: z.enum(PRODUCT_SOURCES).optional(),
     sort: z.enum(CATALOG_SORTS).optional(),
     offset: z.number().int().min(0).max(1_000_000).optional(),
     limit: z.number().int().positive().max(CATALOG_PAGE_MAX).optional(),

@@ -82,13 +82,18 @@ site (`source`, `add`, `move`, `remove`, `switchOff`, the `lists`).
 
 The products a catalog query matches, a page at a time (`limit` up to 100):
 `id`, `sku`, `name`, `price`, `onSale`, `stockStatus`, `visibility`,
-`status`, their categories, brands and tags by name, and the homepage
-`sections` showing them (key, title, place, pinned). The query is the one
-an action's `target: { "kind": "query", "query": … }` takes: `taxonomy` +
-`termId` (a category's or brand's products, sub-terms' included), `view`
-(`soldout`, `onsale`, `hidden`, `nophoto`, `nocategory`, `unpublished`), `q`
-(name or SKU), `stock`, `visibility`, `onSale`, `within` (a term of the
-other taxonomy), `sort`.
+`status`, `source` (where it comes from: `goldensneakers` — the supplier's
+feed carries it, and a delete refuses it — `kicksdb`, `delisted` — the feed
+dropped it — or `woo`, made in the shop), their categories, brands and tags
+by name, and the homepage `sections` showing them (key, title, place,
+pinned). The query is the one an action's `target: { "kind": "query",
+"query": … }` takes: `taxonomy` + `termId` (a category's or brand's
+products, sub-terms' included), `view` (`soldout`, `onsale`, `hidden`,
+`nophoto`, `nocategory`, `unpublished`), `q` (name or SKU), `stock`,
+`visibility`, `onSale`, `within` (a term of the other taxonomy), `source`,
+`sort`. The hidden products a delete may take:
+`?view=hidden&source=kicksdb`. A delete on a query acts on what it matches
+when the action is filed, not when its turn comes.
 
 ### `GET /api/v1/catalog/terms?taxonomy=category|brand`
 

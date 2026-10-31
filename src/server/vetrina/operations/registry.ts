@@ -144,7 +144,9 @@ export const ACTIONS: { [K in ActionKind]: ActionSpec<K> } = {
     description:
       "Delete products from the shop: they go to WordPress's trash (which WordPress empties after 30 days), and the Hub forgets them — " +
       "its copy of the shop, its catalog (the Publish tab no longer offers them), their photos' queue. " +
-      "A product the supplier's feed (GoldenSneakers) carries is refused: the feed decides what is in the shop and would bring it back; hide it instead.",
+      "A product the supplier's feed (GoldenSneakers) carries is refused: the feed decides what is in the shop and would bring it back; hide it instead. " +
+      'A product\'s `source` says which ("goldensneakers"); `"source": "kicksdb"` in a query takes the Hub\'s own picks only. ' +
+      "A query is fixed to what it matches when the action is filed.",
     undo:
       `Within ${OPERATION_UNDO_DAYS} days, while WordPress still has them in its trash: each comes back as it was, sizes included, and the Hub knows it again. ` +
       "A product emptied from the trash since cannot come back.",

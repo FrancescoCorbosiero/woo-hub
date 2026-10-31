@@ -68,6 +68,7 @@ export function useListControls(initialFacets: CatalogPage["facets"] | null, sta
   const [filter, setFilter] = React.useState<ListFilter>(() => ({
     status: start.status,
     within: namedWithin(start.within, initialFacets),
+    source: start.source ?? null,
   }));
   const [sort, setSort] = React.useState<CatalogSort>(start.sort);
   const [facets, setFacets] = React.useState(initialFacets);
@@ -85,7 +86,7 @@ export function useListControls(initialFacets: CatalogPage["facets"] | null, sta
   }, [text]);
 
   React.useEffect(() => {
-    replaceAddress(listParams({ q, status: filter.status, within: filter.within?.id ?? null, sort }));
+    replaceAddress(listParams({ q, status: filter.status, within: filter.within?.id ?? null, source: filter.source ?? null, sort }));
   }, [q, filter, sort]);
 
   return { text, setText, q, filter, setFilter, sort, setSort, facets, setFacets };
@@ -223,6 +224,8 @@ export interface TermShape {
   children: boolean;
   /** The other taxonomy's chips (shown when they narrow the list). */
   within: boolean;
+  /** The sources' chips (shown when the list holds more than one source). */
+  sources?: boolean;
 }
 
 const DEFAULT_SHAPE: TermShape = {
@@ -232,13 +235,15 @@ const DEFAULT_SHAPE: TermShape = {
   partlyHidden: false,
   children: false,
   within: true,
+  // A shop selling the supplier's products and its own mixes them in most categories.
+  sources: true,
 };
 
 // In-memory only, per visit of the app: it is a guess at a layout, nothing to keep.
 const shapes = new Map<string, TermShape>();
 
-/** The shape the catalog's home can tell of a term (the chips' row it cannot: kept from a visit). */
-export function shapeOf(term: CatalogTerm): Omit<TermShape, "within"> {
+/** The shape the catalog's home can tell of a term (the chips' rows it cannot: kept from a visit). */
+export function shapeOf(term: CatalogTerm): Omit<TermShape, "within" | "sources"> {
   return {
     automatic: term.automatic != null,
     sections: Math.max(1, term.sections.length),

@@ -194,7 +194,11 @@ export const termIt = {
   views: {
     soldout: { title: "Esauriti", hint: "Nessuna taglia disponibile: sul sito non si possono comprare." },
     onsale: { title: "In saldo", hint: "I prodotti con un prezzo scontato in questo momento." },
-    hidden: { title: "Nascosti", hint: "Nascosti dal negozio: sul sito non compaiono né nelle liste né nella ricerca." },
+    hidden: {
+      title: "Nascosti",
+      // Where the owner checks them before deleting: by their colour, the supplier's apart.
+      hint: "Sul sito non compaiono, né nelle liste né nella ricerca. Quelli GS sono del fornitore: non si eliminano, si rimettono in vista. Gli altri, se non li vendi più, eliminali.",
+    },
     nophoto: { title: "Senza foto", hint: "Sul sito compaiono con un'immagine vuota: aggiungi una foto da WordPress." },
     nocategory: { title: "Senza categoria", hint: "Sul sito non si trovano sfogliando le categorie." },
     unpublished: { title: "Non pubblicati", hint: "Bozze, prodotti in revisione e privati: sul sito non si vedono." },

@@ -86,7 +86,9 @@ After pulling changes, run `npm run serve` again — it rebuilds first.
   inventory only, **never a price source** — `getFreshBySkus`/`getAnyBySkus`
   exclude it, so preview/apply/rebuild behave exactly as if it weren't there.
 
-Entries never leave. Every route feeds it: syncs, imports, previews, pulls.
+Entries never leave — but for a product the owner deletes from the shop
+(the Vetrina's "Elimina"), whose rows go with it until an import brings them
+back. Every route feeds it: syncs, imports, previews, pulls.
 
 Listing columns (`image`, `min_ask`, `variant_count`, `added_at`) are
 denormalized from the stored product at upsert time, so lists such as
@@ -510,7 +512,12 @@ tags, categories, homepage pins, a category's or brand's margin, and deleting
 a product the shop no longer sells (to WordPress's trash and out of the Hub,
 so Publish never offers it again; refused for the supplier's feed's products,
 which the feed would put back) — each with a preview, a background run and
-"Annulla". Its price actions never write a
+"Annulla". Every product shows where it comes from, in its colour: the
+supplier's feed (GoldenSneakers) yellow, the Hub's KicksDB picks blue, one the
+feed dropped a dashed yellow ("Ex GS"), one made in the shop grey — the same
+rule "Elimina" follows (`src/server/vetrina/sources.ts`), and the hidden
+products' list filters by it, so the owner checks what to delete before it
+goes. Its price actions never write a
 regular price: a sale is the sale price only, and a margin is a store-term
 rule in this list, applied by the engine. The design, the decisions and the
 price contract with the engine: [docs/vetrina-catalog.md](docs/vetrina-catalog.md).

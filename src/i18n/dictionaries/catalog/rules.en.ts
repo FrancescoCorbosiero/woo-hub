@@ -15,6 +15,7 @@ export const rulesEn: typeof rulesIt = {
   notes: {
     hidden: "The “Hidden” filter stays out: a rule does not look at whether a product is hidden.",
     search: "The search becomes “the name contains”: the SKU does not count.",
+    source: "The “Source” filter stays out: a rule only reads what the shop knows of a product.",
   },
 
   nameTaken: (name: string) =>

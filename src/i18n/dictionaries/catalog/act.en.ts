@@ -40,6 +40,7 @@ export const actEn: typeof actIt = {
       category: "Category",
       pin: "Homepage",
       order: "Place",
+      delete: "Delete",
     },
   },
 
