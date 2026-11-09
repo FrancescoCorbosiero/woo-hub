@@ -487,6 +487,8 @@ export function labelParams(input: OperationInput, names: LabelNames): Operation
     case "termMerge":
     case "termDelete":
       return { ...base, taxonomy: input.taxonomy, term: names.term ?? null };
+    case "priceMatch":
+      return { ...base, source: input.source ?? "" };
   }
 }
 
@@ -524,6 +526,8 @@ export function labelText(p: OperationLabelParams, w: Words = words()): string {
       return w.label.sourceOrder(p.count, p.source ?? "", p.term || w.source.wholeCatalog);
     case "delete":
       return w.label.delete(p.count);
+    case "priceMatch":
+      return w.label.priceMatch(p.count, p.source || null);
     case "termCreate":
       return w.label.termCreate(taxonomyOf(p), p.term ?? "", p.into ?? null);
     case "termRename":

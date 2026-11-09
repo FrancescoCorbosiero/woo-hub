@@ -64,6 +64,7 @@ export const opsEn: typeof opsIt = {
     menuRename: (menu: string, from: string) => `Menu “${from}” renamed “${menu}”`,
     menuDelete: (menu: string) => `Menu “${menu}” deleted`,
     menuLocation: (menu: string | null, place: string) => (menu ? `“${menu}” in ${place}` : `No menu in ${place}`),
+    priceMatch: (count: number, source: string | null) => (source ? `Prices matched to “${source}” · ${products(count)}` : `Prices matched · ${products(count)}`),
     termCreate: (tx: TermTx, name: string, parent: string | null) => `New ${T[tx]} “${name}”${parent ? ` under “${parent}”` : ""}`,
     termRename: (tx: TermTx, from: string, to: string) => `${Cap[tx]} “${from}” renamed “${to}”`,
     termMove: (tx: TermTx, name: string, into: string | null) => `${Cap[tx]} “${name}” moved ${into ? `under “${into}”` : "to the top level"}`,
@@ -72,6 +73,10 @@ export const opsEn: typeof opsIt = {
   },
 
   untouched: {
+    priceOnSale: (count: number): string => (count === 1 ? "on sale: end the sale first" : "on sale: end the sales first"),
+    priceUnpriced: (_count: number): string => "no size with a Hub price",
+    priceSame: (_count: number): string => "at that price already",
+    priceSizes: (_count: number): string => "sizes outside the Hub: change the price from the product",
     gone: (_count: number) => "no longer in the shop",
     alreadyHidden: (_count: number) => "already hidden",
     alreadyVisible: (_count: number) => "already visible",
@@ -123,6 +128,10 @@ export const opsEn: typeof opsIt = {
   },
 
   warning: {
+    priceLocks: (count: number) =>
+      `The prices of ${count === 1 ? "1 product become" : `${n(count)} products become`} locked: KicksDB no longer changes them until you unlock them from the product's sheet, or undo.`,
+    priceBelowMarket: (count: number) =>
+      count === 1 ? "1 product goes below the market price in at least one size." : `${n(count)} products go below the market price in at least one size.`,
     orderElsewhere: (count: number, names: string[], total: number) =>
       `In the shop each product has one position: ${count === 1 ? "1 is" : `${n(count)} are`} also in ${nameList(names, total)}, and ${count === 1 ? "moves" : "move"} there the same way.`,
     orderRoom: (count: number) =>
@@ -248,6 +257,13 @@ export const opsEn: typeof opsIt = {
     noneInTerm: (term: string, source: string) => `None of the products of “${term}” is in the ranking “${source}”.`,
     noneInShop: (source: string) => `None of the products of the ranking “${source}” is in the shop.`,
     inOrder: (source: string) => `It is already arranged like “${source}”.`,
+    itemGone: "This entry is not in the ranking.",
+    productGone: "This product is no longer in the shop.",
+    importDemo: "The demo shop publishes no products: the comparison shows here, the import does not.",
+    kicksdbOff: "KicksDB is not configured: products the Hub's catalog lacks cannot be looked up.",
+    importEmpty: "Name at least one code (SKU) to import.",
+    lookupFailed: "KicksDB did not answer: try again shortly.",
+    pricesNone: (threshold: number) => `No price to match: no product of the ranking is more than ${n(threshold)}% off.`,
   },
 
   page: {

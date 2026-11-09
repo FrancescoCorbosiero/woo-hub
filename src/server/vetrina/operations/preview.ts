@@ -1,5 +1,6 @@
 import "server-only";
 import { assessTermRemoval } from "./term-removal";
+import { assessPriceMatch } from "./price-match";
 import { hubConfig } from "@/config";
 import type { OperationInput, OperationKind, OperationPreview, TermKey } from "@/lib/vetrina/catalog-ops";
 import { isDeletable } from "@/lib/vetrina/catalog";
@@ -485,6 +486,8 @@ export async function assess(input: OperationInput, opts: { live: boolean }): Pr
   if (input.kind === "margin") return assessMargin(input, opts);
   // A term merged or deleted: its products are the term's, read live (term-removal.ts).
   if (input.kind === "termMerge" || input.kind === "termDelete") return assessTermRemoval(input);
+  // Prices matched to another site's: each product's own plan (price-match.ts).
+  if (input.kind === "priceMatch") return assessPriceMatch(input);
   if (input.kind === "order") return assessOrder(input, opts);
   if (input.kind === "sourceOrder") return assessSourceOrder(input, opts);
   const target = await resolveTarget(input.target, { wholeTerm: wholeTermAction(input) });

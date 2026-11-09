@@ -14,7 +14,7 @@ export const API_TOKENS = `assistant:${ASSISTANT_TOKEN}:read+propose,phone:${PHO
  */
 export async function api<T = unknown>(
   request: APIRequestContext,
-  method: "GET" | "POST",
+  method: "GET" | "POST" | "DELETE",
   path: string,
   { body, status = method === "GET" ? 200 : 202, token = API_TOKEN }: { body?: unknown; status?: number; token?: string } = {},
 ): Promise<T> {

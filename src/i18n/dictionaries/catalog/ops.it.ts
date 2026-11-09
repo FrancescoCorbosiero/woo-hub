@@ -109,6 +109,7 @@ export const opsIt = {
     menuRename: (menu: string, from: string) => `Menu «${from}» rinominato «${menu}»`,
     menuDelete: (menu: string) => `Menu «${menu}» eliminato`,
     menuLocation: (menu: string | null, place: string) => (menu ? `«${menu}» in ${place}` : `Nessun menu in ${place}`),
+    priceMatch: (count: number, source: string | null) => (source ? `Prezzi allineati a «${source}» · ${products(count)}` : `Prezzi allineati · ${products(count)}`),
     termCreate: (tx: TermTx, name: string, parent: string | null) => `${T[tx].New} «${name}»${parent ? ` sotto «${parent}»` : ""}`,
     termRename: (tx: TermTx, from: string, to: string) => `${T[tx].One} «${from}» ${T[tx].e("rinominat")} «${to}»`,
     termMove: (tx: TermTx, name: string, into: string | null) =>
@@ -119,6 +120,11 @@ export const opsIt = {
 
   /** Why a preview leaves products as they are, agreeing with how many ("Già nascosto · 1", "Già nascosti · 3"). */
   untouched: {
+    // "Allinea i prezzi" (operations/price-match.ts).
+    priceOnSale: (count: number): string => (count === 1 ? "in saldo: prima togli il saldo" : "in saldo: prima togli i saldi"),
+    priceUnpriced: (_count: number): string => "nessuna taglia con un prezzo dell'Hub",
+    priceSame: (_count: number): string => "già a quel prezzo",
+    priceSizes: (_count: number): string => "taglie fuori dall'Hub: cambia il prezzo dal prodotto",
     gone: (count: number): string => (count === 1 ? "non è più nel negozio" : "non sono più nel negozio"),
     alreadyHidden: (count: number): string => (count === 1 ? "già nascosto" : "già nascosti"),
     alreadyVisible: (count: number): string => (count === 1 ? "già visibile" : "già visibili"),
@@ -179,6 +185,10 @@ export const opsIt = {
   },
 
   warning: {
+    priceLocks: (count: number) =>
+      `I prezzi ${count === 1 ? "di 1 prodotto diventano bloccati" : `di ${n(count)} prodotti diventano bloccati`}: KicksDB non li cambia più finché non li sblocchi dalla scheda del prodotto, o annulli.`,
+    priceBelowMarket: (count: number) =>
+      count === 1 ? "1 prodotto scende sotto il prezzo di mercato in almeno una taglia." : `${n(count)} prodotti scendono sotto il prezzo di mercato in almeno una taglia.`,
     /** The shop's positions are one number per product: a product moved here moves in its other categories and brands too. */
     orderElsewhere: (count: number, names: string[], total: number) =>
       `Nel negozio ogni prodotto ha una posizione sola: ${count === 1 ? "1 è" : `${n(count)} sono`} anche in ${nameList(names, total)}, e lì ${count === 1 ? "cambia" : "cambiano"} posto allo stesso modo.`,
@@ -335,6 +345,14 @@ export const opsIt = {
     noneInTerm: (term: string, source: string) => `Nessun prodotto di «${term}» è nella classifica «${source}».`,
     noneInShop: (source: string) => `Nessun prodotto della classifica «${source}» è nel negozio.`,
     inOrder: (source: string) => `È già disposto come «${source}».`,
+    /** The comparison (order-sources/compare.ts) and its import (import.ts). */
+    itemGone: "Questa voce non è nella classifica.",
+    productGone: "Questo prodotto non è più nel negozio.",
+    importDemo: "Sul negozio di prova non si pubblicano prodotti: qui il confronto si vede, l'importazione no.",
+    kicksdbOff: "KicksDB non è configurato: i prodotti che il catalogo dell'Hub non ha non si possono cercare.",
+    importEmpty: "Indica almeno un codice (SKU) da importare.",
+    lookupFailed: "KicksDB non ha risposto: riprova tra poco.",
+    pricesNone: (threshold: number) => `Nessun prezzo da allineare: nessun prodotto della classifica si scosta di più del ${n(threshold)}%.`,
   },
 
   /**

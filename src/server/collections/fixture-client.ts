@@ -122,9 +122,14 @@ function touch(p: DemoProduct): void {
 /**
  * A write of the fields the catalog's actions send, as WooCommerce takes
  * them: an empty sale price ends the sale, and the shelf price follows. The
- * regular price is never among them — nothing here writes it.
+ * regular price only "Allinea i prezzi" writes (a product the Hub does not
+ * price, as every demo product is).
  */
 function applyFields(p: DemoProduct, body: Record<string, unknown>): void {
+  if (typeof body.regular_price === "string") {
+    const regular = Number.parseFloat(body.regular_price);
+    if (Number.isFinite(regular) && regular > 0) p.regularPrice = Math.round(regular * 100) / 100;
+  }
   if (typeof body.catalog_visibility === "string") p.visibility = body.catalog_visibility;
   if (typeof body.menu_order === "number") p.menuOrder = body.menu_order;
   if ("sale_price" in body) {

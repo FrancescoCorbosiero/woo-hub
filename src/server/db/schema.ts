@@ -21,7 +21,7 @@ import type { ActionInput, ActionKind, OperationPreview, OperationVia, Operation
 import type { OperationMenuRecord } from "@/lib/vetrina/menu-ops";
 import type { OperationTermRecord } from "@/lib/vetrina/term-ops";
 import type { OperationPageRecord } from "@/lib/vetrina/page-ops";
-import type { OrderSourceItem } from "@/lib/vetrina/order-sources";
+import type { OrderSourceItem, SourcePairs } from "@/lib/vetrina/order-sources";
 import type { ProposalStatus } from "@/lib/vetrina/proposals";
 import type { MediaImage } from "@/server/woo/media-plan";
 
@@ -755,7 +755,9 @@ export const vetrinaOperationItems = pgTable(
     // term either (operations/standing.ts). 'deleted' is a product sent to
     // the trash: before is what bringing it back needs (operations/remove.ts).
     // The column is plain text: the list is TypeScript's only.
-    field: text("field", { enum: ["visibility", "tags", "categories", "brands", "sale", "margin", "member", "menu_order", "deleted"] }).notNull(),
+    // 'lock' is a product's locked size prices before and after ({ sku, prices: { EU: price|null } }); 'price' a simple
+    // product's own regular price ({ regular }): "Allinea i prezzi" (operations/price-match.ts).
+    field: text("field", { enum: ["visibility", "tags", "categories", "brands", "sale", "margin", "member", "menu_order", "deleted", "lock", "price"] }).notNull(),
     before: jsonb("before").$type<unknown>(),
     after: jsonb("after").$type<unknown>(),
   },
@@ -847,8 +849,10 @@ export const vetrinaOrderSources = pgTable(
     name: text("name").notNull(),
     // Where it comes from: a page's address, or words.
     origin: text("origin"),
-    // In the source's order: { sku, name } each, either may be null.
+    // In the source's order: { sku, name, price? } each, sku or name may be null.
     items: jsonb("items").$type<OrderSourceItem[]>().notNull(),
+    // Items paired by hand with the shop's products (the comparison): by position, a product id or null ("none").
+    pairs: jsonb("pairs").$type<SourcePairs | null>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

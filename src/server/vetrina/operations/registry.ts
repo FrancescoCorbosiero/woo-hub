@@ -294,6 +294,17 @@ export const ACTIONS: { [K in ActionKind]: ActionSpec<K> } = {
     undo: `Within ${OPERATION_UNDO_DAYS} days, while the place shows what the action put there: the menu it showed before goes back, if it still exists.`,
     example: { kind: "menuLocation", location: "primary", menuId: 5 },
   },
+  priceMatch: {
+    scope: "catalog",
+    title: "Match products' prices to another site's",
+    description:
+      "Bring each product to a price (`items`: product id and the price its cheapest size should have — the other site's): every size moves by the same amount, keeping their spread. " +
+      "A product the Hub prices (KicksDB, the supplier's feed) gets the new prices as locks, written through the ordinary sync, so the engine never writes over them; " +
+      "a simple product the Hub does not price gets its own regular price. Left as they are, with why: a product on sale, one with no price of the Hub's, one at that price already, " +
+      "one with sizes the Hub does not price. Compare a list first: GET /api/v1/order-sources/{id}/compare gives the products whose price differs beyond a threshold, ready for this action.",
+    undo: `Within ${OPERATION_UNDO_DAYS} days: each size's lock (or a simple product's price) goes back to what it was, while it is as the action left it; the sync writes the prices again.`,
+    example: { kind: "priceMatch", items: [{ productId: 4810, price: 139 }], source: "Concorrente" },
+  },
   termCreate: {
     scope: "taxonomy",
     title: "Make a category, a brand or a tag",

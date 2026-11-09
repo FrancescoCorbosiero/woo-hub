@@ -299,6 +299,7 @@ export const actIt = {
       sourceOrder: "Dispongo come la classifica",
       termMerge: "Unisco",
       termDelete: "Elimino",
+      priceMatch: "Allineo i prezzi",
       delete: "Elimino",
     },
     undoing: "Annullo…",

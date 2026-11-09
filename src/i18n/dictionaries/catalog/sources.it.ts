@@ -86,10 +86,109 @@ export const sourcesIt = {
     plain: "Applica",
   },
 
+  /**
+   * The comparison of a ranking with the shop (its screen,
+   * /vetrina/catalogo/classifica/…): prices beyond the threshold, the
+   * products the shop lacks, the uncertain ones — and what to do with each.
+   */
+  compare: {
+    open: "Confronta con il negozio",
+    openHint: "Prezzi diversi, prodotti che mancano, abbinamenti da verificare.",
+    subtitle: "Confronto con il negozio",
+    back: "Catalogo",
+    summary: (matched: number, items: number) => `${n(matched)} di ${n(items)} prodotti nel negozio`,
+    threshold: (threshold: number) => `Prezzi diversi: oltre il ${n(threshold)}%, non per i centesimi.`,
+    filter: "Mostra",
+    tabs: {
+      prices: "Prezzi diversi",
+      missing: "Mancanti",
+      uncertain: "Da verificare",
+      all: "Tutti",
+    },
+    theirs: "Loro",
+    ours: "Noi",
+    gap: (gap: number) => `${gap > 0 ? "+" : gap < 0 ? "−" : ""}${Math.abs(gap).toLocaleString("it-IT", { maximumFractionDigits: 1 })}%`,
+    onSale: "in saldo",
+    notPublished: "non pubblicato",
+    paired: "abbinato a mano",
+    pairedNone: "segnato come non nel negozio",
+    inCatalog: "nel catalogo dell'Hub",
+    noSku: "senza codice",
+    several: "più prodotti possibili",
+    notInShop: "non nel negozio",
+    empty: {
+      prices: "Nessun prezzo si scosta oltre la soglia.",
+      pricesUnknown:
+        "La classifica non ha prezzi: chiedili all'LLM (le istruzioni ora li includono) e sostituisci la classifica con la nuova risposta.",
+      missing: "Il negozio ha tutti i prodotti della classifica.",
+      uncertain: "Nessun abbinamento da verificare.",
+    },
+    pricesIntro:
+      "Il prezzo del negozio è quello della taglia più economica, come lo mostra il sito. «Allinea» porta lì la taglia più economica e sposta le altre della stessa cifra: sui prodotti dell'Hub come prezzi bloccati, che la sincronizzazione mantiene.",
+    missingIntro:
+      "«Importa» li crea nel negozio con Publish: le taglie con i prezzi del motore e dei margini, le foto in coda. Quelli senza codice si cercano prima su KicksDB.",
+    uncertainIntro: "Più prodotti del negozio potrebbero essere questi: scegli quale, o segnali come non nel negozio.",
+    allIntro: "Tutta la classifica, nel suo ordine. Tocca una voce per cambiarne l'abbinamento.",
+    selectAll: "Seleziona tutti",
+    selectNone: "Deseleziona",
+    selected: (count: number) => (count === 1 ? "1 selezionato" : `${n(count)} selezionati`),
+    alignTitle: "Allinea i prezzi",
+    align: (count: number) => (count === 1 ? "Allinea 1 prezzo" : `Allinea ${n(count)} prezzi`),
+    import: (count: number) => (count === 1 ? "Importa 1 prodotto" : `Importa ${n(count)} prodotti`),
+    useOrder: "Disponi tutto il catalogo così",
+    lookup: "Cerca su KicksDB",
+    lookingUp: "Cerco su KicksDB…",
+    lookupNone: "KicksDB non ha un prodotto con un nome così.",
+    lookupPick: "Quale è?",
+    chosen: (sku: string) => `Da importare: ${sku}`,
+    pairAction: "Abbina a mano",
+    more: (count: number) => `Mostra altri ${n(count)}`,
+    failed: "Non riesco a confrontare la classifica.",
+    retry: "Riprova",
+    later: "I prodotti creati entrano nel confronto entro un paio di minuti: la copia del negozio si aggiorna da sola.",
+    demo: "Sul negozio di prova il confronto si vede, ma non si importa.",
+    pair: {
+      title: "Quale prodotto è?",
+      subtitle: (name: string) => `«${name}», nella classifica`,
+      candidates: "Nomi simili nel negozio",
+      search: "Cerca nel negozio",
+      searchEmpty: "Nessun prodotto del negozio con questo nome.",
+      current: "Abbinato ora",
+      none: "Non è nel negozio",
+      noneHint: "Va tra i mancanti: lo si può importare.",
+      auto: "Abbinamento automatico",
+      autoHint: "Per codice e per nome, come fa l'Hub da solo.",
+      done: (name: string) => `Abbinato a «${name}»`,
+      doneNone: "Segnato come non nel negozio",
+      doneAuto: "Torna l'abbinamento automatico",
+    },
+    importSheet: {
+      title: (count: number) => (count === 1 ? "Importa 1 prodotto" : `Importa ${n(count)} prodotti`),
+      intro:
+        "Vengono creati nel negozio con Publish, come dalla sua scheda: le taglie con i prezzi del motore e dei margini, le foto in coda. Un codice che KicksDB non conferma non viene pubblicato; uno già nel negozio resta com'è.",
+      start: "Importa",
+      progress: (done: number, total: number) => `Importo… ${n(done)} di ${n(total)}`,
+      created: "Creati",
+      skipped: "Lasciati come sono",
+      notFound: "KicksDB non li conosce",
+      unreachable: "KicksDB non ha risposto: riprova",
+      failed: "Non creati",
+      reasons: {
+        alreadyOnStore: "già nel negozio",
+        feedDelisted: "fuori dal feed del fornitore",
+        inProgress: "già in pubblicazione",
+        hiddenNoPhoto: "già nel negozio, nascosto per la foto",
+      },
+      sizes: (count: number) => (count === 1 ? "1 taglia" : `${n(count)} taglie`),
+      stop: "Interrompi",
+      close: "Fine",
+    },
+  },
+
   /** What an LLM is told, to write a source from a web page. */
   llmPrompt: `Sei un assistente che ricava l'ordine dei prodotti dalla pagina di una collezione o di una categoria di un negozio online.
 
-Ti do il link di una pagina che elenca i prodotti di UNA collezione o categoria: su Shopify è un indirizzo con /collections/… (es. https://negozio.com/collections/sneakers); sugli altri negozi è la pagina di una categoria (es. …/categoria/sneakers, …/c/sneakers). Mi serve l'ordine in cui il negozio mostra i prodotti in quella pagina con il suo ordinamento predefinito ("In evidenza", "Consigliati", "Featured"): non riordinarli tu e non scegliere un altro ordinamento.
+Ti do il link di una pagina che elenca i prodotti di UNA collezione o categoria (o uno screenshot di quella pagina: leggilo allo stesso modo): su Shopify è un indirizzo con /collections/… (es. https://negozio.com/collections/sneakers); sugli altri negozi è la pagina di una categoria (es. …/categoria/sneakers, …/c/sneakers). Mi serve l'ordine in cui il negozio mostra i prodotti in quella pagina con il suo ordinamento predefinito ("In evidenza", "Consigliati", "Featured"): non riordinarli tu e non scegliere un altro ordinamento.
 
 Se il link è la homepage, la pagina di un singolo prodotto o una ricerca, non darmi il JSON: rispondi con una sola frase che mi chiede il link della collezione o della categoria. La homepage non dice in che ordine il negozio mette i suoi prodotti.
 
@@ -102,7 +201,7 @@ Con il link di una collezione o di una categoria rispondi SOLO con un JSON valid
   "name": "<negozio — collezione, es. Kith — Nike Dunk>",
   "origin": "<il link della collezione o della categoria>",
   "items": [
-    { "sku": "<codice stile del produttore>", "name": "<nome completo del prodotto>" }
+    { "sku": "<codice stile del produttore>", "name": "<nome completo del prodotto>", "price": 129.99 }
   ]
 }
 
@@ -111,6 +210,7 @@ Regole:
 2. "sku" è il codice stile del produttore (es. DD1391-100 per Nike, IE3437 per adidas, 1203A537-100 per ASICS, U9060ZGB per New Balance). Mettilo solo se compare sulla pagina o nel link del prodotto; se non c'è, ometti il campo: non inventarlo.
 3. "name" è il nome come scritto sulla pagina: brand, modello e colorway (es. "Nike Dunk Low Retro White Black Panda").
 4. Ogni prodotto una volta sola, anche se la pagina lo ripete.
-5. Niente prezzi, taglie o altri campi: solo "sku" e "name".
-6. Se i prodotti sono più di 150, dammi i primi 150 e chiudi il JSON; quando ti scrivo "continua", dammi un nuovo JSON con i successivi 150, e così via fino all'ultimo.`,
+5. "price" è il prezzo che la pagina mostra per quel prodotto, come numero (es. 129.99): quello a cui si compra adesso — se è scontato, il prezzo scontato; se è "da 129 €", 129. Se la pagina non lo mostra, ometti il campo.
+6. Niente taglie o altri campi: solo "sku", "name" e "price".
+7. Se i prodotti sono più di 150, dammi i primi 150 e chiudi il JSON; quando ti scrivo "continua", dammi un nuovo JSON con i successivi 150, e così via fino all'ultimo.`,
 };

@@ -166,6 +166,19 @@ export const OperationInputSchema = z.discriminatedUnion("kind", [
     into: Id.describe("The term its products go to; a term of the same taxonomy, not below it."),
   }),
   z.object({
+    kind: z.literal("priceMatch"),
+    items: z
+      .array(
+        z.object({
+          productId: Id.describe("The product, as the catalog lists it."),
+          price: z.number().positive().max(100_000).describe("The price its cheapest size should have (the other site's), in the shop's currency."),
+        }),
+      )
+      .min(1, { message: problem("empty") })
+      .max(MAX_OPERATION_PRODUCTS, { message: problem("tooMany") }),
+    source: z.string().trim().max(120).nullish().describe("The list compared with the shop, by name: for the log's label."),
+  }),
+  z.object({
     kind: z.literal("termDelete"),
     taxonomy: z.enum(["category", "brand", "tag"]).describe("product_cat, product_brand or product_tag."),
     termId: Id.describe("The term deleted, as GET /api/v1/catalog/terms lists it."),

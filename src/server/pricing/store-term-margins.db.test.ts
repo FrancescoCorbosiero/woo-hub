@@ -115,6 +115,12 @@ vi.mock("@/server/adapters/kicksdb", async (importOriginal) => {
   return { ...real, kicksdbConfigured: () => true, getSource: () => source };
 });
 
+// An import asks the index to read the store again: not this suite's stand-in.
+vi.mock("@/server/collections/runner", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/server/collections/runner")>();
+  return { ...real, requestCheck: () => undefined };
+});
+
 const load = async () => ({
   ...(await import("drizzle-orm")),
   ...(await import("@/server/db/client")),
@@ -129,6 +135,10 @@ const load = async () => ({
   ...(await import("@/server/catalog/drawer-data")),
   ...(await import("@/server/actions/debug")),
   ...(await import("./store-terms")),
+  ...(await import("@/server/overrides/repo")),
+  ...(await import("@/server/overrides/model")),
+  ...(await import("@/server/vetrina/operations/service")),
+  ...(await import("@/server/vetrina/operations/runner")),
 });
 
 /** A KicksDB product: two sizes at a 100 € ask. */
@@ -434,5 +444,59 @@ describe.skipIf(!enabled)("a margin on a store category (real SQL, stand-in stor
     } finally {
       warn.mockRestore();
     }
+  });
+
+  it("another shop's price as locks — the cheapest size to it, the others by as much — kept by the sync; «Annulla» gives the engine's back", async () => {
+    const { runPriceSync, getOverrides, manualPriceFor, startOperation, undoOperation, idle, loadOperation, previewOperation } = await load();
+    // The engine's price first: 125,99 on both sizes (Nike's margin), as the store shows it.
+    await runPriceSync({ skus: [KICKS], liveCheck: true });
+    expect(price(K_ID, 11)).toBe("125.99");
+
+    const input = { kind: "priceMatch" as const, items: [{ productId: K_ID, price: 110 }], source: "Concorrente" };
+    const preview = await previewOperation(input);
+    // The money as the owner reads it (a non-breaking space before the euro).
+    expect(preview).toMatchObject({ changes: 1, sample: [{ id: K_ID, before: "da 125,99\u00a0€", after: "da 110,00\u00a0€" }] });
+    expect(preview.warnings[0]).toMatch(/bloccat/);
+
+    const started = await startOperation(input);
+    await idle();
+    expect(await loadOperation(started.id)).toMatchObject({ status: "done", changed: 1 });
+    // Locks, written by the sync: the store shows them, and the next sync keeps them.
+    expect(manualPriceFor(await getOverrides(), KICKS, "42")).toBe(110);
+    expect(manualPriceFor(await getOverrides(), KICKS, "43")).toBe(110);
+    expect(price(K_ID, 11)).toBe("110.00");
+    expect(price(K_ID, 12)).toBe("110.00");
+    await runPriceSync({ skus: [KICKS], liveCheck: true });
+    expect(price(K_ID, 11)).toBe("110.00");
+
+    await undoOperation(started.id);
+    await idle();
+    expect(await loadOperation(started.id)).toMatchObject({ status: "undone" });
+    expect(manualPriceFor(await getOverrides(), KICKS, "42")).toBeNull();
+    expect(price(K_ID, 11)).toBe("125.99");
+    expect(price(K_ID, 12)).toBe("125.99");
+  });
+
+  it("a ranking's missing products imported: confirmed on KicksDB, into the catalog, published — a code KicksDB does not know, never", async () => {
+    const { db, mediaJobs, catalogProducts, inArray } = await load();
+    const { importSkus } = await import("@/server/vetrina/order-sources/import");
+    await db.delete(mediaJobs).where(inArray(mediaJobs.sku, [NEW_SKU]));
+    kicks.products.set(NEW_SKU, { ...kicksProduct, stockxId: "sx-stm-new", sku: NEW_SKU, category: "Sneakers", secondaryCategory: "Nike" });
+
+    // The dry run says what Publish would make, and makes nothing on the store.
+    const dry = await importSkus([NEW_SKU], { dryRun: true });
+    expect(dry.products).toMatchObject([{ sku: NEW_SKU, action: "create", error: null }]);
+    expect(store.created).toEqual([]);
+
+    // Written as a list may write it; and a code KicksDB answers "no" for.
+    const result = await importSkus([NEW_SKU.toLowerCase(), "STM-NOPE-1"], { dryRun: false });
+    expect(result).toMatchObject({ dryRun: false, created: 1, notFound: ["STM-NOPE-1"], unreachable: [], kicksdb: true });
+    expect(result.products).toMatchObject([{ sku: NEW_SKU, action: "create", productId: NEW_ID, error: null }]);
+    expect(store.created).toHaveLength(1);
+    // Priced as any Publish: Nike's 25 %.
+    expect(store.products.get(NEW_ID)?.map((v) => v.regular_price)).toEqual(["125.99", "125.99"]);
+    // In the Hub's catalog, KicksDB verified; the unknown code is not.
+    const rows = await db.select().from(catalogProducts).where(inArray(catalogProducts.sku, [NEW_SKU, "STM-NOPE-1"]));
+    expect(rows.map((r) => r.sku)).toEqual([NEW_SKU]);
   });
 });

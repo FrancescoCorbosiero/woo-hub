@@ -237,7 +237,13 @@ order, and only the products whose number must change are written.
 `GET`/`POST /api/v1/order-sources`, `GET`/`DELETE /api/v1/order-sources/{id}`,
 `POST /api/v1/order-sources/{id}/apply`: uploading a ranking (the agreed
 format, an LLM's answer as it came, a CSV…) and using it on a category, a
-brand or the whole catalog. See [order-sources.md](order-sources.md#the-api).
+brand or the whole catalog. And another shop's list compared with the shop:
+`GET /api/v1/order-sources/{id}/compare` (its prices against the shop's,
+beyond 2%; what the shop lacks; what is uncertain), `POST …/pairs` (an item
+paired by hand), `POST …/prices` (the `priceMatch` action: preview, start or
+proposal), `POST …/lookup` (KicksDB's products for items with no code) and
+`POST …/import` (the missing ones published, `admin`). See
+[order-sources.md](order-sources.md#the-api).
 
 ### Navigation menus
 

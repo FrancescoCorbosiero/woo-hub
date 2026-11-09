@@ -220,7 +220,7 @@ export async function runOrder(ctx: RunCtx, input: OrderInput): Promise<void> {
  */
 async function planFromSource(input: SourceOrderInput) {
   const [source, order] = await Promise.all([getSource(input.sourceId), readScopeOrder(input.term)]);
-  const match = matchAgainst(source.items, order.facts);
+  const match = matchAgainst(source.items, order.facts, source.pairs);
   const inScope = new Set(order.members.map((m) => m.id));
   const ranked = match.ranked.filter((id) => inScope.has(id));
   return { source, order, match, ranked, plan: planOrder(order.members, ranked, 1) };

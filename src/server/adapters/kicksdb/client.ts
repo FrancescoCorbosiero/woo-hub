@@ -318,6 +318,18 @@ export class KicksDbSource implements SourcePort {
   }
 
   /**
+   * The products a name may be — a product's title as another shop shows it
+   * ("Nike Dunk Low Retro White Black"): one page of KicksDB's own relevance
+   * ranking, its order kept. A browse's configured sort (release_date) would
+   * bury the product named under its newest relatives. Errors throw, as
+   * findBySku's do; no product is an empty list.
+   */
+  async searchByName(name: string, market: string): Promise<SourceProduct[]> {
+    const parsed = await this.searchPage({ query: name, market, page: 1 });
+    return parsed.data.map((p) => mapKicksProduct(p, market));
+  }
+
+  /**
    * The one product whose style code IS `sku`, or null when StockX has no such
    * product. Errors THROW — "the API could not answer" and "the answer is no"
    * are different facts and callers act on them differently.

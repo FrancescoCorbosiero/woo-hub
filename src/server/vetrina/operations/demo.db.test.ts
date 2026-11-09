@@ -13,7 +13,7 @@ const enabled = process.env.RUN_DB_TESTS === "1" && /@(localhost|127\.0\.0\.1)[:
 
 vi.mock("@/lib/env", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/env")>();
-  return { env: { ...real.env, VETRINA_SOURCE: "fixture" } };
+  return { ...real, env: { ...real.env, VETRINA_SOURCE: "fixture" } };
 });
 vi.mock("@/server/collections/runner", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/server/collections/runner")>();
@@ -30,6 +30,8 @@ const load = async () => ({
   ...(await import("@/server/vetrina/fixture-data")),
   ...(await import("./service")),
   ...(await import("./runner")),
+  ...(await import("@/server/vetrina/order-sources/service")),
+  ...(await import("@/server/vetrina/order-sources/compare")),
 });
 
 async function run(input: OperationInput): Promise<OperationView> {
@@ -48,10 +50,11 @@ async function undo(id: string): Promise<OperationView> {
 
 describe.skipIf(!enabled)("the catalog's actions on the demo shop", () => {
   beforeEach(async () => {
-    const { db, vetrinaOperations, storeIndex, smartCollections, forgetHomepagePresence, runFull } = await load();
+    const { db, vetrinaOperations, storeIndex, smartCollections, vetrinaOrderSources, forgetHomepagePresence, runFull } = await load();
     await db.delete(vetrinaOperations);
     await db.delete(storeIndex);
     await db.delete(smartCollections);
+    await db.delete(vetrinaOrderSources);
     const g = globalThis as Record<string, unknown>;
     for (const key of ["__vetrinaDemo", "__vetrinaDemoTerms", "__vetrinaOperations", "__storeHubCollections"]) delete g[key];
     forgetHomepagePresence();
@@ -281,5 +284,78 @@ describe.skipIf(!enabled)("the catalog's actions on the demo shop", () => {
     const rows = await listCollectionRows();
     expect(rows).toHaveLength(2);
     expect(rows.find((r) => r.id === id)?.termId).toBe(901);
+  });
+
+  it("matches prices to another shop's: the shop's own product takes its regular price, one on sale is left — «Annulla» puts it back", async () => {
+    const { demoShop, previewOperation, readIndexRowsById } = await load();
+    const p = demoShop().products.find((x) => !x.onSale)!;
+    const onSale = demoShop().products.find((x) => x.onSale)!;
+    const before = p.regularPrice;
+    const target = Math.round((before - 10) * 100) / 100;
+    const input: OperationInput = {
+      kind: "priceMatch",
+      items: [
+        { productId: p.id, price: target },
+        { productId: onSale.id, price: 50 },
+      ],
+      source: "Concorrente",
+    };
+    const preview = await previewOperation(input);
+    expect(preview).toMatchObject({ kind: "priceMatch", changes: 1 });
+    expect(preview.untouched).toEqual([{ reason: "in saldo: prima togli il saldo", count: 1 }]);
+
+    const op = await run(input);
+    expect(op).toMatchObject({ status: "done", changed: 1, label: "Prezzi allineati a «Concorrente» · 1 prodotto" });
+    expect(p).toMatchObject({ regularPrice: target, price: target });
+    expect(onSale.salePrice).not.toBe(50);
+    // The index learns the new price with the store's answer: the comparison shows it at once.
+    expect((await readIndexRowsById([p.id]))[0]).toMatchObject({ price: target });
+
+    expect(await undo(op.id)).toMatchObject({ status: "undone" });
+    expect(p).toMatchObject({ regularPrice: before, price: before });
+    expect((await readIndexRowsById([p.id]))[0]).toMatchObject({ price: before });
+  });
+
+  it("compares a ranking with the shop: prices beyond 2%, the missing, a pairing by hand that outlives the next upload", async () => {
+    const { demoShop, putSource, compareSource, pairItem, previewOperation } = await load();
+    const [a, b, c] = demoShop().products.filter((x) => !x.onSale);
+    const text = (items: unknown[]) => JSON.stringify({ name: "Concorrente", items });
+    const first = await putSource({
+      text: text([
+        { sku: a.sku, price: Math.round(a.price * 0.9 * 100) / 100 },
+        { name: b.name, price: b.price + 0.01 },
+        { sku: "DD1391-100", name: "Nike Dunk Low Retro White Black Panda", price: 119.99 },
+        { name: "Un nome che nessun prodotto ha", price: 99 },
+      ]),
+    });
+    const id = first.source.id;
+    const compared = await compareSource(id);
+    expect(compared.summary).toEqual({ items: 4, matched: 2, differ: 1, dearer: 1, cheaper: 0, missing: 2, importable: 0, ambiguous: 0 });
+    expect(compared.items[0]).toMatchObject({ status: "matched", product: { id: a.id }, gap: 11.1, differs: true });
+    // A cent is no difference.
+    expect(compared.items[1]).toMatchObject({ status: "matched", product: { id: b.id }, gap: 0, differs: false });
+    expect(compared.items[2]).toMatchObject({ status: "missing", sku: "DD1391-100", inCatalog: false });
+
+    // Paired by hand: the fourth is the third product of the shop.
+    const paired = await pairItem(id, 4, c.id);
+    expect(paired.items[3]).toMatchObject({ status: "matched", paired: true, product: { id: c.id } });
+
+    // The ranking uploaded again, in another order: the pairing holds, by the item, wherever it stands.
+    await putSource({
+      text: text([
+        { name: "Un nome che nessun prodotto ha", price: 99 },
+        { sku: a.sku, price: a.price },
+      ]),
+    });
+    const again = await compareSource(id);
+    expect(again.items[0]).toMatchObject({ status: "matched", paired: true, product: { id: c.id } });
+    // And the order the ranking gives follows it: the paired product first.
+    const order = await previewOperation({ kind: "sourceOrder", sourceId: id, term: null });
+    expect(order.sample[0]?.id).toBe(c.id);
+
+    // "Non è nel negozio": a name that fitted the wrong product is left out.
+    const none = await pairItem(id, 2, null);
+    expect(none.items[1]).toMatchObject({ status: "missing", paired: true, product: null });
+    expect(none.summary.matched).toBe(1);
   });
 });

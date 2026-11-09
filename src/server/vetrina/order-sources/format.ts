@@ -78,6 +78,30 @@ const ORIGIN_KEYS = ["origin", "source", "fonte", "url", "link"];
 const SKU_KEYS = ["sku", "stylecode", "style_code", "style", "code", "codice", "codice_stile", "mpn"];
 const ITEM_NAME_KEYS = ["name", "nome", "title", "titolo", "product", "prodotto"];
 const RANK_KEYS = ["rank", "position", "posizione", "pos"];
+const PRICE_KEYS = ["price", "prezzo", "current_price", "sale_price", "amount", "importo", "cost", "costo"];
+
+/**
+ * A price as a list writes it: 129.99, "129,99 €", "€ 1.299,00", "$129",
+ * "EUR 89". The last separator followed by one or two digits is the
+ * decimal one; a lone separator followed by three is a thousands one.
+ */
+export function priceOf(value: unknown): number | null {
+  if (typeof value === "number") return Number.isFinite(value) && value > 0 ? Math.round(value * 100) / 100 : null;
+  if (typeof value !== "string") return null;
+  const digits = value.replace(/[^\d.,]/g, "");
+  if (!/\d/.test(digits)) return null;
+  const last = Math.max(digits.lastIndexOf("."), digits.lastIndexOf(","));
+  let normal: string;
+  if (last < 0) normal = digits;
+  else {
+    const tail = digits.slice(last + 1);
+    const decimal = tail.length > 0 && tail.length <= 2;
+    const head = digits.slice(0, last).replace(/[.,]/g, "");
+    normal = decimal ? `${head}.${tail}` : `${head}${tail}`;
+  }
+  const n = Number.parseFloat(normal);
+  return Number.isFinite(n) && n > 0 && n < 1_000_000 ? Math.round(n * 100) / 100 : null;
+}
 
 /** One item: a string (a SKU or a name, by its look) or an object with a SKU and/or a name. */
 function itemOf(value: unknown): { item: OrderSourceItem; rank: number | null } | null {
@@ -94,8 +118,9 @@ function itemOf(value: unknown): { item: OrderSourceItem; rank: number | null } 
   const name = str(pick(obj, ITEM_NAME_KEYS));
   if (!sku && !name) return null;
   const rank = Number(pick(obj, RANK_KEYS));
+  const price = priceOf(pick(obj, PRICE_KEYS));
   return {
-    item: { sku: sku ? clip(sku, MAX_SKU) : null, name: name ? clip(name, MAX_NAME) : null },
+    item: { sku: sku ? clip(sku, MAX_SKU) : null, name: name ? clip(name, MAX_NAME) : null, ...(price != null ? { price } : {}) },
     rank: Number.isFinite(rank) ? rank : null,
   };
 }
@@ -252,6 +277,7 @@ function csvFields(line: string, delimiter: string): string[] {
 const HEADER_SKU = /^(sku|style ?code|style_code|codice|codice stile|code|mpn)$/i;
 const HEADER_NAME = /^(name|nome|title|titolo|product|prodotto)$/i;
 const HEADER_RANK = /^(rank|position|posizione|pos|#)$/i;
+const HEADER_PRICE = /^(price|prezzo|current price|sale price|amount|importo|cost|costo)$/i;
 
 /** Text that is not JSON: a CSV with a header, or one product per line. */
 function linesOf(text: string): { item: OrderSourceItem; rank: number | null }[] {
@@ -266,6 +292,7 @@ function linesOf(text: string): { item: OrderSourceItem; rank: number | null }[]
     const skuAt = header.findIndex((h) => HEADER_SKU.test(h));
     const nameAt = header.findIndex((h) => HEADER_NAME.test(h));
     const rankAt = header.findIndex((h) => HEADER_RANK.test(h));
+    const priceAt = header.findIndex((h) => HEADER_PRICE.test(h));
     if (skuAt >= 0 || nameAt >= 0) {
       return lines.slice(1).flatMap((line) => {
         const fields = csvFields(line, delimiter);
@@ -273,7 +300,9 @@ function linesOf(text: string): { item: OrderSourceItem; rank: number | null }[]
         const name = nameAt >= 0 ? fields[nameAt] || null : null;
         if (!sku && !name) return [];
         const rank = rankAt >= 0 ? Number(fields[rankAt]) : NaN;
-        return [{ item: { sku: sku ? clip(sku, MAX_SKU) : null, name: name ? clip(name, MAX_NAME) : null }, rank: Number.isFinite(rank) ? rank : null }];
+        const price = priceAt >= 0 ? priceOf(fields[priceAt]) : null;
+        const item = { sku: sku ? clip(sku, MAX_SKU) : null, name: name ? clip(name, MAX_NAME) : null, ...(price != null ? { price } : {}) };
+        return [{ item, rank: Number.isFinite(rank) ? rank : null }];
       });
     }
   }

@@ -146,7 +146,24 @@ export type OperationInput =
    * term itself, its sub-terms moving up to its parent. "Annulla" makes it
    * again and gives it back its products.
    */
-  | { kind: "termDelete"; taxonomy: TermTaxonomy; termId: number };
+  | { kind: "termDelete"; taxonomy: TermTaxonomy; termId: number }
+  /**
+   * "Allinea i prezzi": each product's sizes moved by one amount, so that its
+   * cheapest size costs `price` — the price another site (a list compared
+   * with the shop: order sources) shows for it. A product the Hub prices
+   * gets the new prices as locks, written through the ordinary sync, so the
+   * engine (KicksDB) never writes over them; a simple product the Hub does
+   * not price gets its own regular price. Left as they are, and said why: a
+   * product on sale, one with no price of the Hub's, one at that price
+   * already. "Annulla" puts each lock (or price) back while it is as the
+   * action left it.
+   */
+  | {
+      kind: "priceMatch";
+      items: { productId: number; price: number }[];
+      /** The list compared with the shop, by name: for the log's label. */
+      source?: string | null;
+    };
 
 export type OperationKind = OperationInput["kind"];
 

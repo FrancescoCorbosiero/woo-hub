@@ -17,10 +17,112 @@ export const MAX_SOURCE_ITEMS = 20_000;
 export const MAX_SOURCES = 50;
 export const MAX_SOURCE_NAME = 80;
 
-/** One product of a source, in its place: its SKU (the maker's style code), its name, or both. */
+/** One product of a source, in its place: its SKU (the maker's style code), its name, or both — and its price there, when the list gives one. */
 export interface OrderSourceItem {
   sku: string | null;
   name: string | null;
+  /** The price the other site shows (its cheapest size's), in the shop's currency; absent in older sources. */
+  price?: number | null;
+}
+
+/**
+ * A source's items paired by hand (the comparison, docs/order-sources.md):
+ * the shop's product an item is — or null, "none of the shop's" — by the
+ * item's key ("sku:DD1391100", or "name:nike dunk low panda" for an item
+ * with no SKU), so a pairing outlives the list's next upload, wherever the
+ * item stands in it. The matcher's own answer is used for the rest.
+ */
+export type SourcePairs = Record<string, number | null>;
+
+/** Above this difference (%) a price is said to differ: not the cents. */
+export const PRICE_GAP_PERCENT = 2;
+
+/** One item of a source against the shop: what the comparison shows. */
+export interface ComparedItem {
+  /** 1-based, in the source's order. */
+  position: number;
+  sku: string | null;
+  name: string | null;
+  /** The other site's price. */
+  price: number | null;
+  /** matched: a product of the shop; ambiguous: several could be it; missing: none. */
+  status: "matched" | "ambiguous" | "missing";
+  /** Paired by hand. */
+  paired: boolean;
+  product: { id: number; sku: string; name: string; price: number | null; onSale: boolean; status: string } | null;
+  /** The shop's price against the other site's, %: positive when the shop asks more. */
+  gap: number | null;
+  /** Beyond the threshold. */
+  differs: boolean;
+  /** For an ambiguous or missing item: the shop's products whose names come closest, to pair by hand. */
+  candidates: { id: number; sku: string; name: string }[];
+  /** A missing item the Hub's catalog has (KicksDB verified): Publish can make it. */
+  inCatalog: boolean;
+}
+
+/** A source against the shop, item by item: matched, prices compared, missing, uncertain. */
+export interface SourceComparison {
+  source: { id: string; name: string; origin: string | null };
+  /** The threshold the prices are compared with, %. */
+  threshold: number;
+  items: ComparedItem[];
+  summary: {
+    items: number;
+    matched: number;
+    /** Matched, both prices known, differing beyond the threshold. */
+    differ: number;
+    /** Of those, the shop asking more. */
+    dearer: number;
+    cheaper: number;
+    missing: number;
+    /** Of the missing, those the Hub's catalog has. */
+    importable: number;
+    ambiguous: number;
+  };
+}
+
+/** The products KicksDB has for one item of a source (the comparison's "Cerca"): closest first. */
+export interface SourceLookup {
+  position: number;
+  name: string | null;
+  sku: string | null;
+  matches: {
+    sku: string;
+    title: string;
+    brand: string;
+    image: string;
+    /** The words the names share over all their words, 0–1 (1: found by its SKU). */
+    score: number;
+    /** The Hub's catalog has it already. */
+    inCatalog: boolean;
+  }[];
+  /** KicksDB did not answer, in the owner's words. */
+  error: string | null;
+}
+
+/** An import of a source's missing products: what Publish made (or, on a dry run, would make), and what it could not. */
+export interface SourceImport {
+  dryRun: boolean;
+  products: {
+    sku: string;
+    title: string;
+    /** create: made; complete: given its sizes; reimport: made again; skip: left as it is (`reason`). */
+    action: "create" | "reimport" | "complete" | "skip";
+    productId: number | null;
+    permalink: string | null;
+    sizes: number;
+    reason: "alreadyOnStore" | "feedDelisted" | "inProgress" | "hiddenNoPhoto" | null;
+    error: string | null;
+  }[];
+  created: number;
+  skipped: number;
+  failed: number;
+  /** SKUs KicksDB has no product for: never published. */
+  notFound: string[];
+  /** SKUs KicksDB did not answer for: try again. */
+  unreachable: string[];
+  /** KicksDB is configured (without it, only what the Hub's catalog has is imported). */
+  kicksdb: boolean;
 }
 
 /** An item of a source that no product of the shop matched, at its place (1-based). */

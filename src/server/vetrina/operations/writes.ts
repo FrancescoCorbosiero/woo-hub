@@ -43,6 +43,7 @@ import * as repo from "./repo";
 import { pinnable, railFill, sectionMembers } from "./sections";
 import { heldByTermHides, heldTerms, standingTermHide, standingTermHides, termNewcomers } from "./standing";
 import { childrenIn, namedUnder, readTerms, removalRefusal, REST, snapshotOf, termIn, tiesOf } from "./term-facts";
+import { runPriceMatch, undoPriceMatch } from "./price-match";
 import { words } from "./words";
 
 /**
@@ -516,6 +517,8 @@ export async function runOperation(ctx: RunCtx): Promise<void> {
   if (input.kind === "sourceOrder") return runSourceOrder(ctx, input);
   // A term merged or deleted: its products, then the term itself (below).
   if (input.kind === "termMerge" || input.kind === "termDelete") return runTermRemoval(ctx, input);
+  // Prices matched to another site's: locks through the sync, or a simple product's own price (price-match.ts).
+  if (input.kind === "priceMatch") return runPriceMatch(ctx, input);
   if (!isCatalogInput(input)) return;
   const { ids, trees } = await resolveTarget(input.target, { wholeTerm: wholeTermAction(input) });
   ctx.tally.total = ids.length;
@@ -777,6 +780,7 @@ export async function runUndo(ctx: RunCtx, items: Item[], section: OperationSect
   if (ctx.op.kind === "margin") return undoMargin(ctx);
   // A term merged or deleted: made again first, then its products given back to it.
   if (ctx.op.kind === "termMerge" || ctx.op.kind === "termDelete") return undoTermRemoval(ctx, items);
+  if (ctx.op.kind === "priceMatch") return undoPriceMatch(ctx.client, items);
   const out: UndoTally = { restored: new Set(), kept: new Set(), failed: new Set(), held: new Set() };
   const of = (field: Item["field"]) => items.filter((i) => i.field === field);
   ctx.tally.done = 0;

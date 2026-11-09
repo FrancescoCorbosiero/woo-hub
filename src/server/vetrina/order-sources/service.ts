@@ -6,6 +6,7 @@ import {
   type OrderSourceCheck,
   type OrderSourceItem,
   type OrderSourceSummary,
+  type SourcePairs,
 } from "@/lib/vetrina/order-sources";
 import { decodeEntities } from "@/server/collections/index-rows";
 import { readIndexFacts, type IndexFacts } from "@/server/collections/repo";
@@ -14,7 +15,7 @@ import { compareFacts } from "@/server/vetrina/catalog";
 import { VetrinaError } from "@/server/vetrina/source";
 import { words } from "@/server/vetrina/operations/words";
 import { parseOrderSource, type ParsedSource } from "./format";
-import { matchSource, matchSummary, type SourceMatch } from "./match";
+import { matchPaired, matchSummary, type SourceMatch } from "./match";
 import * as repo from "./repo";
 
 /**
@@ -29,10 +30,12 @@ export async function shopForMatching(): Promise<IndexFacts[]> {
   return (await readIndexFacts()).sort(compareFacts("shop"));
 }
 
-export function matchAgainst(items: readonly OrderSourceItem[], facts: readonly IndexFacts[]): SourceMatch {
-  return matchSource(
+/** A source matched to the shop, its items paired by hand (the comparison) honoured. */
+export function matchAgainst(items: readonly OrderSourceItem[], facts: readonly IndexFacts[], pairs?: SourcePairs | null): SourceMatch {
+  return matchPaired(
     items,
     facts.map((f) => ({ id: f.id, sku: f.sku, name: decodeEntities(f.name) })),
+    pairs,
   );
 }
 
@@ -42,7 +45,7 @@ function summary(row: VetrinaOrderSourceRow, facts: readonly IndexFacts[]): Orde
     name: row.name,
     origin: row.origin,
     updatedAt: row.updatedAt.toISOString(),
-    ...matchSummary(row.items, matchAgainst(row.items, facts)),
+    ...matchSummary(row.items, matchAgainst(row.items, facts, row.pairs)),
   };
 }
 

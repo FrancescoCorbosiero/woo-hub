@@ -272,6 +272,7 @@ export const actEn: typeof actIt = {
       sourceOrder: "Arranging like the ranking",
       termMerge: "Merging",
       termDelete: "Deleting",
+      priceMatch: "Matching prices",
       delete: "Deleting",
     },
     undoing: "Undoing…",
