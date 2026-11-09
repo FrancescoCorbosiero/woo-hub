@@ -11,8 +11,9 @@ actions, the log, proposals — is in [operations.md](operations.md).
   `/pages`), the log (`/operations`).
 - **Every action, described**: `/actions` — the catalog's on products (hide,
   sale, tags, categories, a place on the homepage, a margin, the shop's
-  order, delete…), the homepage's on its sections and blocks, and the
-  menus' on their items ([menus.md](menus.md)).
+  order, delete…), the homepage's on its sections and blocks, the menus' on
+  their items ([menus.md](menus.md)), and the taxonomy's on the store's
+  categories, brands and tags ([taxonomy.md](taxonomy.md)).
 - **Proposals**, the safe way to act: `/proposals` previews an action and
   keeps it; `/proposals/{id}/confirm` runs it, only if the shop still gives
   that preview, only once, and only on a person's word ([tokens](#tokens)).
@@ -135,10 +136,26 @@ products, sub-terms' included), `view` (`soldout`, `onsale`, `hidden`,
 `?view=hidden&source=kicksdb`. A delete on a query acts on what it matches
 when the action is filed, not when its turn comes.
 
-### `GET /api/v1/catalog/terms?taxonomy=category|brand`
+### `GET /api/v1/catalog/terms?taxonomy=category|brand|tag`
 
-Every category (default) or brand: `id`, `name`, `slug`, `parent` (0 at the
-top), `path` ("Saldi › Nike"), `count` (its products, sub-terms' included).
+Every category (default), brand or tag: `id`, `name`, `slug`, `parent` (0 at
+the top; always 0 for a tag), `path` ("Saldi › Nike"), `count` (its products,
+sub-terms' included; a tag's as the store counts them).
+
+### The store's taxonomies
+
+`termCreate`, `termRename`, `termMove`, `termMerge` and `termDelete` (scope
+`taxonomy`; `GET /actions` describes each) make, rename, move, merge and
+delete the store's categories, brands and tags, proposed and confirmed like
+any other action. The first three are done at once; a merge and a deletion
+move the term's products one by one in the background (follow them at
+`/operations/{id}`). A rename keeps the term's slug; a renamed, moved or
+merged category or brand leaves its old name as an alias for Publish. See
+[taxonomy.md](taxonomy.md).
+
+```json
+{ "action": { "kind": "termMerge", "taxonomy": "category", "termId": 45, "into": 12 } }
+```
 
 ### `GET /api/v1/catalog/order?taxonomy=category&id=12&offset=0&limit=100`
 
@@ -285,7 +302,7 @@ before the confirmation makes a new proposal (`409`, as for any action).
 
 ### `GET /api/v1/actions`
 
-Every action the Vetrina can do: `kind`, `scope` (`catalog`, `homepage` or `menu`),
+Every action the Vetrina can do: `kind`, `scope` (`catalog`, `homepage`, `menu` or `taxonomy`),
 `title`, `description` (what it does, what to know before asking it),
 `undo` (how its "Annulla" works), a valid `example`, and its `input` as JSON
 Schema (draft 2020-12) — made from the very schema the server checks

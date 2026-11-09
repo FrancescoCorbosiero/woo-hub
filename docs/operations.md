@@ -9,13 +9,14 @@ owner says yes to: a person, never the program that asked.
 ## Actions
 
 Every change is an **action**: a named kind with a typed input, checked on the
-server, previewed, filed in the log, and undoable. Three families:
+server, previewed, filed in the log, and undoable. Four families:
 
 | Scope | Kinds | Runs |
 |---|---|---|
 | **catalog** — products | `hide`, `show`, `sale`, `unsale`, `tag`, `untag`, `categorize`, `uncategorize`, `pin`, `margin`, `order`, `sourceOrder`, `delete` | in the background, one at a time, product by product (`operations/runner.ts`, `writes.ts`, `remove.ts`) |
 | **homepage** — sections and blocks | `sectionSwitch`, `sectionMove`, `sectionsArrange`, `sectionAdd`, `sectionRemove`, `sectionSource`, `sectionEdit`, `blockEdit` | at once: one write to the page, a WordPress revision (`operations/page.ts`) |
 | **menu** — the site's navigation menus | `menuItemAdd`, `menuItemMove`, `menuItemRemove`, `menuItemRename`, `menuCreate`, `menuRename`, `menuDelete`, `menuLocation` | at once: the menu's changed items, in WordPress's batches, put back if WordPress takes only part; a whole menu in one request (`operations/menu.ts`, [menus.md](menus.md)) |
+| **taxonomy** — the store's categories, brands and tags | `termCreate`, `termRename`, `termMove` (at once); `termMerge`, `termDelete` (in the background, product by product, the term last) | `operations/terms.ts`, `writes.ts`; a renamed, moved or merged term leaves an alias for Publish ([taxonomy.md](taxonomy.md)) |
 
 The types are in `src/lib/vetrina/catalog-ops.ts`, `page-ops.ts` and `menu-ops.ts`. One
 registry describes them all for programs (`operations/registry.ts`): what each
