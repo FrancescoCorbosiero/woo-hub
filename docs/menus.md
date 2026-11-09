@@ -5,8 +5,9 @@ the Vetrina's **Menu** tab or over the API ([api.md](api.md#navigation-menus)),
 with the same log, proposals and "Annulla" as the catalog's and the
 homepage's actions ([operations.md](operations.md)). The owner adds the
 shop's categories and brands, the site's pages or a link, moves items up,
-down, under another or out of it, renames them and takes them away, from the
-phone.
+down, under another or out of it, renames them and takes them away — and
+makes, copies, renames and deletes whole menus, and chooses which menu each
+place of the theme shows — from the phone.
 
 The Hub talks to WordPress's own REST API (`wp/v2`), signed in with an
 Application Password: no plugin is involved, and nothing is installed on
@@ -55,7 +56,10 @@ the same WordPress screen.
 A **menu** (`MenuSummary`, `src/lib/menus/types.ts`) has a name and the
 **places** where the theme shows it (`locations`: the theme's own names,
 "Menu principale", "Menu del footer"); a menu shown nowhere is not on the
-site.
+site. The theme's places (`ThemePlace`, `GET /api/v1/menu-locations`) are the
+other way round: each place, and the menu it shows, or none. A theme with no
+places at all is a block theme, whose navigation is not these menus (the
+Menu tab says so).
 
 Its **items** are a tree: each under its `parent` (0: the top level), in
 order. An item leads to
@@ -87,12 +91,24 @@ it back.
 | `menuItemMove` | moves an item, with everything under it, under another item or to the top level, at a place there (counted once it has left its own: 3 puts it third) | puts it back under the same item, after the same neighbour |
 | `menuItemRemove` | takes an item away; its items take its place, in their order, as WordPress's menu editor does | puts it back where it was, with its label and settings, and its items back under it |
 | `menuItemRename` | gives an item a label of its own, or `null` to show its category's, brand's or page's name again | gives it back its label |
+| `menuCreate` | makes a menu, empty or with a copy of another's items (`copyOf`; items leading to something gone left out), in no place | deletes it, while it is as made and shown nowhere |
+| `menuRename` | gives a menu another name; two menus never share one (WordPress ignores case) | gives its name back, while it has the new one |
+| `menuDelete` | deletes a menu with its items — refused while a place shows it | makes it again with its items as they were (new ids), in no place |
+| `menuLocation` | puts a menu in a place of the theme instead of the one there, or `menuId: null` for none; the site shows it at once | puts back the menu the place showed, while the place shows what the action put there |
 
 Each is assessed first — the menu read, what cannot be done refused (an
 unknown category, a place out of range, an item under itself, a move to
 where it already is, a name it already has), the rest said in sentences —
 then written, then filed with its way back, in a single request: menus are
 written at once, not queued like catalog actions.
+
+**Reworking a menu without the site showing it half-done**: copy it
+("Duplica" on its "⋯", or `menuCreate` with `copyOf`), change the copy —
+the site does not show it — then put it in the main menu's place
+(`menuLocation`; on the tab, a confirmation says what the site will show
+instead of what). "Annulla", or the old menu put back in the place, undoes
+the switch in one step; a seasonal menu (Black Friday, the sales) goes in
+and out the same way, the everyday menu kept as it is.
 
 ## Writing a menu safely
 
@@ -126,6 +142,14 @@ only part was written and to check the menu in WordPress (the server's log
 names the refusal). Only a write that went through is filed in the log:
 a refused one has nothing to undo.
 
+A whole menu's write is one request (made, renamed, deleted, put in a
+place). A copy, and the undo of a deletion, make the items again level by
+level — a parent before its items, so each goes under its parent's new id —
+and if WordPress refuses one, the half-made menu is deleted again (its items
+go with it) and the owner reads that the menu was not made. A place is set
+through the menus' own list of places, as WordPress's API takes it: the menu
+put there gets it, taken from the one that had it.
+
 **"Annulla"** finds the items again by id and by their neighbour (the
 items around them may have changed meanwhile), and is refused when an item
 it would touch changed since — the newer change stands, as on the
@@ -155,8 +179,6 @@ copy, or on a menu the theme shows nowhere.
 
 ## Not covered (yet)
 
-- Creating, renaming or deleting a menu, and choosing which menu a theme
-  place shows (`menu-locations`): WordPress's screen for now.
 - WordPress's "add new top-level pages automatically" option, left as it is.
 - A block theme's navigation (`wp_navigation`).
 

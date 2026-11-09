@@ -311,8 +311,9 @@ keeping WordPress's rules; a pure planner (`src/lib/menus/plan.ts`) that
 renumbers the whole menu as WordPress's editor does and writes only what
 changes; `menuItemAdd`, `menuItemMove`, `menuItemRemove` and a fourth,
 `menuItemRename`, in the registry (scope `menu`), proposable over the API,
-with undo by id and neighbour; `GET /menus`, `/menus/{id}`, `/pages`; the
-Vetrina's Menu tab. **One change from the plan:** there is no
+with undo by id and neighbour; whole menus too (`menuCreate` with a copy,
+`menuRename`, `menuDelete`, `menuLocation` for the theme's places); `GET
+/menus`, `/menus/{id}`, `/menu-locations`, `/pages`; the Vetrina's Menu tab. **One change from the plan:** there is no
 `modified_gmt` to compare-and-swap on — WordPress's menu items carry no
 modified date — so the compare is a fingerprint of the menu's structure
 (`digest`), sent back as `expected` and kept in the proposal's preview, and

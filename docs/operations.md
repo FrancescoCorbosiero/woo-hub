@@ -15,7 +15,7 @@ server, previewed, filed in the log, and undoable. Three families:
 |---|---|---|
 | **catalog** — products | `hide`, `show`, `sale`, `unsale`, `tag`, `untag`, `categorize`, `uncategorize`, `pin`, `margin`, `order`, `sourceOrder`, `delete` | in the background, one at a time, product by product (`operations/runner.ts`, `writes.ts`, `remove.ts`) |
 | **homepage** — sections and blocks | `sectionSwitch`, `sectionMove`, `sectionsArrange`, `sectionAdd`, `sectionRemove`, `sectionSource`, `sectionEdit`, `blockEdit` | at once: one write to the page, a WordPress revision (`operations/page.ts`) |
-| **menu** — the site's navigation menus | `menuItemAdd`, `menuItemMove`, `menuItemRemove`, `menuItemRename` | at once: the menu's changed items, in WordPress's batches, put back if WordPress takes only part (`operations/menu.ts`, [menus.md](menus.md)) |
+| **menu** — the site's navigation menus | `menuItemAdd`, `menuItemMove`, `menuItemRemove`, `menuItemRename`, `menuCreate`, `menuRename`, `menuDelete`, `menuLocation` | at once: the menu's changed items, in WordPress's batches, put back if WordPress takes only part; a whole menu in one request (`operations/menu.ts`, [menus.md](menus.md)) |
 
 The types are in `src/lib/vetrina/catalog-ops.ts`, `page-ops.ts` and `menu-ops.ts`. One
 registry describes them all for programs (`operations/registry.ts`): what each
@@ -108,7 +108,7 @@ process (so its actions are filed with `via: "assistant"`):
 | read the homepage | `readHomepage()` — `src/server/api/reads.ts` |
 | find products | `readProducts(query)` — the query an action's target takes |
 | list categories, brands | `listTerms(taxonomy)` — `src/server/api/catalog-order.ts` |
-| read the menus, the pages | `listMenus()`, `readMenu(id)` (with its `digest`), `listPages()` — `src/server/api/menus.ts` |
+| read the menus, the places, the pages | `listMenus()`, `readMenu(id)` (with its `digest`), `listPlaces()`, `listPages()` — `src/server/api/menus.ts` |
 | read the log | `listOperations(limit)` |
 | propose an action | `propose(action, "assistant", by)` — one tool per kind from the registry, its input the kind's JSON Schema |
 | confirm | `confirmProposal(id, by)` — `by` a person (`isPerson`), never the assistant's own token |

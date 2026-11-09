@@ -257,11 +257,17 @@ else WordPress links to, with its `type`, `object` and `id`).
 `GET /api/v1/pages` — the site's published pages (`id`, `title`, `parent`,
 `url`), for an item that leads to one.
 
-The actions are `menuItemAdd`, `menuItemMove`, `menuItemRemove` and
-`menuItemRename` (`GET /actions` describes each), proposed and confirmed
-like any other, and written at once on the yes. Send the menu's `digest`
-back as `expected` — refused (`409 stale`) if the menu changed since you
-read it:
+`GET /api/v1/menu-locations` — the theme's places for a menu: `slug` (what
+`menuLocation` takes), `name`, and the `menu` each shows (`{ id, name }`, or
+null). None at all: a block theme, whose navigation is not these menus.
+
+The actions on items are `menuItemAdd`, `menuItemMove`, `menuItemRemove` and
+`menuItemRename`; on whole menus `menuCreate` (empty, or `copyOf` a menu),
+`menuRename`, `menuDelete` (refused while a place shows the menu) and
+`menuLocation` (`{ location, menuId }`, null for none). `GET /actions`
+describes each; they are proposed and confirmed like any other, and written
+at once on the yes. Send the menu's `digest` back as `expected` — refused
+(`409 stale`) if the menu changed since you read it:
 
 ```json
 { "action": { "kind": "menuItemAdd", "menuId": 2, "items": [{ "kind": "category", "id": 12 }, { "kind": "link", "url": "/saldi", "label": "Saldi" }],
