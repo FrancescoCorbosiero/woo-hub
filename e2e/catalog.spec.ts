@@ -32,8 +32,12 @@ async function undoLastAction(page: Page) {
   await open(page, "/vetrina");
   await page.getByRole("link", { name: "Attività" }).filter({ visible: true }).first().click();
   const log = sheet(page, "Attività");
-  await log.getByRole("button", { name: "Annulla" }).first().click();
-  await expect(log.getByText("Annullata").first()).toBeVisible({ timeout: 30_000 });
+  // The newest action's own row: the log may hold older ones, undone or not, from other tests.
+  const newest = log.getByRole("listitem").first();
+  // An order is written product by product: its "Annulla" comes once it is done…
+  await newest.getByRole("button", { name: "Annulla" }).click({ timeout: 30_000 });
+  // …and its undo too, product by product.
+  await expect(newest).toContainText("Annullata", { timeout: 30_000 });
 }
 
 test.beforeEach(async ({ page }) => {
