@@ -3,6 +3,7 @@ import { storeClient } from "@/server/collections/store";
 import type { VetrinaOperationRow } from "@/server/db/schema";
 import { forgetHomepagePresence } from "@/server/vetrina/catalog";
 import { VetrinaError } from "@/server/vetrina/source";
+import { isWriter, NOT_WRITER } from "@/server/writer";
 import { messageOf } from "./live";
 import * as repo from "./repo";
 import { words } from "./words";
@@ -19,7 +20,9 @@ import { runOperation, runUndo, sweepTermHides, type RunCtx, type Tally } from "
  * State lives on globalThis, like the automatic categories' runs: the
  * instrumentation bundle and the server actions each get their own copy of
  * this module. A restart loses the queue: what it left running is marked
- * interrupted (recover()), never resumed.
+ * interrupted (recover()), never resumed. So it runs in one process only, the
+ * writer (HUB_ROLE, src/server/writer.ts): anywhere else nothing is queued,
+ * and nothing is marked — the running actions there are the writer's.
  *
  * A job runs in the language of the request that queued it (words.ts): the
  * error it records reads in the starter's words.
@@ -55,6 +58,8 @@ export function isQueued(id: string): boolean {
  * far it got. Undoing what it did stays possible.
  */
 export function recover(): Promise<void> {
+  // Not the writer: what runs is the writer's, not cut off by this process's start.
+  if (!isWriter()) return Promise.resolve();
   const s = state();
   s.recovered ??= repo
     .markInterrupted({ run: words().error.interrupted, undo: words().error.undoInterrupted })
@@ -70,6 +75,8 @@ export function recover(): Promise<void> {
 }
 
 function enqueue(id: string, job: () => Promise<void>): void {
+  // Its callers refuse first (service.ts mustWrite): reaching here outside the writer is a missed check.
+  if (!isWriter()) throw new Error(NOT_WRITER);
   const s = state();
   s.queued.push(id);
   s.chain = s.chain.then(async () => {
@@ -111,6 +118,8 @@ const MOVES = new Set<VetrinaOperationRow["kind"]>(["categorize", "uncategorize"
  * moved products between categories.
  */
 export function queueSweep(): Promise<void> {
+  // Not the writer: the writer's own sweeps hide them.
+  if (!isWriter()) return Promise.resolve();
   const s = state();
   if (s.sweep) return s.sweep;
   let done!: () => void;

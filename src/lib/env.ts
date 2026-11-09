@@ -58,6 +58,13 @@ const EnvSchema = z.object({
   HUB_API_TOKEN: z.string().min(24).optional(),
   HUB_API_TOKENS: blankIsUnset(z.string().optional()),
 
+  // The one process that writes in the background (src/server/writer.ts,
+  // docs/deploy.md): the scheduler, the catalog's actions, the automatic
+  // categories, the Sync tab's live apply. "writer" (default) runs them;
+  // "web" serves the screens and the API but refuses them — for any second
+  // process on this shop's database, which must never become a second writer.
+  HUB_ROLE: blankIsUnset(z.enum(["writer", "web"]).optional()),
+
   // Automatic self-repair inside the daily scheduler: put back missing
   // pictures / brand / category on products already online. OFF by default —
   // it is the only pass that WRITES to the live store unattended, and arming

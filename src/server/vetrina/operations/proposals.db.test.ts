@@ -215,4 +215,29 @@ describe.skipIf(!enabled)("proposals on the demo shop", () => {
     expect(await loadOperation(started.operation.id)).toMatchObject({ status: "done", actor: "token:script" });
   });
 
+  it("from a process that is not the writer: the writer's running actions left alone, none started, a yes kept open", async () => {
+    const { env } = await import("@/lib/env");
+    const { db, vetrinaOperations, demoShop, listOperations, startOperation, propose, confirmProposal, loadProposal } = await load();
+    const p = demoShop().products.find((x) => x.visibility === "visible")!;
+    const hide = { kind: "hide" as const, target: { kind: "ids" as const, ids: [p.id] } };
+    // An action the writer is running, as the log has it (the demo shop's log started before it).
+    await (await import("./standing")).logSince();
+    const [running] = await db.insert(vetrinaOperations).values({ kind: "hide", input: hide, label: "1 prodotto nascosto", total: 1 }).returning();
+
+    env.HUB_ROLE = "web";
+    try {
+      // Reading the log here never marks it cut off by a restart: it is not this process's.
+      expect((await listOperations()).find((o) => o.id === running.id)?.status).toBe("running");
+      // Refused before anything is filed: no row waits for a runner that is not here.
+      expect((await refusal(startOperation(hide))).code).toBe("not_configured");
+      expect(await db.select().from(vetrinaOperations)).toHaveLength(1);
+      // A proposal writes nothing, so it is made; its yes waits for the writer, and the proposal stays open.
+      const proposal = await propose(hide, "api", ASSISTANT);
+      expect((await refusal(confirmProposal(proposal.id, OWNER))).code).toBe("not_configured");
+      expect(await loadProposal(proposal.id)).toMatchObject({ status: "open", confirmedBy: null });
+      expect(p.visibility).toBe("visible");
+    } finally {
+      env.HUB_ROLE = undefined;
+    }
+  });
 });

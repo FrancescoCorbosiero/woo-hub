@@ -18,6 +18,7 @@ import type { VetrinaOperationRow } from "@/server/db/schema";
 import { readCatalogTrees, readTermProducts } from "@/server/vetrina/catalog";
 import { readRail } from "@/server/vetrina/service";
 import { VetrinaError } from "@/server/vetrina/source";
+import { isWriter, NOT_WRITER } from "@/server/writer";
 import { termKeyOf } from "./context";
 import { checkMarginUndo, loadTermMargin as readTermMargin } from "./margin";
 import { labelText, standingSales, undoable } from "./plan";
@@ -42,6 +43,15 @@ import { words } from "./words";
 export { shopToday };
 
 const iso = (date: Date | null) => (date ? date.toISOString() : null);
+
+/**
+ * The catalog's actions run only in the process that writes (HUB_ROLE,
+ * src/server/writer.ts): refused here, before anything is filed — a row
+ * filed where no runner takes it would wait for nothing.
+ */
+function mustWrite(): void {
+  if (!isWriter()) throw new VetrinaError("not_configured", NOT_WRITER, 503);
+}
 
 export function operationView(row: VetrinaOperationRow, now = Date.now(), sectionKey?: string | null): OperationView {
   // A homepage action with no way back on file (a fixed list pointed elsewhere) has no "Annulla".
@@ -81,6 +91,7 @@ export async function previewOperation(input: OperationInput): Promise<Operation
  * `by`: who asked (src/lib/actors.ts), null when nobody is signed in.
  */
 export async function startOperation(input: OperationInput, via: OperationVia = "app", by: Actor | null = null): Promise<OperationView> {
+  mustWrite();
   await recover();
   // In demo mode the log of this demo shop starts no later than its first action.
   await logSince();
@@ -160,6 +171,8 @@ export async function undoOperation(id: string, by: Actor | null = null): Promis
     const undone = await undoPageAction(row, actorOf(by));
     return operationView(undone.row, Date.now(), undone.sectionKey);
   }
+  // A catalog action's undo is queued like the action itself: in the writer only.
+  mustWrite();
   if (row.section) {
     // A section deleted since has nothing to put back: the undo still takes back the categories the pin added.
     const rail = await readRail(row.section.key).then(
@@ -226,6 +239,7 @@ export async function loadTermActions(taxonomy: CatalogTaxonomy, id: number): Pr
 
 /** "Nascondi i nuovi arrivati": a hidden term's newcomers hidden now, rather than at the next check. */
 export async function hideTermNewcomers(): Promise<void> {
+  mustWrite();
   await recover();
   await queueSweep();
 }

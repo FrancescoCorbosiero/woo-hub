@@ -382,7 +382,9 @@ an hour's grace.
 `SCHEDULER=on|off` overrides the default (on in production, off in dev). The
 scheduler needs a long-running server — `next start`, Docker, a VPS — not a
 serverless platform that freezes the process between requests. Run a
-single instance, or every sync runs once per instance.
+single instance, or every sync runs once per instance; any other process on
+the same database runs with `HUB_ROLE=web` and starts no background writer
+([docs/deploy.md](docs/deploy.md#one-writer-per-shop)).
 
 If you'd rather drive syncs from an external scheduler (crontab, systemd
 timer, an uptime service), set `SCHEDULER=off` and `CRON_SECRET`, then hit
