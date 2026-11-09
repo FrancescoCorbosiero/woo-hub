@@ -18,6 +18,7 @@ import type { CollectionCondition, HoldReason, IndexedAttribute, IndexedTerm } f
 import type { Plan, PlanItem, ApplyResult, SourceProduct } from "@core/core-spine";
 import type { StoreOverrides } from "@/server/overrides/model";
 import type { ActionInput, ActionKind, OperationPreview, OperationVia, OperationView } from "@/lib/vetrina/catalog-ops";
+import type { OperationMenuRecord } from "@/lib/vetrina/menu-ops";
 import type { OperationPageRecord } from "@/lib/vetrina/page-ops";
 import type { OrderSourceItem } from "@/lib/vetrina/order-sources";
 import type { ProposalStatus } from "@/lib/vetrina/proposals";
@@ -654,6 +655,11 @@ export interface OperationLabelParams {
   shows?: string;
   /** A block's texts: the block's name ("Slider"). */
   block?: string;
+  /** A menu action: the menu's name ("Menu principale"). */
+  menu?: string;
+  /** A menu action: the item's name as it showed ("Saldi"); a rename's new name in `renamed` (null: back to its target's). */
+  item?: string;
+  renamed?: string | null;
 }
 
 /**
@@ -692,6 +698,8 @@ export const vetrinaOperations = pgTable(
     section: jsonb("section").$type<OperationSectionRecord | null>(),
     // A homepage action: its way back, and how "Annulla" finds the section again (null for the catalog's).
     page: jsonb("page").$type<OperationPageRecord | null>(),
+    // A menu action: its way back, and how "Annulla" finds the items again (null for every other kind).
+    menu: jsonb("menu").$type<OperationMenuRecord | null>(),
     // How its undo went: products put back, left alone (changed since), refused.
     undo: jsonb("undo").$type<OperationUndoOutcome | null>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

@@ -2,6 +2,7 @@ import "server-only";
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql, type SQL } from "drizzle-orm";
 import type { ScopedPricingRule } from "@core/config";
 import { OPERATION_UNDO_DAYS, type OperationInput, type OperationKind, type OperationVia } from "@/lib/vetrina/catalog-ops";
+import type { MenuActionInput, OperationMenuRecord } from "@/lib/vetrina/menu-ops";
 import type { OperationPageRecord, PageActionInput } from "@/lib/vetrina/page-ops";
 import { db } from "@/server/db/client";
 import { rowsOf } from "@/server/db/rows";
@@ -48,6 +49,25 @@ export async function insertOperation(row: {
   actor: string | null;
 }): Promise<VetrinaOperationRow> {
   const [inserted] = await db.insert(vetrinaOperations).values(row).returning();
+  return inserted;
+}
+
+/**
+ * A menu action, filed once written: done at once (menu.ts), so its row
+ * starts done — with its way back.
+ */
+export async function insertMenuOperation(row: {
+  input: MenuActionInput;
+  label: string;
+  labelParams: OperationLabelParams;
+  via: OperationVia;
+  actor: string | null;
+  menu: OperationMenuRecord;
+}): Promise<VetrinaOperationRow> {
+  const [inserted] = await db
+    .insert(vetrinaOperations)
+    .values({ ...row, kind: row.input.kind, termKey: null, status: "done", done: 1, total: 1, changed: 1, finishedAt: new Date() })
+    .returning();
   return inserted;
 }
 

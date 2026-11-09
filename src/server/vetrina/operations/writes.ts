@@ -1,6 +1,7 @@
 import "server-only";
 import { hubConfig } from "@/config";
 import type { ActionInput, OperationInput, TermKey } from "@/lib/vetrina/catalog-ops";
+import { isMenuActionKind } from "@/lib/vetrina/menu-ops";
 import { isPageActionKind } from "@/lib/vetrina/page-ops";
 import { queueProductWrite, requestCheck } from "@/server/collections/runner";
 import { collectionsByTerm } from "@/server/collections/service";
@@ -495,13 +496,13 @@ const sameList = (a: readonly number[], b: readonly number[]) => a.length === b.
  * ---------------------------------------------------------------- */
 
 /** An action on products: every kind the background runner knows. */
-const isCatalogInput = (input: ActionInput): input is OperationInput => !isPageActionKind(input.kind);
+const isCatalogInput = (input: ActionInput): input is OperationInput => !isPageActionKind(input.kind) && !isMenuActionKind(input.kind);
 
 /** Run an action over its target, resolved again now: a catalog query acts on what it matches when it runs. */
 export async function runOperation(ctx: RunCtx): Promise<void> {
   const input = ctx.op.input;
   // The homepage's own actions are written at once (page.ts), never queued here.
-  if (isPageActionKind(input.kind)) throw new Error(`a homepage action is not run in the background: ${input.kind}`);
+  if (isPageActionKind(input.kind) || isMenuActionKind(input.kind)) throw new Error(`an action done at once is not run in the background: ${input.kind}`);
   // A margin is a pricing rule and a reprice, not writes product by product (margin.ts).
   if (input.kind === "margin") return runMargin(ctx, input);
   // An order is placed over its term's whole order, not product by product over the target (order.ts).

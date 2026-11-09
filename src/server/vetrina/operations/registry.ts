@@ -1,8 +1,10 @@
 import "server-only";
 import { z } from "zod";
 import { OPERATION_UNDO_DAYS, type ActionInput, type ActionKind, type OperationTarget } from "@/lib/vetrina/catalog-ops";
+import { isMenuActionKind } from "@/lib/vetrina/menu-ops";
 import { isPageActionKind } from "@/lib/vetrina/page-ops";
 import { OperationInputSchema, parseOperationInput } from "./input";
+import { MenuActionInputSchema, parseMenuActionInput } from "./menu-input";
 import { PageActionInputSchema, parsePageActionInput } from "./page-input";
 import { words } from "./words";
 
@@ -18,10 +20,10 @@ import { words } from "./words";
  * (labels, previews, refusals) stays in his language.
  */
 
-export type ActionScope = "catalog" | "homepage";
+export type ActionScope = "catalog" | "homepage" | "menu";
 
 export interface ActionSpec<K extends ActionKind = ActionKind> {
-  /** The catalog's actions change products; the homepage's change its sections and blocks. */
+  /** The catalog's actions change products; the homepage's its sections and blocks; a menu's the site's navigation menus. */
   scope: ActionScope;
   title: string;
   /** What it does, and what to know before asking it. */
@@ -34,6 +36,8 @@ export interface ActionSpec<K extends ActionKind = ActionKind> {
 
 const UNDO_PRODUCTS = `Within ${OPERATION_UNDO_DAYS} days: each value it wrote goes back to what it was, where the shop still shows the value the action wrote (a value changed since stays).`;
 const UNDO_SECTION = `Within ${OPERATION_UNDO_DAYS} days, while the section is as the action left it (found by its fingerprint wherever it is now): the way back is written over the page as it is. Refused when the section changed since — the newer change stands.`;
+
+const UNDO_MENU_ITEM = "while it is as the action left it (found by its id; the items around it may have changed). Refused when it changed since — the newer change stands.";
 
 const SECTION = "category:saldi-sneakers-outlet#0";
 const ONE: OperationTarget = { kind: "ids", ids: [4810] };
@@ -217,6 +221,42 @@ export const ACTIONS: { [K in ActionKind]: ActionSpec<K> } = {
     undo: `Within ${OPERATION_UNDO_DAYS} days, while the block is as the action left it: its texts go back.`,
     example: { kind: "blockEdit", path: "3", blockName: "golden-hive/faq", fields: { title: "Domande frequenti" } },
   },
+  menuItemAdd: {
+    scope: "menu",
+    title: "Add items to a navigation menu",
+    description:
+      "Add items, in order, to one of the site's navigation menus (GET /api/v1/menus): product categories and brands by id (GET /api/v1/catalog/terms), pages by id, " +
+      "or links (`url`, `label`). `place`: under an item (`parent`) or at the top level, at a 1-based `position` there, else after the last. " +
+      "An item shows its category's, brand's or page's name, and follows it when renamed, unless given a `label`. The menu is renumbered as WordPress's own editor numbers it.",
+    undo: `Within ${OPERATION_UNDO_DAYS} days: the items it added are taken away, each ${UNDO_MENU_ITEM} An item given items of its own since stays.`,
+    example: { kind: "menuItemAdd", menuId: 2, items: [{ kind: "category", id: 12 }, { kind: "brand", id: 7, label: "Nike" }], place: { parent: 31, position: 1 } },
+  },
+  menuItemMove: {
+    scope: "menu",
+    title: "Move a navigation menu item",
+    description:
+      "Move an item of a navigation menu, with every item under it, to another place: under another item (`place.parent`) or at the top level, " +
+      "at a 1-based `place.position` among the items there once it has left its own place (so 3 puts it third), else after the last. Not under itself or its own items.",
+    undo: `Within ${OPERATION_UNDO_DAYS} days, ${UNDO_MENU_ITEM} It goes back under the same item, after the same neighbour.`,
+    example: { kind: "menuItemMove", menuId: 2, itemId: 45, place: { parent: 0, position: 2 } },
+  },
+  menuItemRemove: {
+    scope: "menu",
+    title: "Take an item out of a navigation menu",
+    description:
+      "Take an item out of a navigation menu; the items under it take its place, in their order, as WordPress's menu editor does. " +
+      "The category, brand or page it led to stays in the shop.",
+    undo: `Within ${OPERATION_UNDO_DAYS} days: the item comes back where it was, after the same neighbour, with its label and settings, and its items go back under it — those still where it left them. Refused when the item it was under is gone.`,
+    example: { kind: "menuItemRemove", menuId: 2, itemId: 45 },
+  },
+  menuItemRename: {
+    scope: "menu",
+    title: "Rename a navigation menu item",
+    description:
+      "Give a navigation menu item a `label` of its own, or `null` to show its category's, brand's or page's own name again (and follow it when renamed). A link always keeps a label.",
+    undo: `Within ${OPERATION_UNDO_DAYS} days, while it has the label the action gave it: its label goes back.`,
+    example: { kind: "menuItemRename", menuId: 2, itemId: 45, label: "Saldi" },
+  },
 };
 
 export const ACTION_KINDS = Object.keys(ACTIONS) as ActionKind[];
@@ -224,7 +264,7 @@ export const ACTION_KINDS = Object.keys(ACTIONS) as ActionKind[];
 /** Each kind's own schema, out of the two unions the server checks with. */
 function schemasByKind(): Map<string, z.ZodType> {
   const out = new Map<string, z.ZodType>();
-  for (const option of [...OperationInputSchema.options, ...PageActionInputSchema.options]) {
+  for (const option of [...OperationInputSchema.options, ...PageActionInputSchema.options, ...MenuActionInputSchema.options]) {
     const kind = (option as z.ZodObject<{ kind: z.ZodLiteral<string> }>).shape.kind.value;
     out.set(kind, option);
   }
@@ -265,9 +305,11 @@ export function describeActions(): ActionDescription[] {
   return described;
 }
 
-/** Any action's input, checked — the catalog's or the homepage's, by its kind; else what is wrong, said plainly. */
+/** Any action's input, checked — the catalog's, the homepage's or a menu's, by its kind; else what is wrong, said plainly. */
 export function parseAction(input: unknown): { ok: true; data: ActionInput } | { ok: false; error: string } {
   const kind = typeof input === "object" && input != null ? (input as { kind?: unknown }).kind : undefined;
   if (typeof kind !== "string" || !(kind in ACTIONS)) return { ok: false, error: words().input.operation };
-  return isPageActionKind(kind) ? parsePageActionInput(input) : parseOperationInput(input);
+  if (isPageActionKind(kind)) return parsePageActionInput(input);
+  if (isMenuActionKind(kind)) return parseMenuActionInput(input);
+  return parseOperationInput(input);
 }

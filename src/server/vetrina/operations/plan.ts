@@ -523,6 +523,14 @@ export function labelText(p: OperationLabelParams, w: Words = words()): string {
       return w.label.sectionEdit(p.section ?? "");
     case "blockEdit":
       return w.label.blockEdit(p.block ?? "");
+    case "menuItemAdd":
+      return w.label.menuItemAdd(p.count, p.item ?? "", p.menu ?? "");
+    case "menuItemMove":
+      return w.label.menuItemMove(p.item ?? "", p.menu ?? "");
+    case "menuItemRemove":
+      return w.label.menuItemRemove(p.item ?? "", p.menu ?? "");
+    case "menuItemRename":
+      return w.label.menuItemRename(p.item ?? "", p.renamed ?? null, p.menu ?? "");
   }
 }
 

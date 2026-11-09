@@ -49,6 +49,11 @@ export const opsEn: typeof opsIt = {
     sectionSource: (section: string, shows: string) => `“${section}” now shows ${shows}`,
     sectionEdit: (section: string) => `“${section}” published`,
     blockEdit: (block: string) => `Texts of “${block}” saved`,
+    menuItemAdd: (count: number, item: string, menu: string) => (count === 1 ? `Item “${item}” added · ${menu}` : `${n(count)} items added · ${menu}`),
+    menuItemMove: (item: string, menu: string) => `Item “${item}” moved · ${menu}`,
+    menuItemRemove: (item: string, menu: string) => `Item “${item}” removed · ${menu}`,
+    menuItemRename: (item: string, renamed: string | null, menu: string) =>
+      renamed == null ? `Item “${item}” back to its own name · ${menu}` : `Item “${item}” renamed “${renamed}” · ${menu}`,
   },
 
   untouched: {
@@ -263,6 +268,46 @@ export const opsEn: typeof opsIt = {
     sectionsChanged: "The homepage's sections changed since: undoing would take away the newer changes.",
     neighbourGone: (title: string) => `The section “${title}” stood next to is gone: put it back with “New section”.`,
     notUndoable: "This section showed a fixed list or tags: it cannot be put back from here.",
+  },
+
+  menu: {
+    top: (position: number, last: boolean) => (position === 1 ? "at the top of the menu" : last ? "at the bottom of the menu" : `at place ${n(position)} of the menu`),
+    under: (parent: string, position: number, last: boolean) =>
+      position === 1 ? `under “${parent}”, first` : last ? `under “${parent}”, last` : `under “${parent}”, at place ${n(position)}`,
+    add: (names: readonly string[], menu: string, where: string) =>
+      names.length === 1
+        ? `“${names[0]}” joins the menu “${menu}”, ${where}.`
+        : `${n(names.length)} items join the menu “${menu}”, ${where}: ${nameList(names.map((name) => `“${name}”`))}.`,
+    move: (title: string, where: string) => `“${title}” moves ${where}.`,
+    withItems: (count: number) => (count === 1 ? "Its item moves with it." : `Its ${n(count)} items move with it.`),
+    remove: (title: string, menu: string) => `“${title}” leaves the menu “${menu}”.`,
+    lifted: (names: readonly string[]) =>
+      names.length === 1
+        ? `Its item “${names[0]}” takes its place.`
+        : `Its ${n(names.length)} items take its place: ${nameList(names.map((name) => `“${name}”`))}.`,
+    rename: (from: string, to: string) => `“${from}” will be called “${to}”.`,
+    ownName: (from: string, name: string) => `“${from}” goes back to the name of what it leads to: “${name}”.`,
+    shownAt: (places: readonly string[]) =>
+      places.length === 0 ? "The theme shows this menu nowhere: for now it is not on the site." : `On the site it shows in: ${nameList(places)}.`,
+    already: (name: string, parent: string | null) => (parent ? `“${name}” is already in the menu, under “${parent}”.` : `“${name}” is already in the menu.`),
+    invalid: (name: string) => `“${name}” leads to something that is gone: WordPress leaves it off the site.`,
+    stale: "The menu changed in the meantime: read it again and retry.",
+    noMenu: "This menu is no longer on the site.",
+    noItem: "This item is no longer in the menu.",
+    noParent: "The item to put it under is not in the menu.",
+    position: (max: number) => `The place goes from 1 to ${n(max)}.`,
+    intoItself: "An item cannot go under itself or under its own items.",
+    samePlace: (title: string) => `“${title}” is already there.`,
+    sameName: (title: string) => `“${title}” is already called that.`,
+    noCategory: (id: number) => `The shop has no category ${id}.`,
+    noBrand: (id: number) => `The shop has no brand ${id}.`,
+    noPage: (id: number) => `The site has no published page ${id}.`,
+    linkName: "A link always has a name of its own.",
+    writeFailed: "WordPress did not take the change: the menu is as it was.",
+    halfWritten: "WordPress took only part of the change and putting it back failed: check the menu in WordPress.",
+    changedSince: (title: string) => `“${title}” changed after this action: the newer change stands.`,
+    gotChildren: (title: string) => `Other items were put under “${title}” since: it stays as it is.`,
+    parentGone: (title: string) => `The item “${title}” was under is gone: it cannot be put back.`,
   },
 
   proposal: {

@@ -1,4 +1,5 @@
 import type { CatalogQuery, CatalogTaxonomy } from "./catalog";
+import type { MenuActionInput } from "./menu-ops";
 import type { PageActionInput, PageActionKind } from "./page-ops";
 
 /**
@@ -134,10 +135,11 @@ export type OperationInput =
 export type OperationKind = OperationInput["kind"];
 
 /**
- * Every action the log files: the catalog's, on products (above), and the
- * homepage's own, on its sections and blocks (page-ops.ts).
+ * Every action the log files: the catalog's, on products (above), the
+ * homepage's own, on its sections and blocks (page-ops.ts), and the site's
+ * navigation menus' (menu-ops.ts).
  */
-export type ActionInput = OperationInput | PageActionInput;
+export type ActionInput = OperationInput | PageActionInput | MenuActionInput;
 export type ActionKind = ActionInput["kind"];
 
 /** A term's margin, as the owner sets it: a percent on the market price. */
@@ -231,10 +233,16 @@ export interface OperationPreview {
   /** Optional (added in phase 4): a margin's own numbers; absent when the margin cannot be applied (a refusal leads the warnings). */
   margin?: MarginPreview;
   /**
-   * A homepage action's preview (it changes no product): what it does, in
-   * sentences — for a reader without the screens, the API or an assistant.
+   * An action done at once — the homepage's, a menu's — previewed (it changes
+   * no product): what it does, in sentences — for a reader without the
+   * screens, the API or an assistant.
    */
   page?: { lines: string[] };
+  /**
+   * A menu action's: the menu it was previewed on, by its fingerprint — a
+   * proposal confirmed over a menu changed since makes a new one.
+   */
+  menu?: { id: number; digest: string };
 }
 
 export type OperationStatus = "running" | "done" | "failed" | "undoing" | "undone";

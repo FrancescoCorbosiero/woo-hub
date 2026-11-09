@@ -69,6 +69,11 @@ export const opsIt = {
     sectionSource: (section: string, shows: string) => `«${section}» ora mostra ${shows}`,
     sectionEdit: (section: string) => `«${section}» pubblicata`,
     blockEdit: (block: string) => `Testi di «${block}» salvati`,
+    menuItemAdd: (count: number, item: string, menu: string) => (count === 1 ? `Voce «${item}» aggiunta · ${menu}` : `${n(count)} voci aggiunte · ${menu}`),
+    menuItemMove: (item: string, menu: string) => `Voce «${item}» spostata · ${menu}`,
+    menuItemRemove: (item: string, menu: string) => `Voce «${item}» tolta · ${menu}`,
+    menuItemRename: (item: string, renamed: string | null, menu: string) =>
+      renamed == null ? `Voce «${item}» col suo nome originale · ${menu}` : `Voce «${item}» rinominata «${renamed}» · ${menu}`,
   },
 
   /** Why a preview leaves products as they are, agreeing with how many ("Già nascosto · 1", "Già nascosti · 3"). */
@@ -331,6 +336,53 @@ export const opsIt = {
     sectionsChanged: "Le sezioni della homepage sono cambiate dopo: annullare toglierebbe le modifiche più recenti.",
     neighbourGone: (title: string) => `Non trovo più la sezione accanto a cui stava «${title}»: rimettila da «Nuova sezione».`,
     notUndoable: "Questa sezione mostrava una lista fissa o dei tag: da qui non si rimette com'era.",
+  },
+
+  /**
+   * The site's navigation menus (src/server/vetrina/operations/menu.ts): an
+   * action in sentences, what the owner should know, why one cannot run, and
+   * why its "Annulla" cannot.
+   */
+  menu: {
+    top: (position: number, last: boolean) => (position === 1 ? "in cima al menu" : last ? "in fondo al menu" : `al ${n(position)}° posto del menu`),
+    under: (parent: string, position: number, last: boolean) =>
+      position === 1 ? `sotto «${parent}», per prima` : last ? `sotto «${parent}», per ultima` : `sotto «${parent}», al ${n(position)}° posto`,
+    add: (names: readonly string[], menu: string, where: string) =>
+      names.length === 1
+        ? `«${names[0]}» entra nel menu «${menu}», ${where}.`
+        : `${n(names.length)} voci entrano nel menu «${menu}», ${where}: ${nameList(names.map((name) => `«${name}»`))}.`,
+    move: (title: string, where: string) => `«${title}» passa ${where}.`,
+    withItems: (count: number) => (count === 1 ? "Con lei si sposta la sua voce." : `Con lei si spostano le sue ${n(count)} voci.`),
+    remove: (title: string, menu: string) => `«${title}» esce dal menu «${menu}».`,
+    lifted: (names: readonly string[]) =>
+      names.length === 1
+        ? `La sua voce «${names[0]}» sale al suo posto.`
+        : `Le sue ${n(names.length)} voci salgono al suo posto: ${nameList(names.map((name) => `«${name}»`))}.`,
+    rename: (from: string, to: string) => `«${from}» si chiamerà «${to}».`,
+    ownName: (from: string, name: string) => `«${from}» torna a chiamarsi come ciò a cui porta: «${name}».`,
+    shownAt: (places: readonly string[]) =>
+      places.length === 0 ? "Il tema non mostra questo menu da nessuna parte: per ora non si vede sul sito." : `Sul sito si vede in: ${nameList(places)}.`,
+    already: (name: string, parent: string | null) => (parent ? `«${name}» è già nel menu, sotto «${parent}».` : `«${name}» è già nel menu.`),
+    invalid: (name: string) => `«${name}» porta a qualcosa che non c'è più: WordPress non la mostra sul sito.`,
+    /** Refusals. */
+    stale: "Il menu è cambiato nel frattempo: rileggilo e riprova.",
+    noMenu: "Questo menu non c'è più sul sito.",
+    noItem: "Questa voce non è più nel menu.",
+    noParent: "La voce sotto cui metterla non è nel menu.",
+    position: (max: number) => `Il posto va da 1 a ${n(max)}.`,
+    intoItself: "Una voce non può andare sotto se stessa o sotto le sue voci.",
+    samePlace: (title: string) => `«${title}» è già lì.`,
+    sameName: (title: string) => `«${title}» si chiama già così.`,
+    noCategory: (id: number) => `Nel negozio non c'è la categoria ${id}.`,
+    noBrand: (id: number) => `Nel negozio non c'è il brand ${id}.`,
+    noPage: (id: number) => `Sul sito non c'è la pagina pubblicata ${id}.`,
+    linkName: "Un link ha sempre un nome suo.",
+    writeFailed: "WordPress non ha accettato la modifica: il menu è rimasto com'era.",
+    halfWritten: "WordPress ha accettato solo una parte della modifica e rimetterla non è riuscito: controlla il menu su WordPress.",
+    /** Its way back. */
+    changedSince: (title: string) => `«${title}» è cambiata dopo questa azione: la modifica più recente resta.`,
+    gotChildren: (title: string) => `Sotto «${title}» sono state messe altre voci: resta com'è.`,
+    parentGone: (title: string) => `La voce sotto cui stava «${title}» non c'è più: non si può rimettere.`,
   },
 
   /**

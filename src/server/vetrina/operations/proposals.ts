@@ -3,17 +3,19 @@ import { and, eq, gt, lt } from "drizzle-orm";
 import type { Locale } from "@/i18n/config";
 import { actorId, actorOf, isPerson, type Actor } from "@/lib/actors";
 import type { ActionInput, OperationInput, OperationPreview, OperationVia, OperationView } from "@/lib/vetrina/catalog-ops";
+import { isMenuActionKind, type MenuActionInput } from "@/lib/vetrina/menu-ops";
 import { isPageActionKind, type PageActionInput } from "@/lib/vetrina/page-ops";
 import { PROPOSAL_MINUTES, type ProposalView } from "@/lib/vetrina/proposals";
 import { db } from "@/server/db/client";
 import { vetrinaProposals, type OperationLabelParams, type VetrinaProposalRow } from "@/server/db/schema";
 import { VetrinaError } from "@/server/vetrina/source";
+import { assessMenu } from "./menu";
 import { assessPage } from "./page";
 import { labelText } from "./plan";
 import { assess } from "./preview";
 import { digestOf, summaryOf } from "./proposal-plan";
 import { parseAction } from "./registry";
-import { loadOperation, startOperation, startPageOperation } from "./service";
+import { loadOperation, startMenuOperation, startOperation, startPageOperation } from "./service";
 import { currentLanguage, inLanguage, words } from "./words";
 
 /**
@@ -43,16 +45,21 @@ async function previewOf(input: ActionInput): Promise<{ preview: OperationPrevie
     const assessment = await assessPage(input as PageActionInput);
     return { preview: assessment.preview, label: assessment.label };
   }
+  if (isMenuActionKind(input.kind)) {
+    // The preview carries the menu's fingerprint: a menu changed since makes a new proposal.
+    const assessment = await assessMenu(input as MenuActionInput);
+    return { preview: assessment.preview, label: assessment.label };
+  }
   const assessment = await assess(input as OperationInput, { live: true });
   if (assessment.refusal) throw new VetrinaError("invalid", assessment.refusal, 400);
   if (assessment.total === 0) throw new VetrinaError("invalid", words().error.empty, 400);
   return { preview: assessment.preview, label: assessment.label };
 }
 
-/** A homepage action's `expected` is the asker's own check, done when it is proposed: the proposal's preview is the check after. */
+/** A homepage or menu action's `expected` is the asker's own check, done when it is proposed: the proposal's preview is the check after. */
 function withoutExpected(input: ActionInput): ActionInput {
-  if (!isPageActionKind(input.kind)) return input;
-  const { expected: _expected, ...asked } = input as PageActionInput;
+  if (!isPageActionKind(input.kind) && !isMenuActionKind(input.kind)) return input;
+  const { expected: _expected, ...asked } = input as PageActionInput | MenuActionInput;
   return asked as ActionInput;
 }
 
@@ -185,7 +192,9 @@ export async function confirmProposal(id: string, by: Actor): Promise<OperationV
   try {
     operation = isPageActionKind(row.input.kind)
       ? (await startPageOperation(row.input as PageActionInput, row.via, by)).operation
-      : await startOperation(row.input as OperationInput, row.via, by);
+      : isMenuActionKind(row.input.kind)
+        ? (await startMenuOperation(row.input as MenuActionInput, row.via, by)).operation
+        : await startOperation(row.input as OperationInput, row.via, by);
   } catch (e) {
     return refuse(id, e, confirmedBy);
   }

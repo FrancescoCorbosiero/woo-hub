@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { MENU_ACTION_KINDS } from "@/lib/vetrina/menu-ops";
 import { PAGE_ACTION_KINDS } from "@/lib/vetrina/page-ops";
 
 /**
@@ -16,10 +17,11 @@ const { OperationInputSchema } = await import("./input");
 const catalogKinds = OperationInputSchema.options.map((option) => option.shape.kind.value as string);
 
 describe("the actions' registry", () => {
-  it("describes every action the server runs, the catalog's and the homepage's", () => {
-    expect([...ACTION_KINDS].sort()).toEqual([...catalogKinds, ...PAGE_ACTION_KINDS].sort());
+  it("describes every action the server runs, the catalog's, the homepage's and the menus'", () => {
+    expect([...ACTION_KINDS].sort()).toEqual([...catalogKinds, ...PAGE_ACTION_KINDS, ...MENU_ACTION_KINDS].sort());
     for (const kind of ACTION_KINDS) {
-      expect(ACTIONS[kind].scope).toBe(PAGE_ACTION_KINDS.includes(kind as never) ? "homepage" : "catalog");
+      const scope = PAGE_ACTION_KINDS.includes(kind as never) ? "homepage" : MENU_ACTION_KINDS.includes(kind as never) ? "menu" : "catalog";
+      expect(ACTIONS[kind].scope).toBe(scope);
     }
   });
 
