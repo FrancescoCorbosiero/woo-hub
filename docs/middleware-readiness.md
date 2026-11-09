@@ -292,7 +292,7 @@ in `woo/media.ts`); `service.ts`'s `queued` flag read from the table;
 `recover()` reclaims only expired leases. After this a UI deploy no longer
 interrupts a running sale, and extraction becomes a free choice.
 
-## 7. Risks and open decisions
+## 7. Risks and decisions
 
 - **Human confirm is new design, not plumbing.** Confirming from the phone
   means the Authelia-signed Vetrina sheet; confirming from a chat client
@@ -305,8 +305,17 @@ interrupts a running sale, and extraction becomes a free choice.
   `apply-job.ts` applies to an MCP endpoint too: keep tool answers short
   and have the caller poll `/operations/{id}`.
 - **WordPress menu REST quirks** (locations, auto-add) are unknown until a
-  fixture is built from a real site; the plugin-route path avoids `wp/v2`
-  but requires plugin releases.
-- **Open**: whether multi-shop in one process will ever be wanted. If
-  yes, say so now; it is the only scenario in which a fresh persistence
-  layer pays for itself.
+  fixture is built from a real site.
+
+### Decided (2026-11-09)
+
+- **No multi-shop in one process.** One Hub per shop stays the model, with
+  one token set per shop. The single-tenant schema and `site-guard.ts`
+  stay as they are; nothing in the plan adds a shop column.
+- **WordPress path: `wp/v2` with an Application Password.** No plugin
+  release needed, WordPress's own endpoints for menus (`wp/v2/menus`,
+  `menu-items`), pages and media; one more secret in `src/lib/env.ts`
+  (`WP_APP_USER`, `WP_APP_PASSWORD`), separate from the Woo keys, which
+  cannot reach `wp/v2`. New `wc-gh/v1` routes remain the fallback for
+  anything the core API does not cover. `hub-and-plugin.md:121` is to be
+  amended when the first menu kind lands.
