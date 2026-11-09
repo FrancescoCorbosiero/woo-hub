@@ -57,6 +57,72 @@ export const menusEn: typeof menusIt = {
     renamed: (title: string) => `Now called “${title}”`,
     ownName: "Back to its own name",
     undone: "Menu as it was",
+    created: (name: string) => `Menu “${name}” made`,
+    menuRenamed: (name: string) => `The menu is called “${name}” now`,
+    deleted: (name: string) => `Menu “${name}” deleted`,
+    placed: (menu: string, place: string) => `“${menu}” is in ${place} now`,
+    emptied: (place: string) => `${place} shows no menu now`,
+  },
+
+  home: {
+    newMenu: "New menu",
+    places: "Theme places",
+    placesIntro: "Where the theme shows a menu: tap a place to choose which.",
+    none: "No menu",
+    noPlaces: "The site's theme has no places for menus: its navigation may be made of blocks (Appearance › Editor), which cannot be changed from here.",
+  },
+
+  create: {
+    title: "New menu",
+    copyTitle: (name: string) => `Duplicate “${name}”`,
+    name: "Name",
+    nameHint: "The site shows the items, not the name: it is for you to know it by.",
+    needName: "Give it a name.",
+    start: "Start from",
+    empty: "An empty menu",
+    copyOf: (name: string) => `A copy of “${name}”`,
+    copyName: (name: string) => `${name} (copy)`,
+    notShown: "The site does not show it until you put it in a place of the theme.",
+    button: "Make the menu",
+  },
+
+  more: {
+    open: "Menu actions",
+    rename: "Rename the menu",
+    duplicate: "Duplicate",
+    showIn: (place: string) => `Show in “${place}”`,
+    hideFrom: (place: string) => `Take out of “${place}”`,
+    activity: "Activity",
+    delete: "Delete the menu",
+    cancel: "Close",
+  },
+
+  renameMenu: {
+    title: "Rename the menu",
+    label: "Name",
+    save: "Save",
+  },
+
+  place: {
+    title: (place: string) => `What “${place}” shows`,
+    current: "now",
+    confirmTitle: "Change the menu on the site?",
+    confirmShow: (menu: string, place: string, before: string | null) =>
+      before ? `In “${place}” the site will show “${menu}” instead of “${before}”, at once.` : `In “${place}” the site will show “${menu}”, at once.`,
+    confirmEmpty: (place: string, before: string) => `In “${place}” the site will show neither “${before}” nor any other menu.`,
+    yes: "Change",
+    no: "Keep",
+  },
+
+  deleteMenu: {
+    title: "Delete the menu?",
+    confirm: (name: string, count: number) =>
+      count === 0 ? `“${name}” goes.` : `“${name}” goes, with ${count === 1 ? "its item" : `its ${n(count)} items`}. Categories, brands and pages stay.`,
+    shownTitle: "The menu is on the site",
+    shown: (name: string, places: string) => `“${name}” is on the site in: ${places}. First put another menu in that place, or leave it empty.`,
+    yes: "Delete",
+    no: "Keep",
+    ok: "Got it",
   },
   undo: "Undo",
 

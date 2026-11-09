@@ -16,8 +16,9 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function MenuPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const result = await attempt(async () => {
-    const menu = await (await getMenuSource()).menu(menuId(id));
-    return { menu, digest: menuDigest(menu) };
+    const source = await getMenuSource();
+    const [menu, places] = await Promise.all([source.menu(menuId(id)), source.places()]);
+    return { menu, digest: menuDigest(menu), places };
   });
   return <MenuScreen result={result} />;
 }

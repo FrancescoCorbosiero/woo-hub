@@ -54,6 +54,14 @@ test("the menus over the API: read, proposed with the menu's fingerprint, confir
   await api(request, "POST", `/operations/${operation.id}/undo`);
   expect((await api<MenuRead>(request, "GET", `/menus/${MAIN}`)).items.map((i) => i.title)).toEqual(AS_READ);
   await api(request, "GET", "/menus/abc", { status: 404 });
+
+  // The theme's places, and the menu each shows.
+  const places = await api<{ slug: string; name: string; menu: { id: number; name: string } | null }[]>(request, "GET", "/menu-locations");
+  expect(places.map((p) => [p.slug, p.name, p.menu?.name ?? null])).toEqual([
+    ["primary", "Menu principale", "Menu principale"],
+    ["footer", "Menu del footer", "Footer"],
+    ["mobile", "Menu mobile", null],
+  ]);
 });
 
 test("the Menu tab lists the site's menus, where the theme shows them, and opens one", async ({ page }) => {
@@ -120,4 +128,76 @@ test("an item with items is taken out, asked first, its items in its place; Annu
   await expect.poll(() => itemTitles(page)).toEqual(AS_READ);
   const nike = (await api<MenuRead>(request, "GET", `/menus/${MAIN}`)).items.find((i) => i.title === "Nike");
   expect(nike?.depth).toBe(1);
+});
+
+test("the theme's places say which menu each shows; one changes after a yes, and Annulla puts it back", async ({ page }) => {
+  await open(page, "/vetrina/menu");
+  const mobile = page.getByRole("button", { name: /^Menu mobile/ });
+  await expect(mobile).toContainText("Nessun menu");
+  await expect(page.getByRole("button", { name: /^Menu del footer/ })).toContainText("Footer");
+
+  await mobile.click();
+  await actionSheet(page).getByRole("button", { name: "Footer", exact: true }).click();
+  await expect(page.getByText("In «Menu mobile» il sito mostrerà subito «Footer».")).toBeVisible();
+  await page.getByRole("button", { name: "Cambia", exact: true }).click();
+  await expect(toast(page, "«Footer» ora è in Menu mobile")).toBeVisible();
+  await expect(mobile).toContainText("Footer");
+  await expect(page.getByRole("link", { name: /^Footer/ })).toContainText("Sul sito in: Menu del footer e Menu mobile");
+
+  await undoFromToast(page, "«Footer» ora è in Menu mobile");
+  await expect(mobile).toContainText("Nessun menu");
+});
+
+test("the main menu copied, shown in its place, put back, then the copy deleted, asked first", async ({ page }) => {
+  await open(page, "/vetrina/menu");
+  await page.getByRole("button", { name: "Nuovo menu" }).click();
+  const create = sheet(page, "Nuovo menu");
+  await create.getByLabel("Nome").fill("Menu Black Friday");
+  await create.getByText("Una copia di «Menu principale»").click();
+  await create.getByRole("button", { name: "Crea il menu" }).click();
+  await expect(toast(page, "Menu «Menu Black Friday» creato")).toBeVisible();
+  // The copy opens at once, its items the main menu's, on no place of the site.
+  await expect(page).toHaveURL(/\/vetrina\/menu\/\d+$/);
+  await expect.poll(() => itemTitles(page)).toEqual(AS_READ);
+  await expect(page.getByText("Il tema non lo mostra da nessuna parte", { exact: true })).toBeVisible();
+
+  // Shown where the main menu was, after a yes; Annulla puts the main menu back.
+  await page.getByRole("link", { name: "Azioni del menu" }).click();
+  await actionSheet(page).getByRole("button", { name: "Mostra in «Menu principale»" }).click();
+  await expect(page.getByText("In «Menu principale» il sito mostrerà subito «Menu Black Friday» al posto di «Menu principale».")).toBeVisible();
+  await page.getByRole("button", { name: "Cambia", exact: true }).click();
+  await expect(toast(page, "«Menu Black Friday» ora è in Menu principale")).toBeVisible();
+  await expect(page.getByText("Sul sito in: Menu principale", { exact: true })).toBeVisible();
+  await undoFromToast(page, "«Menu Black Friday» ora è in Menu principale");
+  await expect(page.getByText("Il tema non lo mostra da nessuna parte", { exact: true })).toBeVisible();
+
+  // Deleted, asked first: back to the list, without it.
+  await page.getByRole("link", { name: "Azioni del menu" }).click();
+  await actionSheet(page).getByRole("button", { name: "Elimina il menu" }).click();
+  await expect(page.getByText("«Menu Black Friday» sparisce, con le sue 8 voci. Categorie, brand e pagine restano.")).toBeVisible();
+  await page.getByRole("button", { name: "Elimina", exact: true }).click();
+  await expect(toast(page, "Menu «Menu Black Friday» eliminato")).toBeVisible();
+  await expect(page).toHaveURL(/\/vetrina\/menu$/);
+  await expect(page.getByRole("link", { name: /Menu principale/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Menu Black Friday/ })).toHaveCount(0);
+});
+
+test("a menu is renamed, Annulla gives its name back; the menu the site shows is not deleted", async ({ page }) => {
+  await open(page, "/vetrina/menu/2");
+  await page.getByRole("link", { name: "Azioni del menu" }).click();
+  await actionSheet(page).getByRole("button", { name: "Rinomina il menu" }).click();
+  const rename = sheet(page, "Rinomina il menu");
+  await rename.getByLabel("Nome").fill("Piè di pagina");
+  await rename.getByRole("button", { name: "Salva" }).click();
+  await expect(toast(page, "Il menu ora si chiama «Piè di pagina»")).toBeVisible();
+  await expect(page.getByText("Piè di pagina", { exact: true })).toBeVisible();
+  await undoFromToast(page, "Il menu ora si chiama «Piè di pagina»");
+  await expect(page.getByText("Footer", { exact: true })).toBeVisible();
+
+  await open(page, `/vetrina/menu/${MAIN}`);
+  await page.getByRole("link", { name: "Azioni del menu" }).click();
+  await actionSheet(page).getByRole("button", { name: "Elimina il menu" }).click();
+  await expect(page.getByText("«Menu principale» è sul sito in: Menu principale. Prima metti un altro menu in quella posizione, o lasciala vuota.")).toBeVisible();
+  await page.getByRole("button", { name: "Ho capito" }).click();
+  expect(await itemTitles(page)).toEqual(AS_READ);
 });

@@ -1,13 +1,29 @@
 "use client";
 
 import * as React from "react";
-import { Actions, ActionsButton, ActionsGroup, ActionsLabel, Button, Dialog, DialogButton, List, ListItem, Navbar, NavbarBackLink, Page, Preloader } from "konsta/react";
+import { useRouter } from "next/navigation";
+import {
+  Actions,
+  ActionsButton,
+  ActionsGroup,
+  ActionsLabel,
+  Button,
+  Dialog,
+  DialogButton,
+  Link as KLink,
+  List,
+  ListItem,
+  Navbar,
+  NavbarBackLink,
+  Page,
+  Preloader,
+} from "konsta/react";
 import { useI18n } from "@/i18n/provider";
 import { movesOf } from "@/lib/menus/moves";
 import { childrenOf, layoutOf, rowsOf, type Row } from "@/lib/menus/plan";
-import type { Menu, MenuItem, MenuTarget } from "@/lib/menus/types";
+import type { Menu, MenuItem, MenuTarget, ThemePlace } from "@/lib/menus/types";
 import type { VetrinaResult } from "@/server/vetrina/service";
-import { ActivityLink } from "../catalog/act/ActivityLink";
+import { useOperations } from "../catalog/act/operations-context";
 import { FILL } from "../catalog/act/parts";
 import { Plus } from "../catalog/act/icons";
 import { TabbarSpacer } from "../catalog/TabbarSpacer";
@@ -15,7 +31,9 @@ import { ErrorState } from "../ErrorState";
 import { More } from "../icons";
 import { useBack } from "../use-back";
 import { AddItemsSheet, type AddRequest } from "./AddItemsSheet";
+import { NewMenuSheet, RenameMenuSheet, type NewMenuRequest, type RenameMenuRequest } from "./MenuNameSheet";
 import { ItemBadge } from "./parts";
+import { PlaceDialog, type PlaceChange } from "./PlaceDialog";
 import { RenameSheet, type RenameRequest } from "./RenameSheet";
 import { useMenuWrites } from "./use-menu-writes";
 
@@ -24,13 +42,17 @@ import { useMenuWrites } from "./use-menu-writes";
  * the theme shows them — and the owner's to arrange: "Aggiungi voci" (the
  * shop's categories and brands, the site's pages, a link), and each item's
  * "⋯" — up, down, under the item above, out of its parent, items under it,
- * its name, taking it away. Each is written at once, with "Annulla".
+ * its name, taking it away. The navbar's "⋯" is the menu's own: its name, a
+ * copy, the theme's places it is shown in, Attività, deleting it. Each is
+ * written at once, with "Annulla".
  */
 
 export interface MenuScreenData {
   menu: Menu;
   /** The menu's fingerprint as read: each write is refused if the menu changed since. */
   digest: string;
+  /** The theme's places, with the menu each shows. */
+  places: ThemePlace[];
 }
 
 const targetKey = (target: MenuTarget) => (target.kind === "link" ? `link:${target.url}` : target.kind === "other" ? "" : `${target.kind}:${target.id}`);
@@ -53,6 +75,12 @@ export function MenuScreen({ result }: { result: VetrinaResult<MenuScreenData> }
   const [adding, setAdding] = React.useState<AddRequest | null>(null);
   const [renaming, setRenaming] = React.useState<RenameRequest | null>(null);
   const [busy, setBusy] = React.useState(false);
+  const [moreOpen, setMoreOpen] = React.useState(false);
+  const [renamingMenu, setRenamingMenu] = React.useState<RenameMenuRequest | null>(null);
+  const [duplicating, setDuplicating] = React.useState<NewMenuRequest | null>(null);
+  const [change, setChange] = React.useState<PlaceChange | null>(null);
+  const [deleting, setDeleting] = React.useState(false);
+  const router = useRouter();
 
   const subtitle = data ? (data.menu.locations.length > 0 ? m.shownIn(list.format(data.menu.locations.map((l) => l.name))) : m.shownNowhere) : undefined;
 
@@ -87,7 +115,13 @@ export function MenuScreen({ result }: { result: VetrinaResult<MenuScreenData> }
         titleClassName="truncate max-w-[calc(100%-176px)]"
         subtitleClassName="truncate"
         left={<NavbarBackLink onClick={back} text={m.back} />}
-        right={<ActivityLink />}
+        right={
+          data ? (
+            <KLink iconOnly onClick={() => setMoreOpen(true)} aria-label={m.more.open} aria-haspopup="dialog">
+              <More className="h-6 w-6" />
+            </KLink>
+          ) : undefined
+        }
       />
       {!result.ok ? (
         <div className="pt-3">
@@ -189,7 +223,130 @@ export function MenuScreen({ result }: { result: VetrinaResult<MenuScreenData> }
       />
       <AddItemsSheet request={adding} onClose={() => setAdding(null)} />
       <RenameSheet request={renaming} onClose={() => setRenaming(null)} />
+
+      {data && (
+        <MenuMore
+          open={moreOpen}
+          menu={data.menu}
+          places={data.places}
+          onClose={() => setMoreOpen(false)}
+          onRename={() => setRenamingMenu({ menuId: data.menu.id, name: data.menu.name })}
+          onDuplicate={() => setDuplicating({ menus: [data.menu], copyOf: data.menu.id })}
+          onPlace={setChange}
+          onDelete={() => setDeleting(true)}
+        />
+      )}
+      <RenameMenuSheet request={renamingMenu} onClose={() => setRenamingMenu(null)} />
+      <NewMenuSheet request={duplicating} onClose={() => setDuplicating(null)} />
+      <PlaceDialog change={change} onClose={() => setChange(null)} />
+      {data && (
+        <DeleteMenuDialog
+          open={deleting}
+          menu={data.menu}
+          onClose={() => setDeleting(false)}
+          onDelete={() => {
+            setDeleting(false);
+            void write(async () => {
+              const written = await writes.run({ kind: "menuDelete", menuId: data.menu.id, expected: { digest: data.digest } }, m.done.deleted(data.menu.name));
+              if (written) router.replace("/vetrina/menu");
+            });
+          }}
+        />
+      )}
     </Page>
+  );
+}
+
+/** The menu's own "⋯": its name, a copy, the theme's places it is in or not, Attività, deleting it. */
+function MenuMore({
+  open,
+  menu,
+  places,
+  onClose,
+  onRename,
+  onDuplicate,
+  onPlace,
+  onDelete,
+}: {
+  open: boolean;
+  menu: Menu;
+  places: readonly ThemePlace[];
+  onClose: () => void;
+  onRename: () => void;
+  onDuplicate: () => void;
+  onPlace: (change: PlaceChange) => void;
+  onDelete: () => void;
+}) {
+  const { t } = useI18n();
+  const mo = t.vetrinaCatalog.menus.more;
+  const ops = useOperations();
+  const then = (fn: () => void) => () => {
+    onClose();
+    fn();
+  };
+  return (
+    <Actions opened={open} onBackdropClick={onClose}>
+      <ActionsGroup>
+        <ActionsLabel>{menu.name}</ActionsLabel>
+        <ActionsButton onClick={then(onRename)}>{mo.rename}</ActionsButton>
+        <ActionsButton onClick={then(onDuplicate)}>{mo.duplicate}</ActionsButton>
+        {places.map((place) =>
+          place.menu?.id === menu.id ? (
+            <ActionsButton key={place.slug} onClick={then(() => onPlace({ place, menu: null }))}>
+              {mo.hideFrom(place.name)}
+            </ActionsButton>
+          ) : (
+            <ActionsButton key={place.slug} onClick={then(() => onPlace({ place, menu: { id: menu.id, name: menu.name } }))}>
+              {mo.showIn(place.name)}
+            </ActionsButton>
+          ),
+        )}
+        <ActionsButton onClick={then(ops.openActivity)}>{mo.activity}</ActionsButton>
+      </ActionsGroup>
+      <ActionsGroup>
+        <ActionsButton colors={{ textIos: "text-red-600 dark:text-red-500", textMaterial: "text-red-600 dark:text-red-400" }} onClick={then(onDelete)}>
+          {mo.delete}
+        </ActionsButton>
+      </ActionsGroup>
+      <ActionsGroup>
+        <ActionsButton bold onClick={onClose}>
+          {mo.cancel}
+        </ActionsButton>
+      </ActionsGroup>
+    </Actions>
+  );
+}
+
+/**
+ * Deleting the menu, asked first. A menu the site shows is not deleted: the
+ * dialog says where it is, and what to do first.
+ */
+function DeleteMenuDialog({ open, menu, onClose, onDelete }: { open: boolean; menu: Menu; onClose: () => void; onDelete: () => void }) {
+  const { t, locale } = useI18n();
+  const d = t.vetrinaCatalog.menus.deleteMenu;
+  const list = new Intl.ListFormat(locale === "en" ? "en-GB" : "it-IT", { style: "long", type: "conjunction" });
+  const shown = menu.locations.length > 0;
+  return (
+    <Dialog
+      opened={open}
+      onBackdropClick={onClose}
+      title={shown ? d.shownTitle : d.title}
+      content={shown ? d.shown(menu.name, list.format(menu.locations.map((l) => l.name))) : d.confirm(menu.name, menu.items.length)}
+      buttons={
+        shown ? (
+          <DialogButton strong onClick={onClose}>
+            {d.ok}
+          </DialogButton>
+        ) : (
+          <>
+            <DialogButton onClick={onClose}>{d.no}</DialogButton>
+            <DialogButton strong className="!text-red-600 dark:!text-red-500" onClick={onDelete}>
+              {d.yes}
+            </DialogButton>
+          </>
+        )
+      }
+    />
   );
 }
 

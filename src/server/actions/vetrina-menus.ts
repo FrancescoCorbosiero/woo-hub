@@ -16,8 +16,9 @@ import { getMenuSource } from "@/server/wordpress/menus/source";
 import { signedInActor } from "./signed-in";
 
 /**
- * The Vetrina's "Menu" tab, as server actions: a menu action (added, moved,
- * taken away, renamed — server/vetrina/operations/menu.ts) done at once and
+ * The Vetrina's "Menu" tab, as server actions: a menu action (an item
+ * added, moved, taken away, renamed; a menu made, renamed, deleted, put in a
+ * place of the theme — server/vetrina/operations/menu.ts) done at once and
  * filed as the signed-in person's, and the site's pages for "Aggiungi
  * voci". Answers { ok, data } or { ok: false, code, error }: a refusal of
  * ours in the owner's words; anything else (WordPress not answering, a key
@@ -37,7 +38,7 @@ function own(e: unknown): boolean {
   if (!(e instanceof VetrinaError)) return false;
   if (e.code === "invalid" || e.code === "not_found" || e.code === "stale") return true;
   const w = words().menu;
-  return e.code === "failed" && (e.message === w.writeFailed || e.message === w.halfWritten);
+  return e.code === "failed" && [w.writeFailed, w.halfWritten, w.makeFailed, w.makeHalf].includes(e.message);
 }
 
 async function attempt<T>(fn: () => Promise<T>): Promise<VetrinaResult<T>> {
@@ -54,19 +55,23 @@ async function attempt<T>(fn: () => Promise<T>): Promise<VetrinaResult<T>> {
 /**
  * A menu action, as the screens ask it (with the menu's fingerprint they
  * read, `expected`): written at once, the screen read again in the same
- * answer. The answer is the log's view of it — its "Annulla" — and the
- * items an add made.
+ * answer. The answer is the log's view of it — its "Annulla" — the items
+ * an add made, and the menu the action left (a new one's id; null once
+ * deleted).
  */
-export async function runMenuAction(input: MenuActionInput): Promise<VetrinaResult<{ operation: OperationView | null; created: number[] }>> {
+export async function runMenuAction(
+  input: MenuActionInput,
+): Promise<VetrinaResult<{ operation: OperationView | null; created: number[]; menuId: number | null }>> {
   return inLanguage(await language(), async () => {
     const parsed = parseMenuActionInput(input);
     if (!parsed.ok) return { ok: false, code: "invalid", error: parsed.error };
     const by = await signedInActor();
     const res = await attempt(async () => {
       const { operation, result } = await startMenuOperation(parsed.data, "app", by);
-      return { operation, created: result.created };
+      return { operation, created: result.created, menuId: result.menu?.id ?? null };
     });
-    if (res.ok) refresh();
+    // A deleted menu's screen is left by the screen itself: read again first, it would only say the menu is gone.
+    if (res.ok && parsed.data.kind !== "menuDelete") refresh();
     return res;
   });
 }

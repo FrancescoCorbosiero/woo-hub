@@ -17,6 +17,12 @@ import { call } from "../catalog/act/call";
  * the log's "Annulla" — the same one "Attività" offers later. A refusal is
  * toasted in the owner's words; a menu that changed meanwhile is read again.
  */
+/** What a write left: the items an add made, and the menu (a new one's id; null once deleted). */
+export interface MenuWritten {
+  created: number[];
+  menuId: number | null;
+}
+
 export function useMenuWrites() {
   const { t } = useI18n();
   const m = t.vetrinaCatalog.menus;
@@ -35,16 +41,21 @@ export function useMenuWrites() {
     [t, m, router],
   );
 
-  /** Run a menu action; toast `done` with "Annulla". The answer: the items an add made, or null when refused. */
+  /**
+   * Run a menu action; toast `done` with "Annulla". The answer: the items an
+   * add made and the menu the action left (a new menu's id), or null when
+   * refused.
+   */
   const run = React.useCallback(
-    async (input: MenuActionInput, done: string): Promise<number[] | null> => {
+    async (input: MenuActionInput, done: string): Promise<MenuWritten | null> => {
       const res = await call(() => runMenuAction(input), network);
       if (!said(res)) return null;
       const operation = res.data.operation;
+      const written = { created: res.data.created, menuId: res.data.menuId };
       toast.dismiss();
       if (!operation?.undoable) {
         toast.success(done);
-        return res.data.created;
+        return written;
       }
       toast.success(done, {
         duration: 10_000,
@@ -62,7 +73,7 @@ export function useMenuWrites() {
           },
         },
       });
-      return res.data.created;
+      return written;
     },
     [network, said, m, router],
   );

@@ -65,6 +65,79 @@ export const menusIt = {
     renamed: (title: string) => `Ora si chiama «${title}»`,
     ownName: "Torna al suo nome",
     undone: "Menu com'era prima",
+    created: (name: string) => `Menu «${name}» creato`,
+    menuRenamed: (name: string) => `Il menu ora si chiama «${name}»`,
+    deleted: (name: string) => `Menu «${name}» eliminato`,
+    placed: (menu: string, place: string) => `«${menu}» ora è in ${place}`,
+    emptied: (place: string) => `${place} ora non mostra nessun menu`,
+  },
+
+  /** The tab's own buttons, and the theme's places. */
+  home: {
+    newMenu: "Nuovo menu",
+    places: "Posizioni del tema",
+    placesIntro: "Dove il tema mostra un menu: tocca una posizione per scegliere quale.",
+    none: "Nessun menu",
+    noPlaces:
+      "Il tema del sito non ha posizioni per i menu: forse la sua navigazione è fatta con i blocchi (Aspetto › Editor), e da qui non si cambia.",
+  },
+
+  /** "Nuovo menu" and "Duplica". */
+  create: {
+    title: "Nuovo menu",
+    copyTitle: (name: string) => `Duplica «${name}»`,
+    name: "Nome",
+    nameHint: "Il sito mostra le voci, non il nome: serve a te per riconoscerlo.",
+    needName: "Dagli un nome.",
+    start: "Parti da",
+    empty: "Un menu vuoto",
+    copyOf: (name: string) => `Una copia di «${name}»`,
+    copyName: (name: string) => `${name} (copia)`,
+    notShown: "Il sito non lo mostra finché non lo metti in una posizione del tema.",
+    button: "Crea il menu",
+  },
+
+  /** A menu's own "⋯". */
+  more: {
+    open: "Azioni del menu",
+    rename: "Rinomina il menu",
+    duplicate: "Duplica",
+    showIn: (place: string) => `Mostra in «${place}»`,
+    hideFrom: (place: string) => `Togli da «${place}»`,
+    activity: "Attività",
+    delete: "Elimina il menu",
+    cancel: "Chiudi",
+  },
+
+  renameMenu: {
+    title: "Rinomina il menu",
+    label: "Nome",
+    save: "Salva",
+  },
+
+  /** Choosing the menu a place shows: the choice, then a yes — the site changes at once. */
+  place: {
+    title: (place: string) => `Cosa mostra «${place}»`,
+    current: "ora",
+    confirmTitle: "Cambiare il menu sul sito?",
+    confirmShow: (menu: string, place: string, before: string | null) =>
+      before ? `In «${place}» il sito mostrerà subito «${menu}» al posto di «${before}».` : `In «${place}» il sito mostrerà subito «${menu}».`,
+    confirmEmpty: (place: string, before: string) => `In «${place}» il sito non mostrerà più «${before}», né altri menu.`,
+    yes: "Cambia",
+    no: "Lascia",
+  },
+
+  deleteMenu: {
+    title: "Eliminare il menu?",
+    confirm: (name: string, count: number) =>
+      count === 0
+        ? `«${name}» sparisce.`
+        : `«${name}» sparisce, con ${count === 1 ? "la sua voce" : `le sue ${n(count)} voci`}. Categorie, brand e pagine restano.`,
+    shownTitle: "Il menu è sul sito",
+    shown: (name: string, places: string) => `«${name}» è sul sito in: ${places}. Prima metti un altro menu in quella posizione, o lasciala vuota.`,
+    yes: "Elimina",
+    no: "Lascia",
+    ok: "Ho capito",
   },
   undo: "Annulla",
 

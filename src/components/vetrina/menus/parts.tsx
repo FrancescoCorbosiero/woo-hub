@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import type { MenuTargetKind } from "@/lib/menus/types";
+import { Plus } from "../catalog/act/icons";
 import { External } from "../icons";
 import { Draft, Folder, Stack, Tag } from "../catalog/term/glyphs";
 
@@ -56,9 +57,9 @@ export function TextField({
   );
 }
 
-/** What an item leads to, as a round badge: a category's folder, a brand's tag, a page, a link, anything else. */
-export function ItemBadge({ kind }: { kind: MenuTargetKind }) {
-  const Icon = kind === "category" ? Folder : kind === "brand" ? Tag : kind === "page" ? Draft : kind === "link" ? External : Stack;
+/** What an item leads to, as a round badge: a category's folder, a brand's tag, a page, a link, anything else — or a new, empty menu. */
+export function ItemBadge({ kind }: { kind: MenuTargetKind | "new" }) {
+  const Icon = kind === "category" ? Folder : kind === "brand" ? Tag : kind === "page" ? Draft : kind === "link" ? External : kind === "new" ? Plus : Stack;
   return (
     <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-black/[0.06] dark:bg-white/10">
       <Icon className="h-[18px] w-[18px] opacity-70" />
