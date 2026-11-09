@@ -8,7 +8,7 @@ import type { WooClient, WooIndexProduct } from "@/server/woo/client";
  * empty the smart_collections, store_index and collection_changes tables. Run
  * with
  *
- *   RUN_DB_TESTS=1 DATABASE_URL=postgres://…@localhost:…/… REDIS_URL=… npm test
+ *   DATABASE_URL=postgres://…@localhost:…/hub_test npm run test:db
  *
  * Imports are dynamic because the db client validates the environment on load.
  */

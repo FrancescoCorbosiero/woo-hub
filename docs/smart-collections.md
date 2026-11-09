@@ -242,5 +242,5 @@ Tests:
   failing half-way and resumed, binned products, product tags. Opt-in, like the other DB suites:
 
   ```bash
-  RUN_DB_TESTS=1 DATABASE_URL=postgres://…@localhost:…/… REDIS_URL=… npm test
+  DATABASE_URL=postgres://…@localhost:…/hub_test npm run test:db
   ```

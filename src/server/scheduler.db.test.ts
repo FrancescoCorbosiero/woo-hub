@@ -10,7 +10,7 @@ import type { SourceProduct } from "@core/core-spine";
  * stand-ins, and so are the steps around the sync (pull, feed download,
  * re-pricing, categories, photos). Opt-in, like the other DB suites:
  *
- *   RUN_DB_TESTS=1 DATABASE_URL=postgres://…@localhost:…/… REDIS_URL=… npm test
+ *   DATABASE_URL=postgres://…@localhost:…/hub_test npm run test:db
  *
  * It empties scheduler_runs, and the feed and the ledger, like the others.
  */

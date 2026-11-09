@@ -72,6 +72,14 @@ jobs:
       - name: Install (clean, from lockfile)
         run: npm ci
 
+      # The real-SQL suites (*.db.test.ts) on the same Postgres, in a throwaway
+      # database of their own beside the e2e one, one file at a time
+      # (scripts/test-db.mjs).
+      - name: Database tests (real SQL)
+        run: npm run test:db
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/hub_test
+
       - name: Build
         run: npm run build
         env:

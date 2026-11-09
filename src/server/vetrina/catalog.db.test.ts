@@ -8,7 +8,7 @@ import type { Homepage, ProductCard } from "@/lib/vetrina/types";
  * THROWAWAY Postgres with the migrations applied, and they empty store_index.
  * Run with
  *
- *   RUN_DB_TESTS=1 DATABASE_URL=postgres://…@localhost:…/… REDIS_URL=… npm test
+ *   DATABASE_URL=postgres://…@localhost:…/hub_test npm run test:db
  *
  * Imports are dynamic because the db client validates the environment on load.
  */
