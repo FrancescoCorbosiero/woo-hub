@@ -2,9 +2,11 @@ import "server-only";
 import { z } from "zod";
 import { OPERATION_UNDO_DAYS, type ActionInput, type ActionKind, type OperationTarget } from "@/lib/vetrina/catalog-ops";
 import { isMenuActionKind } from "@/lib/vetrina/menu-ops";
+import { isTermActionKind } from "@/lib/vetrina/term-ops";
 import { isPageActionKind } from "@/lib/vetrina/page-ops";
 import { OperationInputSchema, parseOperationInput } from "./input";
 import { MenuActionInputSchema, parseMenuActionInput } from "./menu-input";
+import { parseTermActionInput, TermActionInputSchema } from "./term-input";
 import { PageActionInputSchema, parsePageActionInput } from "./page-input";
 import { words } from "./words";
 
@@ -20,10 +22,10 @@ import { words } from "./words";
  * (labels, previews, refusals) stays in his language.
  */
 
-export type ActionScope = "catalog" | "homepage" | "menu";
+export type ActionScope = "catalog" | "homepage" | "menu" | "taxonomy";
 
 export interface ActionSpec<K extends ActionKind = ActionKind> {
-  /** The catalog's actions change products; the homepage's its sections and blocks; a menu's the site's navigation menus. */
+  /** The catalog's actions change products; the homepage's its sections and blocks; a menu's the site's navigation menus; the taxonomy's the store's categories, brands and tags. */
   scope: ActionScope;
   title: string;
   /** What it does, and what to know before asking it. */
@@ -292,6 +294,52 @@ export const ACTIONS: { [K in ActionKind]: ActionSpec<K> } = {
     undo: `Within ${OPERATION_UNDO_DAYS} days, while the place shows what the action put there: the menu it showed before goes back, if it still exists.`,
     example: { kind: "menuLocation", location: "primary", menuId: 5 },
   },
+  termCreate: {
+    scope: "taxonomy",
+    title: "Make a category, a brand or a tag",
+    description:
+      "Make a product category, a brand or a tag in the store, at the top level or under a `parent` (categories and brands). " +
+      "Under one parent two terms never share a name (WordPress ignores case).",
+    undo: `Within ${OPERATION_UNDO_DAYS} days, while it is as made and nothing holds it (no product, no sub-term): it is deleted.`,
+    example: { kind: "termCreate", taxonomy: "category", name: "Sneakers in saldo", parent: 12 },
+  },
+  termRename: {
+    scope: "taxonomy",
+    title: "Rename a category, a brand or a tag",
+    description:
+      "Give a store term another name. Its slug — its address on the site — stays, and so does every link to it (homepage sections, menus). " +
+      "A category's or brand's old name is kept as an alias, so Publish files products named the old way into it instead of making a new term.",
+    undo: `Within ${OPERATION_UNDO_DAYS} days, while it has the name the action gave it: its name goes back, and the alias goes.`,
+    example: { kind: "termRename", taxonomy: "brand", termId: 7, name: "Nike" },
+  },
+  termMove: {
+    scope: "taxonomy",
+    title: "Move a category or a brand under another",
+    description:
+      "Put a category or a brand, with its sub-terms, under another term of the same taxonomy (`parent`), or at the top level (0). Not under itself or a term below it. " +
+      "A margin set on a term covers the terms below it: the preview says when its products may take another margin from the next price sync.",
+    undo: `Within ${OPERATION_UNDO_DAYS} days, while it is where the action put it: it goes back under its old parent.`,
+    example: { kind: "termMove", taxonomy: "category", termId: 31, parent: 12 },
+  },
+  termMerge: {
+    scope: "taxonomy",
+    title: "Merge a category, a brand or a tag into another",
+    description:
+      "Every product holding the term holds `into` instead, product by product, in the background (follow it at /operations/{id}); its sub-terms go under `into`; " +
+      "then the term is deleted, its name kept as an alias of `into` for Publish. Refused for an automatic category (its rule decides its products), " +
+      "a term with a margin of its own, a term the homepage shows, and a merge into itself or a term below it.",
+    undo: `Within ${OPERATION_UNDO_DAYS} days: the term is made again (same name, slug, parent, description; a new id), its sub-terms go back under it, and each product holds it again instead of \`into\` — a product changed since stays as it is.`,
+    example: { kind: "termMerge", taxonomy: "category", termId: 45, into: 12 },
+  },
+  termDelete: {
+    scope: "taxonomy",
+    title: "Delete a category, a brand or a tag",
+    description:
+      "Every product holding the term lets go of it, product by product, in the background (a product left with no category goes to the shop's default one, as WooCommerce does); " +
+      "then the term is deleted, its sub-terms moving up to its parent. The products stay in the shop. Refused for an automatic category, a term with a margin of its own and a term the homepage shows.",
+    undo: `Within ${OPERATION_UNDO_DAYS} days: the term is made again (same name, slug, parent, description; a new id), its sub-terms go back under it, and each product holds it again — a product changed since stays as it is.`,
+    example: { kind: "termDelete", taxonomy: "tag", termId: 88 },
+  },
 };
 
 export const ACTION_KINDS = Object.keys(ACTIONS) as ActionKind[];
@@ -299,7 +347,12 @@ export const ACTION_KINDS = Object.keys(ACTIONS) as ActionKind[];
 /** Each kind's own schema, out of the two unions the server checks with. */
 function schemasByKind(): Map<string, z.ZodType> {
   const out = new Map<string, z.ZodType>();
-  for (const option of [...OperationInputSchema.options, ...PageActionInputSchema.options, ...MenuActionInputSchema.options]) {
+  for (const option of [
+    ...OperationInputSchema.options,
+    ...PageActionInputSchema.options,
+    ...MenuActionInputSchema.options,
+    ...TermActionInputSchema.options,
+  ]) {
     const kind = (option as z.ZodObject<{ kind: z.ZodLiteral<string> }>).shape.kind.value;
     out.set(kind, option);
   }
@@ -346,5 +399,6 @@ export function parseAction(input: unknown): { ok: true; data: ActionInput } | {
   if (typeof kind !== "string" || !(kind in ACTIONS)) return { ok: false, error: words().input.operation };
   if (isPageActionKind(kind)) return parsePageActionInput(input);
   if (isMenuActionKind(kind)) return parseMenuActionInput(input);
+  if (isTermActionKind(kind)) return parseTermActionInput(input);
   return parseOperationInput(input);
 }

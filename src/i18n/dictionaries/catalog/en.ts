@@ -1,3 +1,4 @@
+import { termsEn } from "./terms.en";
 import type { catalogIt } from "./it";
 import { actEn } from "./act.en";
 import { homeEn } from "./home.en";
@@ -25,4 +26,5 @@ export const catalogEn: typeof catalogIt = {
   sections: sectionsEn,
   picker: pickerEn,
   menus: menusEn,
+  terms: termsEn,
 };

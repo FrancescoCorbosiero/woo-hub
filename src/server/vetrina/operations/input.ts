@@ -159,6 +159,17 @@ export const OperationInputSchema = z.discriminatedUnion("kind", [
     term: z.object({ taxonomy: z.enum(["category", "brand"], { message: problem("term") }), id: Id }).nullable(),
   }),
   z.object({ kind: z.literal("delete"), target: TargetSchema }),
+  z.object({
+    kind: z.literal("termMerge"),
+    taxonomy: z.enum(["category", "brand", "tag"]).describe("product_cat, product_brand or product_tag."),
+    termId: Id.describe("The term merged away, as GET /api/v1/catalog/terms lists it."),
+    into: Id.describe("The term its products go to; a term of the same taxonomy, not below it."),
+  }),
+  z.object({
+    kind: z.literal("termDelete"),
+    taxonomy: z.enum(["category", "brand", "tag"]).describe("product_cat, product_brand or product_tag."),
+    termId: Id.describe("The term deleted, as GET /api/v1/catalog/terms lists it."),
+  }),
 ]);
 
 /** A problem met, in the owner's words: ours by key, zod's own as "Richiesta non valida". */

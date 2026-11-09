@@ -297,6 +297,8 @@ export const actIt = {
       margin: "Cambio il ricarico",
       order: "Sposto i prodotti",
       sourceOrder: "Dispongo come la classifica",
+      termMerge: "Unisco",
+      termDelete: "Elimino",
       delete: "Elimino",
     },
     undoing: "Annullo…",

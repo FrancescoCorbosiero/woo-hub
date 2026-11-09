@@ -4,18 +4,20 @@ import type { Locale } from "@/i18n/config";
 import { actorId, actorOf, isPerson, type Actor } from "@/lib/actors";
 import type { ActionInput, OperationInput, OperationPreview, OperationVia, OperationView } from "@/lib/vetrina/catalog-ops";
 import { isMenuActionKind, type MenuActionInput } from "@/lib/vetrina/menu-ops";
+import { isTermActionKind, type TermActionInput } from "@/lib/vetrina/term-ops";
 import { isPageActionKind, type PageActionInput } from "@/lib/vetrina/page-ops";
 import { PROPOSAL_MINUTES, type ProposalView } from "@/lib/vetrina/proposals";
 import { db } from "@/server/db/client";
 import { vetrinaProposals, type OperationLabelParams, type VetrinaProposalRow } from "@/server/db/schema";
 import { VetrinaError } from "@/server/vetrina/source";
 import { assessMenu } from "./menu";
+import { assessTermAction } from "./terms";
 import { assessPage } from "./page";
 import { labelText } from "./plan";
 import { assess } from "./preview";
 import { digestOf, summaryOf } from "./proposal-plan";
 import { parseAction } from "./registry";
-import { loadOperation, startMenuOperation, startOperation, startPageOperation } from "./service";
+import { loadOperation, startMenuOperation, startOperation, startPageOperation, startTermOperation } from "./service";
 import { currentLanguage, inLanguage, words } from "./words";
 
 /**
@@ -43,6 +45,10 @@ const KEEP_DAYS = 30;
 async function previewOf(input: ActionInput): Promise<{ preview: OperationPreview; label: OperationLabelParams }> {
   if (isPageActionKind(input.kind)) {
     const assessment = await assessPage(input as PageActionInput);
+    return { preview: assessment.preview, label: assessment.label };
+  }
+  if (isTermActionKind(input.kind)) {
+    const assessment = await assessTermAction(input as TermActionInput);
     return { preview: assessment.preview, label: assessment.label };
   }
   if (isMenuActionKind(input.kind)) {
@@ -194,6 +200,8 @@ export async function confirmProposal(id: string, by: Actor): Promise<OperationV
       ? (await startPageOperation(row.input as PageActionInput, row.via, by)).operation
       : isMenuActionKind(row.input.kind)
         ? (await startMenuOperation(row.input as MenuActionInput, row.via, by)).operation
+        : isTermActionKind(row.input.kind)
+          ? (await startTermOperation(row.input as TermActionInput, row.via, by)).operation
         : await startOperation(row.input as OperationInput, row.via, by);
   } catch (e) {
     return refuse(id, e, confirmedBy);

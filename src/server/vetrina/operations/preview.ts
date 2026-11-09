@@ -1,4 +1,5 @@
 import "server-only";
+import { assessTermRemoval } from "./term-removal";
 import { hubConfig } from "@/config";
 import type { OperationInput, OperationKind, OperationPreview, TermKey } from "@/lib/vetrina/catalog-ops";
 import { isDeletable } from "@/lib/vetrina/catalog";
@@ -482,6 +483,8 @@ async function assessDelete(ctx: Ctx, input: Extract<OperationInput, { kind: "de
  */
 export async function assess(input: OperationInput, opts: { live: boolean }): Promise<Assessment> {
   if (input.kind === "margin") return assessMargin(input, opts);
+  // A term merged or deleted: its products are the term's, read live (term-removal.ts).
+  if (input.kind === "termMerge" || input.kind === "termDelete") return assessTermRemoval(input);
   if (input.kind === "order") return assessOrder(input, opts);
   if (input.kind === "sourceOrder") return assessSourceOrder(input, opts);
   const target = await resolveTarget(input.target, { wholeTerm: wholeTermAction(input) });

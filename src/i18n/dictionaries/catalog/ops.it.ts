@@ -27,6 +27,37 @@ function nameList(names: readonly string[], total = names.length): string {
   return `${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}`;
 }
 
+/** The store's taxonomies, as the sentences need them: Italian agrees with each one's gender. */
+type TermTx = "category" | "brand" | "tag";
+const T = {
+  category: {
+    one: "categoria", One: "Categoria", the: "la categoria", The: "La categoria", This: "Questa categoria",
+    New: "Nuova categoria", a1: "una categoria", a2: "una", a3: "un'altra categoria", it: "la", a: "a",
+    sub1: "sottocategoria", subs: "sottocategorie", e: (stem: string) => `${stem}a`,
+    // Its sub-terms, with the possessive and the verb agreeing: "la sua sottocategoria va", "le sue 3 sottocategorie vanno".
+    its: (count: number) => (count === 1 ? "la sua sottocategoria" : `le sue ${n(count)} sottocategorie`),
+    Its: (count: number) => (count === 1 ? "La sua sottocategoria" : `Le sue ${n(count)} sottocategorie`),
+    itself: "Una categoria non può andare sotto se stessa o sotto una sua sottocategoria.",
+  },
+  brand: {
+    one: "brand", One: "Brand", the: "il brand", The: "Il brand", This: "Questo brand",
+    New: "Nuovo brand", a1: "un brand", a2: "un", a3: "un altro brand", it: "lo", a: "o",
+    sub1: "linea", subs: "linee", e: (stem: string) => `${stem}o`,
+    // A brand's sub-brands are its lines, as the catalog calls them ("Linee del brand").
+    its: (count: number) => (count === 1 ? "la sua linea" : `le sue ${n(count)} linee`),
+    Its: (count: number) => (count === 1 ? "La sua linea" : `Le sue ${n(count)} linee`),
+    itself: "Un brand non può andare sotto se stesso o sotto una sua linea.",
+  },
+  tag: {
+    one: "tag", One: "Tag", the: "il tag", The: "Il tag", This: "Questo tag",
+    New: "Nuovo tag", a1: "un tag", a2: "un", a3: "un altro tag", it: "lo", a: "o",
+    sub1: "", subs: "", e: (stem: string) => `${stem}o`,
+    its: (_count: number) => "",
+    Its: (_count: number) => "",
+    itself: "",
+  },
+} as const;
+
 export const opsIt = {
   /** A price as the owner reads it: "102,99 €" (in English, "€102.99"). */
   money: (amount: number): string => new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(amount),
@@ -78,6 +109,12 @@ export const opsIt = {
     menuRename: (menu: string, from: string) => `Menu «${from}» rinominato «${menu}»`,
     menuDelete: (menu: string) => `Menu «${menu}» eliminato`,
     menuLocation: (menu: string | null, place: string) => (menu ? `«${menu}» in ${place}` : `Nessun menu in ${place}`),
+    termCreate: (tx: TermTx, name: string, parent: string | null) => `${T[tx].New} «${name}»${parent ? ` sotto «${parent}»` : ""}`,
+    termRename: (tx: TermTx, from: string, to: string) => `${T[tx].One} «${from}» ${T[tx].e("rinominat")} «${to}»`,
+    termMove: (tx: TermTx, name: string, into: string | null) =>
+      `${T[tx].One} «${name}» ${T[tx].e("spostat")} ${into ? `sotto «${into}»` : "al primo livello"}`,
+    termMerge: (tx: TermTx, name: string, into: string, count: number) => `${T[tx].One} «${name}» ${T[tx].e("unit")} a «${into}» · ${products(count)}`,
+    termDelete: (tx: TermTx, name: string, count: number) => `${T[tx].One} «${name}» ${T[tx].e("eliminat")} · ${products(count)}`,
   },
 
   /** Why a preview leaves products as they are, agreeing with how many ("Già nascosto · 1", "Già nascosti · 3"). */
@@ -421,6 +458,60 @@ export const opsIt = {
     menuChangedSince: (name: string) => `Il menu «${name}» è cambiato dopo questa azione: il cambio più recente resta.`,
     menuGone: (name: string) => `Il menu «${name}» non c'è più.`,
     placeChanged: (place: string) => `In «${place}» il menu è cambiato dopo questa azione: il cambio più recente resta.`,
+  },
+
+  /**
+   * The store's taxonomies (operations/terms.ts, term-moves.ts): a category,
+   * a brand or a tag made, renamed, moved, merged, deleted — what it does,
+   * why it cannot, and why its "Annulla" cannot.
+   */
+  term: {
+    create: (tx: TermTx, name: string, parent: string | null) =>
+      tx === "tag" ? `Nasce il tag «${name}».` : `Nasce ${T[tx].the} «${name}»${parent ? `, sotto «${parent}»` : ", al primo livello"}.`,
+    rename: (tx: TermTx, from: string, to: string) => `${T[tx].The} «${from}» si chiamerà «${to}». Il suo indirizzo sul sito resta lo stesso.`,
+    alias: (tx: TermTx) => `Publish ${T[tx].it} riconoscerà anche col vecchio nome: niente doppioni.`,
+    move: (tx: TermTx, name: string, into: string | null, children: number) =>
+      `${T[tx].The} «${name}» va ${into ? `sotto «${into}»` : "al primo livello"}${children > 0 ? `, con ${T[tx].its(children)}` : ""}.`,
+    marginMoves: "I suoi prodotti potrebbero prendere un altro ricarico dalla prossima sincronizzazione dei prezzi.",
+    merge: (tx: TermTx, name: string, into: string, count: number) =>
+      count === 0
+        ? `${T[tx].The} «${name}» non ha prodotti: viene ${T[tx].e("eliminat")}, e il suo nome porta a «${into}».`
+        : `${count === 1 ? "Il suo prodotto passa" : `I suoi ${n(count)} prodotti passano`} da «${name}» a «${into}», poi «${name}» viene ${T[tx].e("eliminat")}.`,
+    mergeChildren: (tx: TermTx, into: string, count: number) => `${T[tx].Its(count)} ${count === 1 ? "va" : "vanno"} sotto «${into}».`,
+    mergeAlias: (name: string, into: string) => `Publish metterà in «${into}» anche ciò che arriva col nome «${name}».`,
+    delete: (tx: TermTx, name: string, count: number) =>
+      count === 0
+        ? `${T[tx].The} «${name}» viene ${T[tx].e("eliminat")}: non ha prodotti.`
+        : `${T[tx].The} «${name}» viene ${T[tx].e("eliminat")}: ${count === 1 ? `il suo prodotto ${T[tx].it} perde` : `i suoi ${n(count)} prodotti ${T[tx].it} perdono`}, e restano nel negozio.`,
+    deleteChildren: (tx: TermTx, count: number) => `${T[tx].Its(count)} ${count === 1 ? "sale" : "salgono"} di un livello.`,
+    orphans: (count: number) =>
+      count === 1
+        ? "1 prodotto resta senza categoria: WooCommerce lo mette nella sua categoria predefinita."
+        : `${n(count)} prodotti restano senza categoria: WooCommerce li mette nella sua categoria predefinita.`,
+    inMenus: (name: string, menus: readonly string[]) =>
+      `«${name}» è nel menu ${nameList(menus.map((m) => `«${m}»`))}: la voce non porterà più a niente, toglila dal menu.`,
+    // Refusals.
+    notConfigured: "Il negozio non è collegato: chi gestisce il server deve impostare WOO_BASE_URL e le chiavi del negozio.",
+    stillHeld: (name: string, count: number) =>
+      `«${name}» resta: ${count === 1 ? "1 prodotto ce l'ha ancora" : `${n(count)} prodotti ce l'hanno ancora`}, il negozio non li ha cambiati.`,
+    gone: (tx: TermTx) => `${T[tx].This} non c'è più.`,
+    parentGone: (tx: TermTx) => `${T[tx].The} sotto cui metterl${T[tx].a} non c'è.`,
+    nameTaken: (tx: TermTx, name: string, parent: string | null) =>
+      `C'è già ${T[tx].a1} «${name}»${parent ? ` sotto «${parent}»` : tx === "tag" ? "" : " al primo livello"}: scegli un altro nome.`,
+    sameName: (name: string) => `Si chiama già «${name}».`,
+    sameParent: (name: string) => `«${name}» è già lì.`,
+    intoItself: (tx: TermTx): string => T[tx].itself,
+    mergeSelf: (tx: TermTx) => `Scegli ${T[tx].a3} in cui unirl${T[tx].a}.`,
+    mergeIntoBelow: (name: string) => `«${name}» sta sotto quella da unire: scegline una fuori dal suo ramo.`,
+    margin: (name: string) => `«${name}» ha un suo ricarico: riportalo a quello standard, poi riprova.`,
+    homepage: (name: string, sections: readonly string[]) =>
+      `«${name}» è nella homepage (${nameList(sections.map((s) => `«${s}»`))}): cambia prima la sezione.`,
+    // "Annulla".
+    changedSince: (name: string) => `C'è stata un'altra modifica a «${name}» dopo questa azione: la più recente resta.`,
+    hasProducts: (name: string) => `«${name}» ha già dei prodotti: resta.`,
+    hasChildren: (name: string) => `Sotto «${name}» c'è già dell'altro: resta.`,
+    takenNow: (tx: TermTx, name: string) => `C'è di nuovo ${T[tx].a1} «${name}»: non si può rifare.`,
+    parentGoneNow: (name: string) => `Il ramo sotto cui stava «${name}» non c'è più: non si può rimettere.`,
   },
 
   /**

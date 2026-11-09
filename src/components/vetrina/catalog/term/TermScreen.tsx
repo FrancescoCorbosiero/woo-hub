@@ -29,6 +29,7 @@ import { ProductList } from "./ProductList";
 import { SortActions } from "./SortActions";
 import { TermActionsPanel } from "./TermActionsPanel";
 import { AddToMenuSheet, useTermMenus } from "../../menus/TermMenus";
+import { useTermManage, type TermManageMode } from "./TermManage";
 
 /**
  * A category's or a brand's screen. At the top, its control panel: the
@@ -84,6 +85,12 @@ function Term({
   // The site's menus, when connected: "Aggiungi a un menu del sito" in the "⋯".
   const termMenus = useTermMenus(term);
   const menuRef = { taxonomy: term.taxonomy, id: term.id, name: term.name };
+  const tm = t.vetrinaCatalog.terms;
+  const manage = useTermManage(term);
+  const manageWith = (mode: TermManageMode) => () => {
+    setMenuOpen(false);
+    manage.open(mode);
+  };
   // Bumped when a rule moved products: the list reads its rows again.
   const [version, setVersion] = React.useState(0);
 
@@ -257,6 +264,16 @@ function Term({
             {v.menu.activity}
           </ActionsButton>
         </ActionsGroup>
+        {/* The term itself: its name, a sub-term, its place in the tree, merging, deleting (TermManage.tsx). */}
+        <ActionsGroup>
+          <ActionsButton onClick={manageWith("rename")}>{tm.menu.rename}</ActionsButton>
+          <ActionsButton onClick={manageWith("child")}>{tm.menu.newChild[term.taxonomy]}</ActionsButton>
+          <ActionsButton onClick={manageWith("move")}>{tm.menu.move}</ActionsButton>
+          <ActionsButton onClick={manageWith("merge")}>{tm.menu.merge}</ActionsButton>
+          <ActionsButton colors={{ textIos: "text-red-600 dark:text-red-500", textMaterial: "text-red-600 dark:text-red-400" }} onClick={manageWith("delete")}>
+            {tm.menu.delete[term.taxonomy]}
+          </ActionsButton>
+        </ActionsGroup>
         <ActionsGroup>
           <ActionsButton bold onClick={() => setMenuOpen(false)}>
             {v.menu.cancel}
@@ -266,6 +283,7 @@ function Term({
 
       <NewCategorySheet request={newRule} onClose={() => setNewRule(null)} />
       <AddToMenuSheet term={menuRef} open={addingToMenu} onClose={() => setAddingToMenu(false)} />
+      {manage.sheets}
       <ReorderSheet term={reorderOpen ? orderTerm : null} onClose={() => setReorderOpen(false)} />
       {sourceSheets.sheets}
     </Page>

@@ -14,6 +14,7 @@ import {
 } from "@/lib/vetrina/catalog-ops";
 import type { CatalogTaxonomy } from "@/lib/vetrina/catalog";
 import { isMenuActionKind, type MenuActionInput } from "@/lib/vetrina/menu-ops";
+import { isTermActionKind, type TermActionInput } from "@/lib/vetrina/term-ops";
 import { isPageActionKind, type PageActionInput, type PageActionKind } from "@/lib/vetrina/page-ops";
 import type { VetrinaOperationRow } from "@/server/db/schema";
 import { readCatalogTrees, readTermProducts } from "@/server/vetrina/catalog";
@@ -27,6 +28,7 @@ import { assess } from "./preview";
 import * as repo from "./repo";
 import { isQueued, queueRun, queueSweep, queueUndo, recover } from "./runner";
 import { startMenuAction, undoMenuAction, type MenuResult } from "./menu";
+import { startTermAction, undoTermAction, type TermResult } from "./terms";
 import { startPageAction, undoPageAction, type PageResult } from "./page";
 import { homepageSections } from "./sections";
 import { sectionVerdict } from "./writes";
@@ -57,7 +59,13 @@ function mustWrite(): void {
 
 export function operationView(row: VetrinaOperationRow, now = Date.now(), sectionKey?: string | null): OperationView {
   // A homepage or menu action with no way back on file (a fixed list pointed elsewhere) has no "Annulla".
-  const wayBack = isPageActionKind(row.kind) ? row.page != null : isMenuActionKind(row.kind) ? row.menu != null : true;
+  const wayBack = isPageActionKind(row.kind)
+    ? row.page != null
+    : isMenuActionKind(row.kind)
+      ? row.menu != null
+      : isTermActionKind(row.kind)
+        ? row.term != null
+        : true;
   return {
     id: row.id,
     kind: row.kind,
@@ -140,6 +148,19 @@ export async function startPageOperation<K extends PageActionKind>(
  * A menu action, done at once (menu.ts): the menu as it is after, and the
  * log's view of it — null when the log could not file it.
  */
+/**
+ * A taxonomy action done at once (terms.ts): the term as it is after, and the
+ * log's view of it — null when the log could not file it.
+ */
+export async function startTermOperation(
+  input: TermActionInput,
+  via: OperationVia = "app",
+  by: Actor | null = null,
+): Promise<{ operation: OperationView | null; result: TermResult }> {
+  const { row, result } = await startTermAction(input, via, actorOf(by));
+  return { operation: row ? operationView(row) : null, result };
+}
+
 export async function startMenuOperation(
   input: MenuActionInput,
   via: OperationVia = "app",
@@ -188,6 +209,8 @@ export async function undoOperation(id: string, by: Actor | null = null): Promis
   }
   // A menu action's way back is written at once too.
   if (isMenuActionKind(row.kind)) return operationView((await undoMenuAction(row, actorOf(by))).row);
+  // So is a taxonomy action's done at once (a merge's and a deletion's are queued, below).
+  if (isTermActionKind(row.kind)) return operationView((await undoTermAction(row, actorOf(by))).row);
   // A catalog action's undo is queued like the action itself: in the writer only.
   mustWrite();
   if (row.section) {

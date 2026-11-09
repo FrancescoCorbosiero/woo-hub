@@ -19,6 +19,7 @@ import type { Plan, PlanItem, ApplyResult, SourceProduct } from "@core/core-spin
 import type { StoreOverrides } from "@/server/overrides/model";
 import type { ActionInput, ActionKind, OperationPreview, OperationVia, OperationView } from "@/lib/vetrina/catalog-ops";
 import type { OperationMenuRecord } from "@/lib/vetrina/menu-ops";
+import type { OperationTermRecord } from "@/lib/vetrina/term-ops";
 import type { OperationPageRecord } from "@/lib/vetrina/page-ops";
 import type { OrderSourceItem } from "@/lib/vetrina/order-sources";
 import type { ProposalStatus } from "@/lib/vetrina/proposals";
@@ -664,6 +665,10 @@ export interface OperationLabelParams {
   from?: string | null;
   /** A menu put in a place of the theme, or the place emptied: the place's name ("Menu principale"). */
   place?: string;
+  /** A taxonomy action: which taxonomy ("category", "brand", "tag"). */
+  taxonomy?: string;
+  /** A term merged: the term merged into; a term moved or made: its parent's name (null: the top level). */
+  into?: string | null;
 }
 
 /**
@@ -704,6 +709,9 @@ export const vetrinaOperations = pgTable(
     page: jsonb("page").$type<OperationPageRecord | null>(),
     // A menu action: its way back, and how "Annulla" finds the items again (null for every other kind).
     menu: jsonb("menu").$type<OperationMenuRecord | null>(),
+    // A taxonomy action's way back (src/lib/vetrina/term-ops.ts): the term as
+    // it was, its sub-terms, the aliases a merge led elsewhere.
+    term: jsonb("term").$type<OperationTermRecord | null>(),
     // How its undo went: products put back, left alone (changed since), refused.
     undo: jsonb("undo").$type<OperationUndoOutcome | null>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -747,7 +755,7 @@ export const vetrinaOperationItems = pgTable(
     // term either (operations/standing.ts). 'deleted' is a product sent to
     // the trash: before is what bringing it back needs (operations/remove.ts).
     // The column is plain text: the list is TypeScript's only.
-    field: text("field", { enum: ["visibility", "tags", "categories", "sale", "margin", "member", "menu_order", "deleted"] }).notNull(),
+    field: text("field", { enum: ["visibility", "tags", "categories", "brands", "sale", "margin", "member", "menu_order", "deleted"] }).notNull(),
     before: jsonb("before").$type<unknown>(),
     after: jsonb("after").$type<unknown>(),
   },
@@ -755,6 +763,34 @@ export const vetrinaOperationItems = pgTable(
 );
 
 export type VetrinaOperationItemRow = typeof vetrinaOperationItems.$inferSelect;
+
+/**
+ * A store term's former names (src/lib/vetrina/term-ops.ts): a category or
+ * a brand renamed, moved or merged leaves its old name and parent here,
+ * leading to the term it is now — so Publish, which finds terms by name
+ * under their parent (woo/identity.ts), files a product named the old way
+ * into that term instead of making a new one with the old name. A real
+ * term of that name, made since, wins over the alias. The action that
+ * wrote an alias takes it away on "Annulla".
+ */
+export const termAliases = pgTable(
+  "term_aliases",
+  {
+    id: serial("id").primaryKey(),
+    taxonomy: text("taxonomy", { enum: ["category", "brand", "tag"] }).notNull(),
+    // The parent the old name was under (0: the top level); brands are found by name alone.
+    parent: integer("parent").notNull().default(0),
+    // The old name as Publish compares names: trimmed, lower case, spaces squeezed, entities decoded.
+    nameKey: text("name_key").notNull(),
+    name: text("name").notNull(),
+    termId: integer("term_id").notNull(),
+    operationId: uuid("operation_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("term_aliases_key_idx").on(t.taxonomy, t.parent, t.nameKey)],
+);
+
+export type TermAliasRow = typeof termAliases.$inferSelect;
 
 /**
  * Proposals (src/server/vetrina/operations/proposals.ts): an action

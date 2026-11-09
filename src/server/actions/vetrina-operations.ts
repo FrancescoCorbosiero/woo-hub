@@ -16,6 +16,7 @@ import type {
 } from "@/lib/vetrina/catalog-ops";
 import type { CatalogTaxonomy } from "@/lib/vetrina/catalog";
 import { isMenuActionKind } from "@/lib/vetrina/menu-ops";
+import { isTermActionKind } from "@/lib/vetrina/term-ops";
 import { isPageActionKind } from "@/lib/vetrina/page-ops";
 import type { VetrinaErrorCode } from "@/lib/vetrina/types";
 import { parseOperationInput, parseTarget } from "@/server/vetrina/operations/input";
@@ -115,7 +116,7 @@ export async function undoOperation(input: { id: string }): Promise<VetrinaResul
     if (!parsed.success) return invalid(words().input.operation);
     const by = await signedInActor();
     const res = await attempt(() => operations.undoOperation(parsed.data.id, by));
-    if (res.ok && (isPageActionKind(res.data.kind) || isMenuActionKind(res.data.kind))) refresh();
+    if (res.ok && (isPageActionKind(res.data.kind) || isMenuActionKind(res.data.kind) || isTermActionKind(res.data.kind))) refresh();
     return res;
   });
 }

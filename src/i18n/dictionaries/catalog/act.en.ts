@@ -270,6 +270,8 @@ export const actEn: typeof actIt = {
       margin: "Changing the margin",
       order: "Moving the products",
       sourceOrder: "Arranging like the ranking",
+      termMerge: "Merging",
+      termDelete: "Deleting",
       delete: "Deleting",
     },
     undoing: "Undoing…",

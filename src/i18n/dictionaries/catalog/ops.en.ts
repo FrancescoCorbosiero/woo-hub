@@ -17,6 +17,12 @@ function nameList(names: readonly string[], total = names.length): string {
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
+type TermTx = "category" | "brand" | "tag";
+const T = { category: "category", brand: "brand", tag: "tag" } as const;
+const Cap = { category: "Category", brand: "Brand", tag: "Tag" } as const;
+const Sub = { category: "sub-category", brand: "line", tag: "" } as const;
+const Subs = { category: "sub-categories", brand: "lines", tag: "" } as const;
+
 export const opsEn: typeof opsIt = {
   money: (amount: number): string => new Intl.NumberFormat("en-GB", { style: "currency", currency: "EUR" }).format(amount),
   products,
@@ -58,6 +64,11 @@ export const opsEn: typeof opsIt = {
     menuRename: (menu: string, from: string) => `Menu “${from}” renamed “${menu}”`,
     menuDelete: (menu: string) => `Menu “${menu}” deleted`,
     menuLocation: (menu: string | null, place: string) => (menu ? `“${menu}” in ${place}` : `No menu in ${place}`),
+    termCreate: (tx: TermTx, name: string, parent: string | null) => `New ${T[tx]} “${name}”${parent ? ` under “${parent}”` : ""}`,
+    termRename: (tx: TermTx, from: string, to: string) => `${Cap[tx]} “${from}” renamed “${to}”`,
+    termMove: (tx: TermTx, name: string, into: string | null) => `${Cap[tx]} “${name}” moved ${into ? `under “${into}”` : "to the top level"}`,
+    termMerge: (tx: TermTx, name: string, into: string, count: number) => `${Cap[tx]} “${name}” merged into “${into}” · ${products(count)}`,
+    termDelete: (tx: TermTx, name: string, count: number) => `${Cap[tx]} “${name}” deleted · ${products(count)}`,
   },
 
   untouched: {
@@ -341,6 +352,55 @@ export const opsEn: typeof opsIt = {
     menuChangedSince: (name: string) => `The menu “${name}” changed after this action: the newer change stands.`,
     menuGone: (name: string) => `The menu “${name}” is gone.`,
     placeChanged: (place: string) => `The menu in “${place}” changed after this action: the newer change stands.`,
+  },
+
+  term: {
+    create: (tx: TermTx, name: string, parent: string | null) =>
+      tx === "tag" ? `The tag “${name}” is made.` : `The ${T[tx]} “${name}” is made, ${parent ? `under “${parent}”` : "at the top level"}.`,
+    rename: (tx: TermTx, from: string, to: string) => `The ${T[tx]} “${from}” will be called “${to}”. Its address on the site stays the same.`,
+    alias: (_tx: TermTx) => "Publish will know it by its old name too: no duplicates.",
+    move: (tx: TermTx, name: string, into: string | null, children: number) =>
+      `The ${T[tx]} “${name}” goes ${into ? `under “${into}”` : "to the top level"}${children > 0 ? `, with ${children === 1 ? `its ${Sub[tx]}` : `its ${n(children)} ${Subs[tx]}`}` : ""}.`,
+    marginMoves: "Its products may take another margin from the next price sync.",
+    merge: (tx: TermTx, name: string, into: string, count: number) =>
+      count === 0
+        ? `The ${T[tx]} “${name}” has no products: it is deleted, and its name leads to “${into}”.`
+        : `${count === 1 ? "Its product moves" : `Its ${n(count)} products move`} from “${name}” to “${into}”, then “${name}” is deleted.`,
+    mergeChildren: (tx: TermTx, into: string, count: number) =>
+      count === 1 ? `Its ${Sub[tx]} goes under “${into}”.` : `Its ${n(count)} ${Subs[tx]} go under “${into}”.`,
+    mergeAlias: (name: string, into: string) => `Publish will file under “${into}” what comes named “${name}” too.`,
+    delete: (tx: TermTx, name: string, count: number) =>
+      count === 0
+        ? `The ${T[tx]} “${name}” is deleted: it has no products.`
+        : `The ${T[tx]} “${name}” is deleted: ${count === 1 ? "its product loses it" : `its ${n(count)} products lose it`}, and stay in the shop.`,
+    deleteChildren: (tx: TermTx, count: number) =>
+      count === 1 ? `Its ${Sub[tx]} moves up a level.` : `Its ${n(count)} ${Subs[tx]} move up a level.`,
+    orphans: (count: number) =>
+      count === 1
+        ? "1 product is left without a category: WooCommerce puts it in its default category."
+        : `${n(count)} products are left without a category: WooCommerce puts them in its default category.`,
+    inMenus: (name: string, menus: readonly string[]) =>
+      `“${name}” is in the menu ${nameList(menus.map((m) => `“${m}”`))}: the item will lead nowhere, take it out of the menu.`,
+    notConfigured: "The shop is not connected: whoever runs the server has to set WOO_BASE_URL and the shop's keys.",
+    stillHeld: (name: string, count: number) =>
+      `“${name}” stays: ${count === 1 ? "1 product still has it" : `${n(count)} products still have it`}, the shop did not change them.`,
+    gone: (tx: TermTx) => `This ${T[tx]} is gone.`,
+    parentGone: (tx: TermTx) => `The ${T[tx]} to put it under is not there.`,
+    nameTaken: (tx: TermTx, name: string, parent: string | null) =>
+      `There is already a ${T[tx]} “${name}”${parent ? ` under “${parent}”` : tx === "tag" ? "" : " at the top level"}: choose another name.`,
+    sameName: (name: string) => `It is already called “${name}”.`,
+    sameParent: (name: string) => `“${name}” is already there.`,
+    intoItself: (tx: TermTx) => `A ${T[tx]} cannot go under itself or under one of its ${Subs[tx]}.`,
+    mergeSelf: (tx: TermTx) => `Choose another ${T[tx]} to merge it into.`,
+    mergeIntoBelow: (name: string) => `“${name}” is under the one to merge: choose one outside its branch.`,
+    margin: (name: string) => `“${name}” has a margin of its own: set it back to the standard one, then try again.`,
+    homepage: (name: string, sections: readonly string[]) =>
+      `“${name}” is on the homepage (${nameList(sections.map((x) => `“${x}”`))}): change the section first.`,
+    changedSince: (name: string) => `“${name}” was changed again after this action: the newer change stands.`,
+    hasProducts: (name: string) => `“${name}” has products already: it stays.`,
+    hasChildren: (name: string) => `There is something under “${name}” already: it stays.`,
+    takenNow: (tx: TermTx, name: string) => `There is a ${T[tx]} “${name}” again: it cannot be made again.`,
+    parentGoneNow: (name: string) => `The branch “${name}” was under is gone: it cannot be put back.`,
   },
 
   proposal: {

@@ -1,3 +1,4 @@
+import type { TermActionInput, TermTaxonomy } from "./term-ops";
 import type { CatalogQuery, CatalogTaxonomy } from "./catalog";
 import type { MenuActionInput } from "./menu-ops";
 import type { PageActionInput, PageActionKind } from "./page-ops";
@@ -130,7 +131,22 @@ export type OperationInput =
    * the feed decides what is in the shop, and would only bring it back.
    * "Annulla" takes it out of the trash, sizes and all.
    */
-  | { kind: "delete"; target: OperationTarget };
+  | { kind: "delete"; target: OperationTarget }
+  /**
+   * A category, a brand or a tag merged into another: every product holding
+   * it holds `into` instead (product by product, each filed for "Annulla"),
+   * its sub-terms go under `into`, and then it is deleted — its old name kept
+   * as an alias of `into`, for Publish (src/lib/vetrina/term-ops.ts).
+   */
+  | { kind: "termMerge"; taxonomy: TermTaxonomy; termId: number; into: number }
+  /**
+   * A category, a brand or a tag deleted: every product holding it lets go of
+   * it (product by product, each filed for "Annulla"; a product left with no
+   * category goes to the shop's default one, as WooCommerce does), then the
+   * term itself, its sub-terms moving up to its parent. "Annulla" makes it
+   * again and gives it back its products.
+   */
+  | { kind: "termDelete"; taxonomy: TermTaxonomy; termId: number };
 
 export type OperationKind = OperationInput["kind"];
 
@@ -139,7 +155,7 @@ export type OperationKind = OperationInput["kind"];
  * homepage's own, on its sections and blocks (page-ops.ts), and the site's
  * navigation menus' (menu-ops.ts).
  */
-export type ActionInput = OperationInput | PageActionInput | MenuActionInput;
+export type ActionInput = OperationInput | PageActionInput | MenuActionInput | TermActionInput;
 export type ActionKind = ActionInput["kind"];
 
 /** A term's margin, as the owner sets it: a percent on the market price. */

@@ -4,6 +4,7 @@ import { may, type Actor } from "@/lib/actors";
 import type { CatalogTaxonomy } from "@/lib/vetrina/catalog";
 import type { OperationInput, OperationPreview, OperationView } from "@/lib/vetrina/catalog-ops";
 import type { ProposalView } from "@/lib/vetrina/proposals";
+import { decodeEntities } from "@/server/collections/index-rows";
 import { readIndexFacts } from "@/server/collections/repo";
 import { storeClient } from "@/server/collections/store";
 import { matchingIds, readCatalogTrees, readOverview } from "@/server/vetrina/catalog";
@@ -23,6 +24,13 @@ import { VetrinaError } from "@/server/vetrina/source";
 
 const Taxonomy = z.enum(["category", "brand"]);
 const Id = z.coerce.number().int().positive();
+
+/** Every tag: id, name, slug (tags are flat: parent 0, path its name), and its products, counted live by the store. */
+export async function listTags() {
+  const tags = await (await storeClient()).listTags();
+  // WooCommerce's term list carries each term's product count; the demo shop's does not (null).
+  return tags.map((t) => ({ id: t.id, name: decodeEntities(t.name), slug: t.slug, parent: 0, path: decodeEntities(t.name), count: (t as { count?: number }).count ?? null }));
+}
 
 /** Every category or brand, with its parent and its products (sub-terms' included). */
 export async function listTerms(taxonomy: CatalogTaxonomy) {

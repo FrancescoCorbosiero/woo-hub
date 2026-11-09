@@ -3,6 +3,7 @@ import type { SourceProduct } from "@core/core-spine";
 import { identityNamesFor, type ResolvedIdentity } from "./publish-plan";
 import type { TaxonomyConfig } from "@core/config";
 import type { WooClient } from "./client";
+import { listAliases, termKey } from "./term-aliases";
 
 /**
  * Resolve brand / category / gender NAMES to the store's own term ids, once
@@ -27,9 +28,6 @@ export interface IdentityResolver {
   /** Taxonomies that could not be reached or created — reported, never thrown. */
   readonly skipped: string[];
 }
-
-/** Case/space-insensitive term key: "Air Jordan" and "air  jordan" are one term. */
-const termKey = (name: string) => name.trim().toLowerCase().replace(/\s+/g, " ");
 
 /**
  * Prepare the resolver for a batch: read the store's taxonomies once, create
@@ -56,6 +54,11 @@ export async function buildIdentityResolver(
     try {
       const existing = await client.listBrands();
       for (const b of existing) brands.set(termKey(b.name), b.id);
+      // A brand renamed or merged in the Hub: its old name leads to it, unless a brand of that name exists again.
+      const ids = new Set(existing.map((b) => b.id));
+      for (const alias of await listAliases("brand").catch(() => [])) {
+        if (!brands.has(alias.nameKey) && ids.has(alias.termId)) brands.set(alias.nameKey, alias.termId);
+      }
       for (const name of brandNames) {
         if (brands.has(termKey(name))) continue;
         const created = await client.createBrand(name);
@@ -78,6 +81,13 @@ export async function buildIdentityResolver(
       // Keyed by "parentId/name" so a child never collides with a same-named
       // category under a different parent ("One" under Air Jordan vs Yeezy).
       for (const c of existing) categories.set(`${c.parent ?? 0}/${termKey(c.name)}`, c.id);
+      // A category renamed, moved or merged in the Hub: its old name under its old parent leads to it,
+      // unless a category of that name is there again (term-aliases.ts).
+      const ids = new Set(existing.map((c) => c.id));
+      for (const alias of await listAliases("category").catch(() => [])) {
+        const key = `${alias.parent}/${alias.nameKey}`;
+        if (!categories.has(key) && ids.has(alias.termId)) categories.set(key, alias.termId);
+      }
       for (const path of paths) {
         let parent = 0;
         for (const name of path) {
