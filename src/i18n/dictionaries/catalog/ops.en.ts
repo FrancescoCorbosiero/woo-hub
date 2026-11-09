@@ -311,6 +311,7 @@ export const opsEn: typeof opsIt = {
     halfWritten: "WordPress took only part of the change and putting it back failed: check the menu in WordPress.",
     makeFailed: "WordPress did not take one of the items: the menu was not made.",
     makeHalf: "WordPress did not take one of the items, and taking the half-made menu away failed: check it in WordPress.",
+    placeNotChanged: "WordPress did not change the menu in that place: check it in WordPress (Appearance › Menus).",
     changedSince: (title: string) => `“${title}” changed after this action: the newer change stands.`,
     gotChildren: (title: string) => `Other items were put under “${title}” since: it stays as it is.`,
     parentGone: (title: string) => `The item “${title}” was under is gone: it cannot be put back.`,

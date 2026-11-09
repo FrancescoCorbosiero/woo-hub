@@ -606,7 +606,12 @@ async function assessLocation(source: MenuSource, input: Extract<MenuActionInput
       menu && menu.count === 0 ? [w.emptyShown(menu.name, place.name)] : [],
     ),
     write: async () => {
-      await source.setPlace(place.slug, menu?.id ?? null);
+      await source.setPlace(place.slug, menu?.id ?? null).catch((e: unknown) => {
+        if (!(e instanceof VetrinaError && e.code === "failed")) throw e;
+        // WordPress's detail for the log; the owner reads that the place may not have changed.
+        console.warn(`[vetrina-menu] place ${place.slug}: ${messageOf(e)}`);
+        throw new VetrinaError("failed", w.placeNotChanged);
+      });
       return {
         record: { kind: "menuLocation", menuId: menu?.id ?? 0, menu: menu?.name ?? null, location: { slug: place.slug, name: place.name }, before },
         result: menu ? { ...(await after(source, menu.id)), created: [] } : { menu: null, digest: null, created: [] },

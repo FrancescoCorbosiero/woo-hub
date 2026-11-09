@@ -166,10 +166,15 @@ export function wordpressMenus(): MenuSource {
         const menu = menus.find((m) => m.id === menuId);
         if (!menu) throw new VetrinaError("not_found", `No menu ${menuId} on the site.`, 404);
         if (!menu.locations.includes(slug)) await wp.updateMenu(menu.id, { locations: [...menu.locations, slug] });
-        return;
+      } else {
+        const holder = menus.find((m) => m.locations.includes(slug));
+        if (holder) await wp.updateMenu(holder.id, { locations: holder.locations.filter((l) => l !== slug) });
       }
-      const holder = menus.find((m) => m.locations.includes(slug));
-      if (holder) await wp.updateMenu(holder.id, { locations: holder.locations.filter((l) => l !== slug) });
+      // Read back: a write WordPress answered without changing the place (a theme or a plugin in the way) is no success.
+      const now = (await wp.locations())[slug]?.menu ?? 0;
+      if (now !== (menuId ?? 0)) {
+        throw new VetrinaError("failed", `WordPress answered, but the place ${slug} shows menu ${now || "none"} instead of ${menuId ?? "none"}.`);
+      }
     },
   };
 }

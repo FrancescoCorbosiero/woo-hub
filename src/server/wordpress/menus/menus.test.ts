@@ -10,6 +10,7 @@ vi.mock("@/lib/env", () => ({ env: { VETRINA_SOURCE: "fixture" } }));
 const client = vi.hoisted(() => ({
   menus: vi.fn(),
   locations: vi.fn(),
+  updateMenu: vi.fn(),
   itemMenus: vi.fn(),
   menuItems: vi.fn(),
   createMenuItems: vi.fn(),
@@ -72,6 +73,36 @@ describe("WordPress's menus, read", () => {
     expect(await wordpressMenus().menu(7)).toMatchObject({ id: 7, count: 2, items: [{ id: 1 }, { id: 2 }] });
     client.menuItems.mockResolvedValueOnce([]);
     await expect(wordpressMenus().menu(8)).rejects.toMatchObject({ code: "not_found" });
+  });
+});
+
+describe("WordPress's places, set", () => {
+  const MENUS = [
+    { id: 7, name: "Principale", slug: "principale", locations: ["primary", "mobile"] },
+    { id: 9, name: "Saldi", slug: "saldi", locations: [] },
+  ];
+
+  it("puts a menu in a place through its own list of places, and reads the place back", async () => {
+    client.menus.mockResolvedValueOnce(MENUS);
+    client.updateMenu.mockResolvedValueOnce({});
+    client.locations.mockResolvedValueOnce({ primary: { name: "primary", description: "", menu: 9 } });
+    await wordpressMenus().setPlace("primary", 9);
+    expect(client.updateMenu).toHaveBeenCalledWith(9, { locations: ["primary"] });
+  });
+
+  it("empties a place by taking it out of the list of the menu there, the menu's other places kept", async () => {
+    client.menus.mockResolvedValueOnce(MENUS);
+    client.updateMenu.mockResolvedValueOnce({});
+    client.locations.mockResolvedValueOnce({ primary: { name: "primary", description: "", menu: 0 } });
+    await wordpressMenus().setPlace("primary", null);
+    expect(client.updateMenu).toHaveBeenCalledWith(7, { locations: ["mobile"] });
+  });
+
+  it("is no success when WordPress answers without changing the place", async () => {
+    client.menus.mockResolvedValueOnce(MENUS);
+    client.updateMenu.mockResolvedValueOnce({});
+    client.locations.mockResolvedValueOnce({ primary: { name: "primary", description: "", menu: 7 } });
+    await expect(wordpressMenus().setPlace("primary", 9)).rejects.toMatchObject({ code: "failed", message: expect.stringContaining("shows menu 7") });
   });
 });
 

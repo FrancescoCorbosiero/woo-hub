@@ -40,7 +40,7 @@ function own(e: unknown): boolean {
   if (!(e instanceof VetrinaError)) return false;
   if (e.code === "invalid" || e.code === "not_found" || e.code === "stale") return true;
   const w = words().menu;
-  return e.code === "failed" && [w.writeFailed, w.halfWritten, w.makeFailed, w.makeHalf].includes(e.message);
+  return e.code === "failed" && [w.writeFailed, w.halfWritten, w.makeFailed, w.makeHalf, w.placeNotChanged].includes(e.message);
 }
 
 async function attempt<T>(fn: () => Promise<T>): Promise<VetrinaResult<T>> {

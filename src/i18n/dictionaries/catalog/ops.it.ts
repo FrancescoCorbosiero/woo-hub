@@ -385,6 +385,7 @@ export const opsIt = {
     halfWritten: "WordPress ha accettato solo una parte della modifica e rimetterla non è riuscito: controlla il menu su WordPress.",
     makeFailed: "WordPress non ha accettato una delle voci: il menu non è stato creato.",
     makeHalf: "WordPress non ha accettato una delle voci, e togliere il menu fatto a metà non è riuscito: controllalo in WordPress.",
+    placeNotChanged: "WordPress non ha cambiato il menu in quella posizione: controllalo in WordPress (Aspetto › Menu).",
     /** Its way back. */
     changedSince: (title: string) => `«${title}» è cambiata dopo questa azione: la modifica più recente resta.`,
     gotChildren: (title: string) => `Sotto «${title}» sono state messe altre voci: resta com'è.`,
