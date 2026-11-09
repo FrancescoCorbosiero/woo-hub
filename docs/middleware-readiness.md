@@ -12,7 +12,9 @@ WordPress surface, safety model, runtime state, spec quality, recorded
 intent), every claim checked by two skeptics, then three advocates (keep,
 extract, fresh) and a judge over the verified findings. File and line
 references were read, not inferred. The design of the LLM itself is out
-of scope here.
+of scope here. The complete record (every inventory, claim, skeptic
+verdict, advocate case and the judge's scoring) is in
+[audit/middleware-readiness-full.md](audit/middleware-readiness-full.md).
 
 - [1. Verdict](#1-verdict)
 - [2. What is already middleware](#2-what-is-already-middleware)
