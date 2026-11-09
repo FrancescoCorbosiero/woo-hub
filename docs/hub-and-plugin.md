@@ -118,7 +118,7 @@ Letters follow `docs/02-FEATURES.md` there. **Hub ✓** = in the Hub today;
 | Taxonomy rules | Hub ✓ | Taxonomies tab |
 | Smart taxonomy | Hub ✓ | Automatic categories, better than the plan: persisted rules, held changes, a log |
 | Tax query, counts | Hub → | Over `store_index`, when a screen needs it |
-| Navigation menus | Plugin | WordPress's menu editor already does it |
+| Navigation menus | Hub ✓ | The Vetrina's Menu tab and the API, over `wp/v2` with an Application Password — no plugin route ([menus.md](menus.md)); creating menus and assigning theme places stay in WordPress |
 | Round-trip export/import | Hub ✓ | The hidden `/preview` file flow |
 
 ### G–I. Media, email, tools

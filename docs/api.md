@@ -7,10 +7,12 @@ actions, the log, proposals — is in [operations.md](operations.md).
 
 - **Reads**: the homepage (`/homepage`), the products (`/catalog/products`),
   the categories and brands (`/catalog/terms`), a term's order on the shop
-  (`/catalog/order`), the log (`/operations`).
+  (`/catalog/order`), the site's navigation menus and pages (`/menus`,
+  `/pages`), the log (`/operations`).
 - **Every action, described**: `/actions` — the catalog's on products (hide,
   sale, tags, categories, a place on the homepage, a margin, the shop's
-  order, delete…) and the homepage's on its sections and blocks.
+  order, delete…), the homepage's on its sections and blocks, and the
+  menus' on their items ([menus.md](menus.md)).
 - **Proposals**, the safe way to act: `/proposals` previews an action and
   keeps it; `/proposals/{id}/confirm` runs it, only if the shop still gives
   that preview, only once, and only on a person's word ([tokens](#tokens)).
@@ -220,9 +222,58 @@ order, and only the products whose number must change are written.
 format, an LLM's answer as it came, a CSV…) and using it on a category, a
 brand or the whole catalog. See [order-sources.md](order-sources.md#the-api).
 
+### Navigation menus
+
+The site's menus need WordPress's own API, signed in with an Application
+Password (`WP_APP_USER`, `WP_APP_PASSWORD`; [menus.md](menus.md#setup)):
+without it these answer `503 not_configured`.
+
+`GET /api/v1/menus` — every menu: `id`, `name`, `slug`, `locations` (the
+theme's places showing it, `{slug, name}`; none: not on the site), `count`
+(its items).
+
+`GET /api/v1/menus/{id}` — the menu, its items top to bottom:
+
+```json
+{ "ok": true, "data": {
+  "id": 2, "name": "Menu principale", "slug": "menu-principale", "count": 8,
+  "locations": [{ "slug": "primary", "name": "Menu principale" }],
+  "digest": "9f2c…",
+  "items": [
+    { "id": 13, "parent": 0, "depth": 0, "position": 3, "title": "Brand", "label": "Brand",
+      "target": { "kind": "link", "url": "#" }, "url": "#", "invalid": false },
+    { "id": 14, "parent": 13, "depth": 1, "position": 1, "title": "Nike", "label": null,
+      "target": { "kind": "brand", "id": 201 }, "url": "https://…/brand/nike/", "invalid": false }
+  ]
+} }
+```
+
+`position` is the item's 1-based place among the items under the same
+`parent` (0: the top level) — what an action's `place` takes. `label` is
+null when the item shows its category's, brand's or page's own name.
+`target.kind` is `category`, `brand`, `page`, `link`, or `other` (something
+else WordPress links to, with its `type`, `object` and `id`).
+
+`GET /api/v1/pages` — the site's published pages (`id`, `title`, `parent`,
+`url`), for an item that leads to one.
+
+The actions are `menuItemAdd`, `menuItemMove`, `menuItemRemove` and
+`menuItemRename` (`GET /actions` describes each), proposed and confirmed
+like any other, and written at once on the yes. Send the menu's `digest`
+back as `expected` — refused (`409 stale`) if the menu changed since you
+read it:
+
+```json
+{ "action": { "kind": "menuItemAdd", "menuId": 2, "items": [{ "kind": "category", "id": 12 }, { "kind": "link", "url": "/saldi", "label": "Saldi" }],
+              "place": { "parent": 13, "position": 1 }, "expected": { "digest": "9f2c…" } } }
+```
+
+The proposal keeps the menu's fingerprint in its preview: a menu changed
+before the confirmation makes a new proposal (`409`, as for any action).
+
 ### `GET /api/v1/actions`
 
-Every action the Vetrina can do: `kind`, `scope` (`catalog` or `homepage`),
+Every action the Vetrina can do: `kind`, `scope` (`catalog`, `homepage` or `menu`),
 `title`, `description` (what it does, what to know before asking it),
 `undo` (how its "Annulla" works), a valid `example`, and its `input` as JSON
 Schema (draft 2020-12) — made from the very schema the server checks
@@ -253,7 +304,8 @@ written. `201` with the proposal:
 `summary` is the preview in sentences, for a reader without the screens:
 show it to the owner before confirming. An action that could not run is
 refused here, with why (`400`). A homepage action may carry `expected`
-(`{ modifiedGmt, attrsHash }` from `/homepage`): refused if the page changed
+(`{ modifiedGmt, attrsHash }` from `/homepage`), a menu action
+`{ digest }` from `/menus/{id}`: refused if the page or the menu changed
 since you read it.
 
 ### `GET /api/v1/proposals/{id}`
@@ -268,8 +320,8 @@ The owner's yes — with `confirm`, a person's token ([tokens](#tokens)): the
 token that proposed, a program's, gets `403`. The preview is made again: if
 the shop still gives the same one, the action runs, filed as the
 confirmer's — `202` with `{ "operation": … }`, the action as
-the log has it (follow it at `/operations/{id}`; a homepage action is done at
-once). Confirmed again, it answers the same action: a retry never runs it
+the log has it (follow it at `/operations/{id}`; a homepage or menu action is
+done at once). Confirmed again, it answers the same action: a retry never runs it
 twice.
 
 If the shop changed since (a price, a product, a section moved), nothing
@@ -280,8 +332,8 @@ minutes, `410`.
 
 ### `GET /api/v1/operations?limit=20`
 
-The log, newest first (up to 100): every action, the catalog's and the
-homepage's, with how it came (`via`: `app`, `api`, `assistant`,
+The log, newest first (up to 100): every action, the catalog's, the
+homepage's and the menus', with how it came (`via`: `app`, `api`, `assistant`,
 `scheduler`), how it went, and whether it can still be undone.
 
 ### `GET /api/v1/operations/{id}`
@@ -299,7 +351,8 @@ and is counted as `kept`) — `202`, then follow it with
 `GET /operations/{id}`; refused (`409`) while the action still runs. A
 homepage action: its way back is written at once, while the section is as
 the action left it (found by its fingerprint wherever it is now) — refused
-(`409`) when it changed since, since the newer change stands.
+(`409`) when it changed since, since the newer change stands. A menu
+action: the same, item by item (found by id and neighbour).
 
 ## A script
 

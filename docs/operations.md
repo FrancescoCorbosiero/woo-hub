@@ -9,14 +9,15 @@ owner says yes to: a person, never the program that asked.
 ## Actions
 
 Every change is an **action**: a named kind with a typed input, checked on the
-server, previewed, filed in the log, and undoable. Two families:
+server, previewed, filed in the log, and undoable. Three families:
 
 | Scope | Kinds | Runs |
 |---|---|---|
 | **catalog** — products | `hide`, `show`, `sale`, `unsale`, `tag`, `untag`, `categorize`, `uncategorize`, `pin`, `margin`, `order`, `sourceOrder`, `delete` | in the background, one at a time, product by product (`operations/runner.ts`, `writes.ts`, `remove.ts`) |
 | **homepage** — sections and blocks | `sectionSwitch`, `sectionMove`, `sectionsArrange`, `sectionAdd`, `sectionRemove`, `sectionSource`, `sectionEdit`, `blockEdit` | at once: one write to the page, a WordPress revision (`operations/page.ts`) |
+| **menu** — the site's navigation menus | `menuItemAdd`, `menuItemMove`, `menuItemRemove`, `menuItemRename` | at once: the menu's changed items, in WordPress's batches, put back if WordPress takes only part (`operations/menu.ts`, [menus.md](menus.md)) |
 
-The types are in `src/lib/vetrina/catalog-ops.ts` and `page-ops.ts`. One
+The types are in `src/lib/vetrina/catalog-ops.ts`, `page-ops.ts` and `menu-ops.ts`. One
 registry describes them all for programs (`operations/registry.ts`): what each
 does, how it is undone, a valid example, and its input as JSON Schema made
 from the very schema the server checks (`GET /api/v1/actions`).
@@ -25,7 +26,7 @@ Before it runs, an action is **assessed** on the shop as it is: refused when it
 could not run (the same refusals the write would give: a section already off,
 a product already in that place, a list the config does not allow), and
 otherwise previewed — the products it changes, before → after, those it leaves
-as they are and why, what the owner should know; a homepage action in
+as they are and why, what the owner should know; a homepage or menu action in
 sentences.
 
 ## The log
@@ -54,6 +55,10 @@ puts back what the action changed, where nobody changed it since:
   is refused: the newer change stands. A move goes back only while the
   sections are exactly as it left them; a section taken away goes back next to
   the same neighbour, with its texts, products and settings.
+- **A menu action**: the same, item by item — found by id and by its
+  neighbour, put back while it is as the action left it, refused when it
+  changed since. A taken-away item comes back where it was, with its label
+  and settings, and its items back under it.
 
 The screens' own toasts carry the log's "Annulla" — the same one Attività
 offers later.
@@ -103,6 +108,7 @@ process (so its actions are filed with `via: "assistant"`):
 | read the homepage | `readHomepage()` — `src/server/api/reads.ts` |
 | find products | `readProducts(query)` — the query an action's target takes |
 | list categories, brands | `listTerms(taxonomy)` — `src/server/api/catalog-order.ts` |
+| read the menus, the pages | `listMenus()`, `readMenu(id)` (with its `digest`), `listPages()` — `src/server/api/menus.ts` |
 | read the log | `listOperations(limit)` |
 | propose an action | `propose(action, "assistant", by)` — one tool per kind from the registry, its input the kind's JSON Schema |
 | confirm | `confirmProposal(id, by)` — `by` a person (`isPerson`), never the assistant's own token |

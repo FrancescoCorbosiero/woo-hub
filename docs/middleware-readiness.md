@@ -303,6 +303,25 @@ homepage, add it to the main menu" as three proposals a person confirms,
 each in Attività with `via: assistant` and the confirming actor recorded,
 each undoable.
 
+*Landed (2026-11-09), ahead of the order above:* menus over `wp/v2` with
+the Application Password ([menus.md](menus.md)). `src/server/wordpress/client.ts`
+over `adapters/http.ts` (menus, items, theme places, pages, `/batch/v1`); a
+`MenuSource` port with WordPress's implementation and a demo fixture
+keeping WordPress's rules; a pure planner (`src/lib/menus/plan.ts`) that
+renumbers the whole menu as WordPress's editor does and writes only what
+changes; `menuItemAdd`, `menuItemMove`, `menuItemRemove` and a fourth,
+`menuItemRename`, in the registry (scope `menu`), proposable over the API,
+with undo by id and neighbour; `GET /menus`, `/menus/{id}`, `/pages`; the
+Vetrina's Menu tab. **One change from the plan:** there is no
+`modified_gmt` to compare-and-swap on — WordPress's menu items carry no
+modified date — so the compare is a fingerprint of the menu's structure
+(`digest`), sent back as `expected` and kept in the proposal's preview, and
+the write follows its assessment within one request; a write WordPress
+takes only part of is put back. Built from WordPress 6.5's controllers and
+tested on the fixture; **not yet run against a live WordPress**.
+For the acceptance sentence, creating a category is still missing as an
+action (`categorize` takes an existing one).
+
 **Weeks 8–12: durability.**
 Replace the runner's `globalThis` chain with a leased `jobs` table
 (`FOR UPDATE SKIP LOCKED` + `locked_until` + worker identity, the pattern
@@ -322,8 +341,11 @@ interrupts a running sale, and extraction becomes a free choice.
 - **Long streams behind Cloudflare.** The 100-second ceiling that shaped
   `apply-job.ts` applies to an MCP endpoint too: keep tool answers short
   and have the caller poll `/operations/{id}`.
-- **WordPress menu REST quirks** (locations, auto-add) are unknown until a
-  fixture is built from a real site.
+- **WordPress menu REST quirks.** Read from WordPress 6.5's source and
+  mirrored in the fixture (no modified date, delete needs `force`, a bare
+  delete orphans the children, a title equal to the object's name stored
+  empty, `menu_order` never renumbered by WordPress, theme places keyed by
+  slug); `auto_add` is left alone. Still to confirm on a live site.
 
 ### Decided (2026-11-09)
 
@@ -335,5 +357,5 @@ interrupts a running sale, and extraction becomes a free choice.
   `menu-items`), pages and media; one more secret in `src/lib/env.ts`
   (`WP_APP_USER`, `WP_APP_PASSWORD`), separate from the Woo keys, which
   cannot reach `wp/v2`. New `wc-gh/v1` routes remain the fallback for
-  anything the core API does not cover. `hub-and-plugin.md:121` is to be
-  amended when the first menu kind lands.
+  anything the core API does not cover. `hub-and-plugin.md:121` is
+  amended: menus are the Hub's.
