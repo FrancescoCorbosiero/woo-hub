@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { getServerDictionary } from "@/i18n/server";
 import { MenusHome } from "@/components/vetrina/menus/MenusHome";
-import { listMenus, listPlaces } from "@/server/api/menus";
+import { getMenuSource } from "@/server/wordpress/menus/source";
 import { attempt } from "@/server/vetrina/service";
 
 export const dynamic = "force-dynamic";
@@ -13,9 +13,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 /** "Menu": the site's navigation menus and the theme's places, read live from WordPress on every visit. */
 export default async function MenusPage() {
-  const result = await attempt(async () => {
-    const [menus, places] = await Promise.all([listMenus(), listPlaces()]);
-    return { menus, places };
-  });
+  // One read of the menus and the places together: three requests to WordPress.
+  const result = await attempt(async () => (await getMenuSource()).overview());
   return <MenusHome result={result} />;
 }

@@ -589,7 +589,7 @@ function assessDeleteMenu(source: MenuSource, menu: Menu): MenuAssessment {
 
 async function assessLocation(source: MenuSource, input: Extract<MenuActionInput, { kind: "menuLocation" }>): Promise<MenuAssessment> {
   const w = words().menu;
-  const [places, menus] = await Promise.all([source.places(), input.menuId != null ? source.menus() : Promise.resolve([])]);
+  const { places, menus } = await source.overview();
   const place = places.find((p) => p.slug === input.location);
   if (!place) throw new VetrinaError("invalid", w.noPlace(input.location), 400);
   const menu = input.menuId != null ? menus.find((m) => m.id === input.menuId) : null;

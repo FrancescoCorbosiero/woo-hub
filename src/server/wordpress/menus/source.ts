@@ -65,6 +65,10 @@ export interface MenuSource {
 
   /** Every menu and every item of every menu, in one read: where something is in the site's menus. */
   everything(): Promise<SiteMenus>;
+  /** Every menu and the theme's places, read together (the Menu tab; choosing a place). */
+  overview(): Promise<{ menus: MenuSummary[]; places: ThemePlace[] }>;
+  /** A menu with its items and the theme's places, read together (a menu's screen). */
+  menuAndPlaces(id: number): Promise<{ menu: Menu; places: ThemePlace[] }>;
   /** Every place the theme registered, with the menu it shows. */
   places(): Promise<ThemePlace[]>;
   /** A new, empty menu in no place; refused when another menu has the name. */

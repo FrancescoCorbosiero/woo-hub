@@ -168,6 +168,30 @@ function menuOf(s: DemoMenus, id: number): DemoMenus["menus"][number] {
   return menu;
 }
 
+/** A menu and its items, as WordPress orders them; not_found when there is no such menu. */
+function menuIn(s: DemoMenus, id: number): Menu {
+  const menu = s.menus.find((m) => m.id === id);
+  if (!menu) throw new VetrinaError("not_found", `No menu ${id} on the site.`, 404);
+  const items = s.items
+    .filter((i) => i.menu === id)
+    .sort((a, b) => a.order - b.order || a.id - b.id)
+    .map(view);
+  return {
+    ...menu,
+    locations: s.locations.filter((l) => l.menu === id).map(({ slug, name }) => ({ slug, name })),
+    count: items.length,
+    items,
+  };
+}
+
+/** The theme's places, each with the menu it shows. */
+function placesOf(s: DemoMenus): ThemePlace[] {
+  return s.locations.map((l): ThemePlace => {
+    const menu = s.menus.find((m) => m.id === l.menu);
+    return { slug: l.slug, name: l.name, menu: menu ? { id: menu.id, name: menu.name } : null };
+  });
+}
+
 /** Every menu, with the places that show it and its items' count. */
 function summaries(s: DemoMenus): MenuSummary[] {
   return s.menus.map((m) => ({
@@ -184,19 +208,7 @@ export function fixtureMenus(): MenuSource {
       return summaries(state());
     },
     async menu(id) {
-      const s = state();
-      const menu = s.menus.find((m) => m.id === id);
-      if (!menu) throw new VetrinaError("not_found", `No menu ${id} on the site.`, 404);
-      const items = s.items
-        .filter((i) => i.menu === id)
-        .sort((a, b) => a.order - b.order || a.id - b.id)
-        .map(view);
-      return {
-        ...menu,
-        locations: s.locations.filter((l) => l.menu === id).map(({ slug, name }) => ({ slug, name })),
-        count: items.length,
-        items,
-      } satisfies Menu;
+      return menuIn(state(), id);
     },
     async pages() {
       return structuredClone(PAGES);
@@ -251,12 +263,16 @@ export function fixtureMenus(): MenuSource {
       const items = [...s.items].sort((a, b) => a.order - b.order || a.id - b.id).map((item) => ({ ...view(item), menuId: item.menu }));
       return { menus: summaries(s), items };
     },
-    async places() {
+    async overview() {
       const s = state();
-      return s.locations.map((l): ThemePlace => {
-        const menu = s.menus.find((m) => m.id === l.menu);
-        return { slug: l.slug, name: l.name, menu: menu ? { id: menu.id, name: menu.name } : null };
-      });
+      return { menus: summaries(s), places: placesOf(s) };
+    },
+    async menuAndPlaces(id) {
+      const s = state();
+      return { menu: menuIn(s, id), places: placesOf(s) };
+    },
+    async places() {
+      return placesOf(state());
     },
     async createMenu(name) {
       const s = state();

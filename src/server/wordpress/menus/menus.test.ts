@@ -76,6 +76,38 @@ describe("WordPress's menus, read", () => {
   });
 });
 
+describe("WordPress's menus and places, read together", () => {
+  it("gives the Menu tab its menus, counted, and the places, in three requests", async () => {
+    client.menus.mockResolvedValueOnce([{ id: 7, name: "Principale", slug: "principale", locations: ["primary"] }]);
+    client.locations.mockResolvedValueOnce({
+      primary: { name: "primary", description: "Menu principale", menu: 7 },
+      mobile: { name: "mobile", description: "Menu mobile", menu: 0 },
+    });
+    client.itemMenus.mockResolvedValueOnce([{ id: 1, menus: 7 }]);
+    expect(await wordpressMenus().overview()).toEqual({
+      menus: [{ id: 7, name: "Principale", slug: "principale", locations: [{ slug: "primary", name: "Menu principale" }], count: 1 }],
+      places: [
+        { slug: "primary", name: "Menu principale", menu: { id: 7, name: "Principale" } },
+        { slug: "mobile", name: "Menu mobile", menu: null },
+      ],
+    });
+  });
+
+  it("gives a menu's screen the menu and the places, and says when the menu is not there", async () => {
+    client.menus.mockResolvedValueOnce([{ id: 7, name: "Principale", slug: "principale", locations: [] }]);
+    client.locations.mockResolvedValueOnce({ footer: { name: "footer", description: "Footer", menu: 0 } });
+    client.menuItems.mockResolvedValueOnce([wpItem({ id: 1 })]);
+    expect(await wordpressMenus().menuAndPlaces(7)).toMatchObject({
+      menu: { id: 7, count: 1, items: [{ id: 1 }] },
+      places: [{ slug: "footer", name: "Footer", menu: null }],
+    });
+    client.menus.mockResolvedValueOnce([]);
+    client.locations.mockResolvedValueOnce({});
+    client.menuItems.mockResolvedValueOnce([]);
+    await expect(wordpressMenus().menuAndPlaces(8)).rejects.toMatchObject({ code: "not_found" });
+  });
+});
+
 describe("WordPress's places, set", () => {
   const MENUS = [
     { id: 7, name: "Principale", slug: "principale", locations: ["primary", "mobile"] },

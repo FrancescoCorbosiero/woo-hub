@@ -58,6 +58,15 @@ function summaryOf(menu: WpMenu, locations: WpLocations, count: number): MenuSum
   };
 }
 
+/** The theme's places, each with the menu it shows, by the menus read with them. */
+function placesOf(menus: readonly WpMenu[], locations: WpLocations): ThemePlace[] {
+  const byId = new Map(menus.map((m) => [m.id, m]));
+  return Object.entries(locations).map(([slug, place]): ThemePlace => {
+    const menu = place.menu ? byId.get(place.menu) : undefined;
+    return { slug, name: place.description || slug, menu: menu ? { id: menu.id, name: decodeEntities(menu.name) } : null };
+  });
+}
+
 /** The item's target as WordPress takes it. */
 function targetBody(target: MenuTarget): WpMenuItemBody {
   switch (target.kind) {
@@ -140,13 +149,21 @@ export function wordpressMenus(): MenuSource {
         items: items.map((item) => ({ ...menuItemOf(item), menuId: item.menus })),
       };
     },
+    async overview() {
+      const [menus, locations, items] = await Promise.all([wp.menus(), wp.locations(), wp.itemMenus()]);
+      const counts = new Map<number, number>();
+      for (const item of items) counts.set(item.menus, (counts.get(item.menus) ?? 0) + 1);
+      return { menus: menus.map((m) => summaryOf(m, locations, counts.get(m.id) ?? 0)), places: placesOf(menus, locations) };
+    },
+    async menuAndPlaces(id) {
+      const [menus, locations, items] = await Promise.all([wp.menus(), wp.locations(), wp.menuItems(id)]);
+      const menu = menus.find((m) => m.id === id);
+      if (!menu) throw new VetrinaError("not_found", `No menu ${id} on the site.`, 404);
+      return { menu: { ...summaryOf(menu, locations, items.length), items: items.map(menuItemOf) }, places: placesOf(menus, locations) };
+    },
     async places() {
       const [menus, locations] = await Promise.all([wp.menus(), wp.locations()]);
-      const byId = new Map(menus.map((m) => [m.id, m]));
-      return Object.entries(locations).map(([slug, place]): ThemePlace => {
-        const menu = place.menu ? byId.get(place.menu) : undefined;
-        return { slug, name: place.description || slug, menu: menu ? { id: menu.id, name: decodeEntities(menu.name) } : null };
-      });
+      return placesOf(menus, locations);
     },
     async createMenu(name) {
       const made = await wp.createMenu(name);

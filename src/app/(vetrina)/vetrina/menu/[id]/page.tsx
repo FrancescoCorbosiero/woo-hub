@@ -16,8 +16,8 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function MenuPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const result = await attempt(async () => {
-    const source = await getMenuSource();
-    const [menu, places] = await Promise.all([source.menu(menuId(id)), source.places()]);
+    // The menu and the theme's places read together: three requests to WordPress.
+    const { menu, places } = await (await getMenuSource()).menuAndPlaces(menuId(id));
     return { menu, digest: menuDigest(menu), places };
   });
   return <MenuScreen result={result} />;
