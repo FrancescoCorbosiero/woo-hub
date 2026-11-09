@@ -17,7 +17,7 @@ import { repriceStoreEdits } from "@/server/actions/store-edits";
 import { auditPrices, type PriceAuditResult } from "@/server/actions/debug";
 import { LockIcon, UnlockIcon } from "@/components/icons";
 import { CardImage } from "./CardImage";
-import type { AppliedRule, DrawerData, DrawerVariant, StoreDrawerVariant } from "./drawer-data";
+import type { AppliedRule, DrawerData, DrawerVariant, StoreDrawerVariant } from "@/server/catalog/drawer-data";
 
 const eur = new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" });
 

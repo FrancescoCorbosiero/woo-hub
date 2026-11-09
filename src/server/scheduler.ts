@@ -11,6 +11,7 @@ import {
   slotMissed,
   type AutoSync,
 } from "@/lib/schedule";
+// eslint-disable-next-line no-restricted-imports -- predates the boundary rule; hoisted into src/server in weeks 3-6 (docs/middleware-readiness.md §6)
 import { runKicksdbRefresh } from "@/server/actions/feeds";
 import { kicksdbConfigured } from "@/server/adapters/kicksdb";
 import { db } from "@/server/db/client";

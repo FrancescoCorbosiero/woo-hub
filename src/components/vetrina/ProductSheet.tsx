@@ -5,7 +5,7 @@ import { Sheet } from "react-modal-sheet";
 import { Button, List, ListItem, Preloader } from "konsta/react";
 import { toast } from "sonner";
 import { useI18n } from "@/i18n/provider";
-import type { DrawerData } from "@/components/catalog/drawer-data";
+import type { DrawerData } from "@/server/catalog/drawer-data";
 import type { OperationView } from "@/lib/vetrina/catalog-ops";
 import type { ProductCard } from "@/lib/vetrina/types";
 import { loadProductPrices, publishProductPrices } from "@/server/actions/vetrina-prices";

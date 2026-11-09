@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { getActiveConfig } from "@/server/config/repo";
-import { loadDrawerData, type DrawerData } from "@/components/catalog/drawer-data";
+import { loadDrawerData, type DrawerData } from "@/server/catalog/drawer-data";
 import { runPriceSync } from "@/server/sync/price-sync";
 import { getSnapshotInfo } from "@/server/store-json/repo";
 import { skuKey } from "@/lib/skus";

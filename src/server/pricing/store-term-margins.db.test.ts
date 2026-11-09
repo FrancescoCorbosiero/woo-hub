@@ -11,7 +11,7 @@ import type { SourceProduct } from "@core/core-spine";
  * price on the GoldenSneakers product in the same category. Opt-in, like the
  * other DB suites:
  *
- *   RUN_DB_TESTS=1 DATABASE_URL=postgres://…@localhost:…/… REDIS_URL=… npm test
+ *   DATABASE_URL=postgres://…@localhost:…/hub_test npm run test:db
  *
  * KicksDB and the store are stand-ins; everything else is the real thing.
  * The suite puts back the config it found, and removes its own index and
@@ -126,7 +126,7 @@ const load = async () => ({
   ...(await import("@/server/sync/price-sync")),
   ...(await import("@/server/actions/config")),
   ...(await import("@/server/config/rule-list")),
-  ...(await import("@/components/catalog/drawer-data")),
+  ...(await import("@/server/catalog/drawer-data")),
   ...(await import("@/server/actions/debug")),
   ...(await import("./store-terms")),
 });

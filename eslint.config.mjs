@@ -5,6 +5,19 @@ import nextTs from "eslint-config-next/typescript";
 
 const require = createRequire(import.meta.url);
 
+// The layering (docs/middleware-readiness.md §6): the domain under src/server
+// never reaches up into the screens' server actions (src/server/actions) or the
+// UI (src/components). Aliased or relative, the import is the same one.
+const NO_ACTIONS = {
+  regex: "^(@/server/actions|(\\.\\.?/)+actions)(/|$)",
+  message:
+    "src/server must not import the screens' server actions: move what both need into a src/server module, and let the action call it.",
+};
+const NO_COMPONENTS = {
+  regex: "^(@/components|(\\.\\.?/)+components)(/|$)",
+  message: "src/server must not import the UI (src/components): a server module lives under src/server.",
+};
+
 // Next 16 ships its presets as flat configs: FlatCompat (eslintrc) chokes on them.
 export default defineConfig([
   ...nextVitals,
@@ -25,6 +38,16 @@ export default defineConfig([
         },
       ],
     },
+  },
+  {
+    files: ["src/server/**/*.{ts,tsx}"],
+    ignores: ["src/server/actions/**"],
+    rules: { "no-restricted-imports": ["error", { patterns: [NO_ACTIONS, NO_COMPONENTS] }] },
+  },
+  {
+    // The actions are the screens' entry: they call into src/server, and may call one another, never the UI.
+    files: ["src/server/actions/**/*.{ts,tsx}"],
+    rules: { "no-restricted-imports": ["error", { patterns: [NO_COMPONENTS] }] },
   },
   globalIgnores([
     ".next/**",
