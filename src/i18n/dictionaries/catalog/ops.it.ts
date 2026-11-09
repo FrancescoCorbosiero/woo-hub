@@ -346,7 +346,7 @@ export const opsIt = {
     sampled: (read: number) => `I numeri sono una stima sui primi ${products(read)} letti dal negozio: l'azione conta esatto.`,
     prices: (up: number, down: number) => `Prezzi che salgono: ${n(up)}; che scendono: ${n(down)}.`,
     notFound: "Questa proposta non c'è.",
-    personOnly: "Una proposta la conferma una persona: chi è entrato nel Hub, o con una chiave che può confermare.",
+    personOnly: "Una proposta la conferma una persona: chi è entrato nell'Hub, o con una chiave che può confermare.",
     expired: (minutes: number) => `La proposta è scaduta (vale ${minutes} minuti): chiedine una nuova.`,
     confirming: "La sto già eseguendo.",
     changed: "Il negozio è cambiato da quando l'hai vista: ecco la nuova anteprima, da confermare di nuovo.",
