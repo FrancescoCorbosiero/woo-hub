@@ -317,6 +317,19 @@ const ITEM_FIELDS = "id,title,status,url,attr_title,description,type,object,obje
 export const wp = {
   /** Every menu: id, name, slug, the places it is in. */
   menus: () => readAll("/wp/v2/menus", WpMenu, { context: "edit", _fields: "id,name,slug,locations" }),
+  /** A new menu, in no place. WordPress refuses a name another menu has (menu_exists). */
+  createMenu: async (name: string) => parsed("/wp/v2/menus", WpMenu, await write("POST", "/wp/v2/menus", { name })),
+  /**
+   * A menu's name, or the places it is in: `locations` is the whole list —
+   * places left out are emptied of it, a place given is taken from the menu
+   * that had it (WP_REST_Menus_Controller::handle_locations).
+   */
+  updateMenu: async (id: number, body: { name?: string; locations?: string[] }) =>
+    parsed(`/wp/v2/menus/${id}`, WpMenu, await write("POST", `/wp/v2/menus/${id}`, body)),
+  /** A menu and its items deleted (menus have no trash: force); the places that showed it show none. */
+  deleteMenu: async (id: number) => {
+    await write("DELETE", `/wp/v2/menus/${id}`, undefined, { force: "true" });
+  },
   /** Every item of every menu, only which menu it is in: the menus' counts, in one read across the site. */
   itemMenus: () => readAll("/wp/v2/menu-items", WpItemMenu, { context: "edit", status: "publish,draft", _fields: "id,menus" }),
   /** The theme's places for a menu, with the menu each shows. */

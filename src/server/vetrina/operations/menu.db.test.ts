@@ -17,8 +17,11 @@ vi.mock("@/lib/env", async (importOriginal) => {
   return { env: { ...real.env, VETRINA_SOURCE: "fixture" } };
 });
 
-/** A write WordPress refuses, on demand: the next `failAt`-th item update of a call fails. */
-const faults = vi.hoisted(() => ({ failUpdateAt: null as number | null }));
+/**
+ * A write WordPress refuses, on demand: past the `failUpdateAt`-th item
+ * update of the next call, or past the `failCreateAt`-th item made from now.
+ */
+const faults = vi.hoisted(() => ({ failUpdateAt: null as number | null, failCreateAt: null as number | null }));
 vi.mock("@/server/wordpress/menus/fixture-menus", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/server/wordpress/menus/fixture-menus")>();
   const { VetrinaError } = await import("@/server/vetrina/source");
@@ -28,6 +31,17 @@ vi.mock("@/server/wordpress/menus/fixture-menus", async (importOriginal) => {
       const source = real.fixtureMenus();
       return {
         ...source,
+        async create(menuId: number, items: Parameters<typeof source.create>[1]) {
+          const at = faults.failCreateAt;
+          if (at == null) return source.create(menuId, items);
+          if (items.length <= at) {
+            faults.failCreateAt = at - items.length;
+            return source.create(menuId, items);
+          }
+          faults.failCreateAt = null;
+          const ok = await source.create(menuId, items.slice(0, at));
+          return [...ok, ...items.slice(at).map(() => ({ ok: false as const, error: new VetrinaError("failed", "HTTP 500", 500) }))];
+        },
         async update(changes: Parameters<typeof source.update>[0]) {
           const at = faults.failUpdateAt;
           if (at == null) return source.update(changes);
@@ -89,6 +103,7 @@ describe.skipIf(!enabled)("the menus' actions on the demo shop", () => {
     const g = globalThis as Record<string, unknown>;
     for (const key of ["__vetrinaDemoMenus", "__vetrinaDemo", "__vetrinaOperations"]) delete g[key];
     faults.failUpdateAt = null;
+    faults.failCreateAt = null;
   });
 
   it("adds a brand and a link at a place, renumbers the menu as WordPress's editor does, and Annulla takes them away", async () => {
@@ -233,5 +248,134 @@ describe.skipIf(!enabled)("the menus' actions on the demo shop", () => {
     expect(stale.code).toBe("stale");
     expect(await loadProposal(move.id)).toMatchObject({ status: "changed" });
     expect((await shape())[0]).toBe("Home");
+  });
+  it("makes a menu as a copy, in no place, without what leads to something gone; Annulla deletes it while it is as made", async () => {
+    const { assessMenu, startMenuOperation, undoOperation, getMenuSource } = await load();
+    // An item whose category is gone: WordPress keeps it, marked; a copy leaves it out.
+    await (await getMenuSource()).create(1, [{ target: { kind: "category", id: 999_999 }, label: null, parent: 0, order: 99 }]);
+    const assessed = await assessMenu({ kind: "menuCreate", name: "Menu Black Friday", copyOf: 1 });
+    expect(assessed.preview.page?.lines).toEqual([
+      "Nasce il menu «Menu Black Friday», copia di «Menu principale»: 8 voci.",
+      "Il sito non lo mostra finché non lo metti in una posizione del tema.",
+    ]);
+    expect(assessed.preview.warnings).toEqual(["1 voce porta a qualcosa che non c'è più: resta fuori dalla copia."]);
+
+    const made = await startMenuOperation({ kind: "menuCreate", name: "Menu Black Friday", copyOf: 1 });
+    expect(made.operation).toMatchObject({ kind: "menuCreate", label: "Menu «Menu Black Friday», copia di «Menu principale»", undoable: true });
+    const copy = made.result.menu!;
+    expect(copy).toMatchObject({ name: "Menu Black Friday", locations: [], count: 8 });
+    expect(await shape(copy.id)).toEqual(MAIN);
+    // Each label, or its absence, as it was: "Novità" its own, "Nike" its brand's name.
+    expect(copy.items.find((i) => i.title === "Novità")?.label).toBe("Novità");
+    expect(copy.items.find((i) => i.title === "Nike")?.label).toBeNull();
+    expect(copy.items.map((i) => i.order)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+
+    await undoOperation(made.operation!.id);
+    expect((await refusal(menu(copy.id))).code).toBe("not_found");
+  });
+
+  it("refuses a name another menu has, in any case; a new menu's Annulla, once it changed, leaves it", async () => {
+    const { startMenuOperation, undoOperation } = await load();
+    expect((await refusal(startMenuOperation({ kind: "menuCreate", name: "menu PRINCIPALE" }))).message).toBe(
+      "C'è già un menu che si chiama «menu PRINCIPALE»: scegli un altro nome.",
+    );
+    const made = await startMenuOperation({ kind: "menuCreate", name: "Vuoto" });
+    expect(made.operation?.label).toBe("Nuovo menu «Vuoto»");
+    expect(made.result.menu).toMatchObject({ name: "Vuoto", count: 0, items: [] });
+    await startMenuOperation({ kind: "menuItemAdd", menuId: made.result.menu!.id, items: [{ kind: "page", id: 6 }] });
+    expect(await refusal(undoOperation(made.operation!.id))).toMatchObject({
+      code: "stale",
+      message: "Il menu «Vuoto» è cambiato dopo questa azione: il cambio più recente resta.",
+    });
+  });
+
+  it("puts a menu in a place of the theme instead of the one there; Annulla puts that one back", async () => {
+    const { assessMenu, startMenuOperation, undoOperation, getMenuSource } = await load();
+    const copy = await startMenuOperation({ kind: "menuCreate", name: "Menu Black Friday", copyOf: 1 });
+    const id = copy.result.menu!.id;
+    const assessed = await assessMenu({ kind: "menuLocation", location: "primary", menuId: id });
+    expect(assessed.preview.page?.lines).toEqual(["In «Menu principale» il sito mostrerà «Menu Black Friday» al posto di «Menu principale»."]);
+
+    const placed = await startMenuOperation({ kind: "menuLocation", location: "primary", menuId: id });
+    expect(placed.operation?.label).toBe("«Menu Black Friday» in Menu principale");
+    const primary = async () => (await (await getMenuSource()).places()).find((p) => p.slug === "primary")?.menu;
+    expect(await primary()).toEqual({ id, name: "Menu Black Friday" });
+    // On the site now: the copy's own undo is refused, and it cannot be deleted.
+    expect((await refusal(undoOperation(copy.operation!.id))).message).toBe("«Menu Black Friday» ora è sul sito (in: Menu principale): resta.");
+    expect((await refusal(startMenuOperation({ kind: "menuDelete", menuId: id }))).message).toBe(
+      "«Menu Black Friday» è sul sito (in: Menu principale): prima metti un altro menu in quella posizione, o lasciala vuota.",
+    );
+
+    await undoOperation(placed.operation!.id);
+    expect(await primary()).toEqual({ id: 1, name: "Menu principale" });
+  });
+
+  it("empties a place, refuses what changes nothing, and an undo over a place changed since", async () => {
+    const { startMenuOperation, undoOperation } = await load();
+    expect((await refusal(startMenuOperation({ kind: "menuLocation", location: "primary", menuId: 1 }))).message).toBe("In «Menu principale» c'è già «Menu principale».");
+    expect((await refusal(startMenuOperation({ kind: "menuLocation", location: "mobile", menuId: null }))).message).toBe("In «Menu mobile» non c'è nessun menu.");
+    expect((await refusal(startMenuOperation({ kind: "menuLocation", location: "sidebar", menuId: 1 }))).message).toBe("Il tema non ha la posizione «sidebar».");
+
+    const emptied = await startMenuOperation({ kind: "menuLocation", location: "footer", menuId: null });
+    expect(emptied.operation?.label).toBe("Nessun menu in Menu del footer");
+    await startMenuOperation({ kind: "menuLocation", location: "footer", menuId: 1 });
+    expect(await refusal(undoOperation(emptied.operation!.id))).toMatchObject({
+      code: "stale",
+      message: "In «Menu del footer» il menu è cambiato dopo questa azione: il cambio più recente resta.",
+    });
+  });
+
+  it("deletes a menu the theme does not show, with its items; Annulla makes it again as it was", async () => {
+    const { startMenuOperation, undoOperation, getMenuSource } = await load();
+    const copy = await startMenuOperation({ kind: "menuCreate", name: "Copia", copyOf: 1 });
+    const id = copy.result.menu!.id;
+    const outlet = copy.result.menu!.items.find((i) => i.title === "Saldi outlet")!;
+    await startMenuOperation({ kind: "menuItemRename", menuId: id, itemId: outlet.id, label: "Saldi" });
+    const before = await shape(id);
+
+    const deleted = await startMenuOperation({ kind: "menuDelete", menuId: id });
+    expect(deleted.operation?.label).toBe("Menu «Copia» eliminato");
+    expect((await refusal(menu(id))).code).toBe("not_found");
+
+    const undone = await undoOperation(deleted.operation!.id);
+    expect(undone.undo).toMatchObject({ restored: 8 });
+    const again = (await (await getMenuSource()).menus()).find((m) => m.name === "Copia")!;
+    expect(again).toMatchObject({ locations: [], count: 8 });
+    expect(again.id).not.toBe(id);
+    expect(await shape(again.id)).toEqual(before);
+  });
+
+  it("renames a menu, refuses a taken name, and Annulla gives its name back while it has the new one", async () => {
+    const { startMenuOperation, undoOperation } = await load();
+    expect((await refusal(startMenuOperation({ kind: "menuRename", menuId: 2, name: "menu principale" }))).message).toBe(
+      "C'è già un menu che si chiama «menu principale»: scegli un altro nome.",
+    );
+    const renamed = await startMenuOperation({ kind: "menuRename", menuId: 2, name: "Piè di pagina" });
+    expect(renamed.operation?.label).toBe("Menu «Footer» rinominato «Piè di pagina»");
+    await undoOperation(renamed.operation!.id);
+    expect((await menu(2)).name).toBe("Footer");
+
+    const again = await startMenuOperation({ kind: "menuRename", menuId: 2, name: "Info" });
+    await startMenuOperation({ kind: "menuRename", menuId: 2, name: "Info e contatti" });
+    expect((await refusal(undoOperation(again.operation!.id))).code).toBe("stale");
+  });
+
+  it("takes a half-made copy away when WordPress refuses one of its items, and says so", async () => {
+    const { startMenuOperation, getMenuSource } = await load();
+    faults.failCreateAt = 3;
+    expect(await refusal(startMenuOperation({ kind: "menuCreate", name: "Rotta", copyOf: 1 }))).toMatchObject({
+      code: "failed",
+      message: "WordPress non ha accettato una delle voci: il menu non è stato creato.",
+    });
+    expect((await (await getMenuSource()).menus()).map((m) => m.name)).toEqual(["Menu principale", "Footer"]);
+  });
+
+  it("proposes the menu of a place like any action, run on a person's yes", async () => {
+    const { propose, confirmProposal, getMenuSource } = await load();
+    const proposal = await propose({ kind: "menuLocation", location: "mobile", menuId: 2 }, "assistant", ASSISTANT);
+    expect(proposal.summary).toContain("In «Menu mobile» il sito mostrerà «Footer».");
+    const operation = await confirmProposal(proposal.id, OWNER);
+    expect(operation).toMatchObject({ kind: "menuLocation", status: "done", actor: "user:owner", via: "assistant" });
+    expect((await (await getMenuSource()).places()).find((p) => p.slug === "mobile")?.menu).toEqual({ id: 2, name: "Footer" });
   });
 });

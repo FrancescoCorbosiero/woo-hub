@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { hubConfig } from "@/config";
 import { env } from "@/lib/env";
 import { layoutOf, rowsOf } from "@/lib/menus/plan";
-import type { Menu, MenuItem, MenuItemExtra, MenuSummary, MenuTarget, SitePage } from "@/lib/menus/types";
+import type { Menu, MenuItem, MenuItemExtra, MenuSummary, MenuTarget, SitePage, ThemePlace } from "@/lib/menus/types";
 import type { VetrinaError } from "@/server/vetrina/source";
 
 /**
@@ -15,7 +15,9 @@ import type { VetrinaError } from "@/server/vetrina/source";
  *
  * Writes are low-level on purpose — items made, changed, deleted, each with
  * its own outcome — so the action that plans them (operations/menu.ts)
- * decides what a half-done write means.
+ * decides what a half-done write means. A whole menu's writes (made,
+ * renamed, deleted, put in a place) are one request each, and throw
+ * WordPress's refusal.
  */
 
 /** One write's outcome: done, or why not. */
@@ -54,6 +56,16 @@ export interface MenuSource {
   update(changes: readonly MenuItemChange[]): Promise<Outcome<null>[]>;
   /** Items deleted for good (menu items have no trash). */
   remove(ids: readonly number[]): Promise<Outcome<null>[]>;
+
+  /** Every place the theme registered, with the menu it shows. */
+  places(): Promise<ThemePlace[]>;
+  /** A new, empty menu in no place; refused when another menu has the name. */
+  createMenu(name: string): Promise<MenuSummary>;
+  renameMenu(id: number, name: string): Promise<void>;
+  /** A menu and its items deleted; the places that showed it show none. */
+  deleteMenu(id: number): Promise<void>;
+  /** The menu a place shows; null: none. */
+  setPlace(slug: string, menuId: number | null): Promise<void>;
 }
 
 /** The configured source; VETRINA_SOURCE overrides hub.config.ts, as for the homepage. */
@@ -99,3 +111,6 @@ export function menuDigest(menu: Pick<Menu, "id" | "items">): string {
 export function itemIn(menu: Pick<Menu, "items">, id: number): MenuItem | undefined {
   return menu.items.find((i) => i.id === id);
 }
+
+/** Two menu names WordPress takes for one (its term lookup ignores case). */
+export const sameMenuName = (a: string, b: string) => a.trim().toLocaleLowerCase("it") === b.trim().toLocaleLowerCase("it");

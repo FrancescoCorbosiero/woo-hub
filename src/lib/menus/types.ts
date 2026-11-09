@@ -75,6 +75,16 @@ export interface MenuLocation {
   name: string;
 }
 
+/**
+ * A place the theme registered for a menu, and the menu it shows there
+ * (null: none — the theme then shows nothing, or its own fallback). A theme
+ * with no places at all is a block theme's, whose navigation is not these
+ * menus.
+ */
+export interface ThemePlace extends MenuLocation {
+  menu: { id: number; name: string } | null;
+}
+
 export interface MenuSummary {
   id: number;
   name: string;

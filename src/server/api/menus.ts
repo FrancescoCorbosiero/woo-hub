@@ -1,15 +1,17 @@
 import "server-only";
 import { layoutOf, rowsOf } from "@/lib/menus/plan";
-import type { Menu, MenuSummary, SitePage } from "@/lib/menus/types";
+import type { Menu, MenuSummary, SitePage, ThemePlace } from "@/lib/menus/types";
 import { VetrinaError } from "@/server/vetrina/source";
 import { getMenuSource, menuDigest } from "@/server/wordpress/menus/source";
 
 /**
- * The site's navigation menus over the API (/api/v1/menus, /api/v1/pages):
- * what a caller reads before acting on one — every menu, a menu's items top
- * to bottom with where each stands, and the pages an item can lead to. The
- * actions themselves are the registry's (menuItemAdd, menuItemMove,
- * menuItemRemove, menuItemRename), proposed and confirmed like any other.
+ * The site's navigation menus over the API (/api/v1/menus,
+ * /api/v1/menu-locations, /api/v1/pages): what a caller reads before acting
+ * on one — every menu, a menu's items top to bottom with where each stands,
+ * the theme's places and the menu each shows, and the pages an item can lead
+ * to. The actions themselves are the registry's (menuItem*, menuCreate,
+ * menuRename, menuDelete, menuLocation), proposed and confirmed like any
+ * other.
  */
 
 export async function listMenus(): Promise<MenuSummary[]> {
@@ -57,4 +59,9 @@ export async function readMenu(id: number) {
 /** The site's published pages, for an item that leads to one. */
 export async function listPages(): Promise<SitePage[]> {
   return (await getMenuSource()).pages();
+}
+
+/** The theme's places for a menu, each with the menu it shows. */
+export async function listPlaces(): Promise<ThemePlace[]> {
+  return (await getMenuSource()).places();
 }

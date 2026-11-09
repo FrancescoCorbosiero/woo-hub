@@ -531,6 +531,14 @@ export function labelText(p: OperationLabelParams, w: Words = words()): string {
       return w.label.menuItemRemove(p.item ?? "", p.menu ?? "");
     case "menuItemRename":
       return w.label.menuItemRename(p.item ?? "", p.renamed ?? null, p.menu ?? "");
+    case "menuCreate":
+      return w.label.menuCreate(p.menu ?? "", p.from ?? null);
+    case "menuRename":
+      return w.label.menuRename(p.menu ?? "", p.from ?? "");
+    case "menuDelete":
+      return w.label.menuDelete(p.menu ?? "");
+    case "menuLocation":
+      return w.label.menuLocation(p.menu ?? null, p.place ?? "");
   }
 }
 

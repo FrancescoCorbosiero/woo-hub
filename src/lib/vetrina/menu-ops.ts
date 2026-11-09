@@ -2,8 +2,9 @@ import type { MenuItemExtra, MenuTarget } from "@/lib/menus/types";
 
 /**
  * The site's navigation menus' own actions — an item added, moved, taken
- * away, renamed — filed in the same log as the catalog's and the homepage's
- * actions (catalog-ops.ts, page-ops.ts), with the same "Annulla". Each is
+ * away, renamed; a whole menu made (or copied), renamed, deleted, put in a
+ * place of the theme — filed in the same log as the catalog's and the
+ * homepage's actions (catalog-ops.ts, page-ops.ts), with the same "Annulla". Each is
  * written at once over WordPress's REST API (src/server/wordpress), the whole
  * menu renumbered as WordPress's own editor numbers it, and filed with its
  * way back: "Annulla" finds the items again by their ids and neighbours, and
@@ -42,11 +43,28 @@ export type MenuActionInput =
   /** An item taken out; its own items take its place. */
   | { kind: "menuItemRemove"; menuId: number; itemId: number; expected?: MenuExpected }
   /** An item's own label; null = back to its target's name. */
-  | { kind: "menuItemRename"; menuId: number; itemId: number; label: string | null; expected?: MenuExpected };
+  | { kind: "menuItemRename"; menuId: number; itemId: number; label: string | null; expected?: MenuExpected }
+  /** A new menu, empty or with a copy of another's items: in no place of the theme until put in one. */
+  | { kind: "menuCreate"; name: string; copyOf?: number | null }
+  /** A menu's name. */
+  | { kind: "menuRename"; menuId: number; name: string }
+  /** A menu deleted with its items: refused while the theme shows it. */
+  | { kind: "menuDelete"; menuId: number; expected?: MenuExpected }
+  /** The menu a place of the theme shows (GET /api/v1/menu-locations); null = none. */
+  | { kind: "menuLocation"; location: string; menuId: number | null };
 
 export type MenuActionKind = MenuActionInput["kind"];
 
-export const MENU_ACTION_KINDS = ["menuItemAdd", "menuItemMove", "menuItemRemove", "menuItemRename"] as const satisfies readonly MenuActionKind[];
+export const MENU_ACTION_KINDS = [
+  "menuItemAdd",
+  "menuItemMove",
+  "menuItemRemove",
+  "menuItemRename",
+  "menuCreate",
+  "menuRename",
+  "menuDelete",
+  "menuLocation",
+] as const satisfies readonly MenuActionKind[];
 
 const MENU_KINDS: ReadonlySet<string> = new Set(MENU_ACTION_KINDS);
 
@@ -102,4 +120,31 @@ export type OperationMenuRecord =
       before: string | null;
       /** As WordPress stored it: a label equal to the target's name is stored as none. */
       after: string | null;
+    }
+  | {
+      kind: "menuCreate";
+      menuId: number;
+      menu: string;
+      /** The menu copied, by name; null: made empty. */
+      from: string | null;
+      copied: number;
+      /** Its fingerprint as made: "Annulla" deletes it only while it is so. */
+      digest: string;
+    }
+  | { kind: "menuRename"; menuId: number; menu: string; before: string; after: string }
+  | {
+      kind: "menuDelete";
+      menuId: number;
+      menu: string;
+      /** Every item, top to bottom (a parent before its items): how "Annulla" makes the menu again. */
+      items: MenuItemSnapshot[];
+    }
+  | {
+      kind: "menuLocation";
+      /** The menu put in the place (0: none). */
+      menuId: number;
+      menu: string | null;
+      location: { slug: string; name: string };
+      /** The menu the place showed before (null: none). */
+      before: { id: number; name: string } | null;
     };

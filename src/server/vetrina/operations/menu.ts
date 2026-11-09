@@ -9,12 +9,21 @@ import {
   moveItem,
   placeOf,
   removeItem,
+  rowsOf,
   TOP,
   type Layout,
   type PlanError,
 } from "@/lib/menus/plan";
 import type { Menu, MenuItem, MenuTarget } from "@/lib/menus/types";
-import type { MenuActionInput, MenuActionKind, MenuNewItem, MenuSpot, OperationMenuRecord } from "@/lib/vetrina/menu-ops";
+import type {
+  MenuActionInput,
+  MenuActionKind,
+  MenuExpected,
+  MenuItemSnapshot,
+  MenuNewItem,
+  MenuSpot,
+  OperationMenuRecord,
+} from "@/lib/vetrina/menu-ops";
 import { decodeEntities } from "@/server/collections/index-rows";
 import type { OperationLabelParams, VetrinaOperationRow } from "@/server/db/schema";
 import { readCatalogTrees } from "@/server/vetrina/catalog";
@@ -23,6 +32,7 @@ import {
   getMenuSource,
   itemIn,
   menuDigest,
+  sameMenuName,
   targetKey,
   type MenuItemChange,
   type MenuSource,
@@ -55,6 +65,11 @@ import { words } from "./words";
  *
  * "Annulla" finds the items again by id and neighbour, and refuses when
  * someone changed them since — the newer change stands, as on the homepage.
+ *
+ * A whole menu's actions — made (empty or as a copy), renamed, deleted, put
+ * in a place of the theme — are one request each. A copy, and the undo of a
+ * deletion, make the items again level by level, a parent before its items;
+ * one WordPress refuses takes the half-made menu away again.
  */
 
 /** What a write answers, for the screen that asked: the menu as it is after (null when it could not be read again). */
@@ -401,8 +416,19 @@ async function assessRename(source: MenuSource, menu: Menu, input: Extract<MenuA
 /** A menu action read against the menu as it is now: refused as its write would be, or previewed and ready to write. */
 export async function assessMenu(input: MenuActionInput): Promise<MenuAssessment> {
   const source = await getMenuSource();
+  switch (input.kind) {
+    case "menuCreate":
+      return assessCreateMenu(source, input);
+    case "menuRename":
+      return assessRenameMenu(source, input);
+    case "menuLocation":
+      return assessLocation(source, input);
+    default:
+      break;
+  }
   const menu = await readMenu(source, input.menuId);
   if (input.expected && input.expected.digest !== menuDigest(menu)) throw new VetrinaError("stale", words().menu.stale, 409);
+  if (input.kind === "menuDelete") return assessDeleteMenu(source, menu);
   const layout = layoutOf(menu.items);
   switch (input.kind) {
     case "menuItemAdd":
@@ -417,6 +443,179 @@ export async function assessMenu(input: MenuActionInput): Promise<MenuAssessment
 }
 
 /* ---------------------------------------------------------------- *
+ * Whole menus
+ * ---------------------------------------------------------------- */
+
+/**
+ * A menu's items top to bottom, as a copy or an undo makes them again: a
+ * parent before its items, each under its nearest parent kept (the items of
+ * one left out go under its own parent). A link keeps a label: WordPress
+ * makes none without.
+ */
+function snapshotOf(menu: Menu, keep: (item: MenuItem) => boolean = () => true): MenuItemSnapshot[] {
+  const byId = new Map(menu.items.map((i) => [i.id, i]));
+  const rows = rowsOf(layoutOf(menu.items));
+  const parentOf = new Map(rows.map((r) => [r.id, r.parent]));
+  const kept = new Set(rows.filter((r) => keep(byId.get(r.id)!)).map((r) => r.id));
+  const keptParent = (id: number): number => {
+    let parent = parentOf.get(id) ?? TOP;
+    while (parent !== TOP && !kept.has(parent)) parent = parentOf.get(parent) ?? TOP;
+    return parent;
+  };
+  return rows
+    .filter((r) => kept.has(r.id))
+    .map((r) => {
+      const item = byId.get(r.id)!;
+      const label = item.label ?? (item.target.kind === "link" ? item.title || item.target.url : null);
+      return { id: item.id, title: item.title, label, target: item.target, parent: keptParent(r.id), extra: item.extra };
+    });
+}
+
+/**
+ * Items made in a menu from a snapshot, level by level — a parent made
+ * before its items, so each goes under its parent's new id — numbered top
+ * to bottom, as WordPress's editor numbers them. Throws WordPress's first
+ * refusal, once the level it came in is written.
+ */
+async function build(source: MenuSource, menuId: number, rows: readonly MenuItemSnapshot[]): Promise<number> {
+  const order = new Map(rows.map((r, i) => [r.id, i + 1]));
+  const depth = new Map<number, number>();
+  for (const r of rows) depth.set(r.id, r.parent !== TOP && depth.has(r.parent) ? depth.get(r.parent)! + 1 : 0);
+  const made = new Map<number, number>();
+  const deepest = rows.length > 0 ? Math.max(...depth.values()) : -1;
+  for (let d = 0; d <= deepest; d++) {
+    const level = rows.filter((r) => depth.get(r.id) === d);
+    const outcomes = await source.create(
+      menuId,
+      level.map((r) => ({ target: r.target, label: r.label, parent: r.parent === TOP ? TOP : (made.get(r.parent) ?? TOP), order: order.get(r.id)!, extra: r.extra })),
+    );
+    outcomes.forEach((o, i) => {
+      if (o.ok) made.set(level[i].id, o.value.id);
+    });
+    const refused = outcomes.find((o) => !o.ok);
+    if (refused && !refused.ok) throw refused.error;
+  }
+  return made.size;
+}
+
+/** A menu made from a snapshot, or none: when an item is refused, the menu goes again (it takes its items with it). */
+async function makeMenu(source: MenuSource, name: string, rows: readonly MenuItemSnapshot[]): Promise<{ id: number; items: number }> {
+  const w = words().menu;
+  const made = await source.createMenu(name).catch((e: unknown) => {
+    // Another menu took the name between the check and the write.
+    throw e instanceof VetrinaError && e.code === "invalid" ? new VetrinaError("invalid", w.nameTaken(name), 400) : e;
+  });
+  try {
+    return { id: made.id, items: await build(source, made.id, rows) };
+  } catch (e) {
+    console.warn(`[vetrina-menu] «${name}»: WordPress refused an item: ${messageOf(e)}`);
+    const gone = await source.deleteMenu(made.id).then(
+      () => true,
+      () => false,
+    );
+    throw new VetrinaError("failed", gone ? w.makeFailed : w.makeHalf);
+  }
+}
+
+/** A whole menu's preview: what it does, in sentences; a copy's and a deletion's with the menu's fingerprint. */
+function wholePreview(kind: MenuActionKind, lines: string[], warnings: string[], menu?: Menu): OperationPreview {
+  return { kind, changes: 1, untouched: [], sample: [], warnings, page: { lines }, ...(menu ? { menu: { id: menu.id, digest: menuDigest(menu) } } : {}) };
+}
+
+async function assessCreateMenu(source: MenuSource, input: Extract<MenuActionInput, { kind: "menuCreate" }>): Promise<MenuAssessment> {
+  const w = words().menu;
+  const name = input.name.trim();
+  const menus = await source.menus();
+  if (menus.some((m) => sameMenuName(m.name, name))) throw new VetrinaError("invalid", w.nameTaken(name), 400);
+  const from = input.copyOf ? await readMenu(source, input.copyOf) : null;
+  // A copy leaves out what leads to something gone: the site does not show it anyway.
+  const rows = from ? snapshotOf(from, (item) => !item.invalid) : [];
+  const skipped = from ? from.items.length - rows.length : 0;
+  return {
+    label: { kind: "menuCreate", count: rows.length, menu: name, from: from?.name ?? null },
+    preview: wholePreview(
+      "menuCreate",
+      [from ? w.createCopy(name, from.name, rows.length) : w.create(name), w.notShownYet],
+      skipped > 0 ? [w.copySkipped(skipped)] : [],
+      from ?? undefined,
+    ),
+    write: async () => {
+      const made = await makeMenu(source, name, rows);
+      const now = await after(source, made.id);
+      return {
+        record: { kind: "menuCreate", menuId: made.id, menu: now.menu?.name ?? name, from: from?.name ?? null, copied: made.items, digest: now.digest ?? "" },
+        result: { ...now, created: [] },
+      };
+    },
+  };
+}
+
+async function assessRenameMenu(source: MenuSource, input: Extract<MenuActionInput, { kind: "menuRename" }>): Promise<MenuAssessment> {
+  const w = words().menu;
+  const name = input.name.trim();
+  const menus = await source.menus();
+  const menu = menus.find((m) => m.id === input.menuId);
+  if (!menu) throw new VetrinaError("not_found", w.noMenu, 404);
+  if (menu.name === name) throw new VetrinaError("invalid", w.sameMenuName(name), 400);
+  if (menus.some((m) => m.id !== menu.id && sameMenuName(m.name, name))) throw new VetrinaError("invalid", w.nameTaken(name), 400);
+  return {
+    label: { kind: "menuRename", count: 1, menu: name, from: menu.name },
+    preview: wholePreview("menuRename", [w.renameMenu(menu.name, name), w.shownAt(menu.locations.map((l) => l.name))], []),
+    write: async () => {
+      await source.renameMenu(menu.id, name).catch((e: unknown) => {
+        throw e instanceof VetrinaError && e.code === "invalid" ? new VetrinaError("invalid", w.nameTaken(name), 400) : e;
+      });
+      const now = await after(source, menu.id);
+      const stored = now.menu?.name ?? name;
+      return { record: { kind: "menuRename", menuId: menu.id, menu: stored, before: menu.name, after: stored }, result: { ...now, created: [] } };
+    },
+  };
+}
+
+function assessDeleteMenu(source: MenuSource, menu: Menu): MenuAssessment {
+  const w = words().menu;
+  // The site would be left without it there: another menu goes in its place first.
+  if (menu.locations.length > 0) throw new VetrinaError("invalid", w.deleteShown(menu.name, menu.locations.map((l) => l.name)), 400);
+  const items = snapshotOf(menu);
+  return {
+    label: { kind: "menuDelete", count: menu.items.length, menu: menu.name },
+    preview: preview("menuDelete", menu, [w.deleteMenu(menu.name, menu.items.length)], []),
+    write: async () => {
+      await source.deleteMenu(menu.id);
+      return { record: { kind: "menuDelete", menuId: menu.id, menu: menu.name, items }, result: { menu: null, digest: null, created: [] } };
+    },
+  };
+}
+
+async function assessLocation(source: MenuSource, input: Extract<MenuActionInput, { kind: "menuLocation" }>): Promise<MenuAssessment> {
+  const w = words().menu;
+  const [places, menus] = await Promise.all([source.places(), input.menuId != null ? source.menus() : Promise.resolve([])]);
+  const place = places.find((p) => p.slug === input.location);
+  if (!place) throw new VetrinaError("invalid", w.noPlace(input.location), 400);
+  const menu = input.menuId != null ? menus.find((m) => m.id === input.menuId) : null;
+  if (input.menuId != null && !menu) throw new VetrinaError("not_found", w.noMenu, 404);
+  const before = place.menu;
+  if ((before?.id ?? null) === (menu?.id ?? null)) {
+    throw new VetrinaError("invalid", menu ? w.alreadyShown(menu.name, place.name) : w.alreadyEmpty(place.name), 400);
+  }
+  return {
+    label: { kind: "menuLocation", count: 1, menu: menu?.name, place: place.name },
+    preview: wholePreview(
+      "menuLocation",
+      [menu ? w.placeShows(place.name, menu.name, before?.name ?? null) : w.placeEmptied(place.name, before!.name)],
+      menu && menu.count === 0 ? [w.emptyShown(menu.name, place.name)] : [],
+    ),
+    write: async () => {
+      await source.setPlace(place.slug, menu?.id ?? null);
+      return {
+        record: { kind: "menuLocation", menuId: menu?.id ?? 0, menu: menu?.name ?? null, location: { slug: place.slug, name: place.name }, before },
+        result: menu ? { ...(await after(source, menu.id)), created: [] } : { menu: null, digest: null, created: [] },
+      };
+    },
+  };
+}
+
+/* ---------------------------------------------------------------- *
  * Doing it, and filing it
  * ---------------------------------------------------------------- */
 
@@ -428,7 +627,7 @@ async function file(
   actor: string | null,
 ): Promise<VetrinaOperationRow | null> {
   // The screen's read is how it was checked, not part of what was asked.
-  const { expected: _expected, ...asked } = input;
+  const { expected: _expected, ...asked } = input as MenuActionInput & { expected?: MenuExpected };
   try {
     // In demo mode the log of this demo shop starts no later than its first action.
     await logSince();
@@ -473,8 +672,65 @@ const changedSince = (title: string) => new VetrinaError("stale", words().menu.c
 export async function undoMenuAction(row: VetrinaOperationRow, undoneBy: string | null = null): Promise<{ row: VetrinaOperationRow }> {
   const record = row.menu;
   if (!record) throw new VetrinaError("invalid", words().error.nothingToUndo, 400);
-  const w = words().menu;
   const source = await getMenuSource();
+  const restored = isWholeMenuRecord(record) ? await undoWholeMenu(source, record) : await undoItems(source, record);
+  await repo.moveStatus(row.id, ["done"], { status: "undone", undoneAt: new Date(), undoneBy, undo: { restored, kept: 0, failed: 0 }, error: null });
+  return { row: (await repo.getOperation(row.id)) ?? row };
+}
+
+type WholeMenuRecord = Extract<OperationMenuRecord, { kind: "menuCreate" | "menuRename" | "menuDelete" | "menuLocation" }>;
+type ItemRecord = Exclude<OperationMenuRecord, WholeMenuRecord>;
+
+const isWholeMenuRecord = (record: OperationMenuRecord): record is WholeMenuRecord =>
+  record.kind === "menuCreate" || record.kind === "menuRename" || record.kind === "menuDelete" || record.kind === "menuLocation";
+
+/** A whole menu's way back: what it put back (a deleted menu's items; else 1, or 0 when there was nothing left to undo). */
+async function undoWholeMenu(source: MenuSource, record: WholeMenuRecord): Promise<number> {
+  const w = words().menu;
+  switch (record.kind) {
+    case "menuCreate": {
+      const menu = await source.menu(record.menuId).catch((e: unknown) => {
+        if (e instanceof VetrinaError && e.code === "not_found") return null;
+        throw e;
+      });
+      // Deleted since: what its undo would do is done.
+      if (!menu) return 0;
+      if (menu.locations.length > 0) throw new VetrinaError("stale", w.shownNow(menu.name, menu.locations.map((l) => l.name)), 409);
+      if (menu.name !== record.menu || menuDigest(menu) !== record.digest) throw new VetrinaError("stale", w.menuChangedSince(menu.name), 409);
+      await source.deleteMenu(menu.id);
+      return 1;
+    }
+    case "menuRename": {
+      const menus = await source.menus();
+      const menu = menus.find((m) => m.id === record.menuId);
+      if (!menu) throw new VetrinaError("stale", w.menuGone(record.menu), 409);
+      if (menu.name !== record.after) throw new VetrinaError("stale", w.menuChangedSince(menu.name), 409);
+      if (menus.some((m) => m.id !== menu.id && sameMenuName(m.name, record.before))) throw new VetrinaError("stale", w.nameTaken(record.before), 409);
+      await source.renameMenu(menu.id, record.before);
+      return 1;
+    }
+    case "menuDelete": {
+      const menus = await source.menus();
+      if (menus.some((m) => sameMenuName(m.name, record.menu))) throw new VetrinaError("stale", w.nameTaken(record.menu), 409);
+      // Made again, with its items as they were (new ids: WordPress gives no old ones back), in no place, as it was.
+      return (await makeMenu(source, record.menu, record.items)).items;
+    }
+    case "menuLocation": {
+      const place = (await source.places()).find((p) => p.slug === record.location.slug);
+      if (!place) throw new VetrinaError("stale", w.noPlace(record.location.name), 409);
+      if ((place.menu?.id ?? 0) !== record.menuId) throw new VetrinaError("stale", w.placeChanged(record.location.name), 409);
+      if (record.before && !(await source.menus()).some((m) => m.id === record.before!.id)) {
+        throw new VetrinaError("stale", w.menuGone(record.before.name), 409);
+      }
+      await source.setPlace(place.slug, record.before?.id ?? null);
+      return 1;
+    }
+  }
+}
+
+/** An item action's way back, written over the menu as it is. */
+async function undoItems(source: MenuSource, record: ItemRecord): Promise<number> {
+  const w = words().menu;
   const menu = await readMenu(source, record.menuId);
   const layout = layoutOf(menu.items);
   let restored = 1;
@@ -535,7 +791,5 @@ export async function undoMenuAction(row: VetrinaOperationRow, undoneBy: string 
       break;
     }
   }
-
-  await repo.moveStatus(row.id, ["done"], { status: "undone", undoneAt: new Date(), undoneBy, undo: { restored, kept: 0, failed: 0 }, error: null });
-  return { row: (await repo.getOperation(row.id)) ?? row };
+  return restored;
 }

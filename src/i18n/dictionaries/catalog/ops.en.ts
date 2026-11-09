@@ -54,6 +54,10 @@ export const opsEn: typeof opsIt = {
     menuItemRemove: (item: string, menu: string) => `Item “${item}” removed · ${menu}`,
     menuItemRename: (item: string, renamed: string | null, menu: string) =>
       renamed == null ? `Item “${item}” back to its own name · ${menu}` : `Item “${item}” renamed “${renamed}” · ${menu}`,
+    menuCreate: (menu: string, from: string | null) => (from ? `Menu “${menu}”, a copy of “${from}”` : `New menu “${menu}”`),
+    menuRename: (menu: string, from: string) => `Menu “${from}” renamed “${menu}”`,
+    menuDelete: (menu: string) => `Menu “${menu}” deleted`,
+    menuLocation: (menu: string | null, place: string) => (menu ? `“${menu}” in ${place}` : `No menu in ${place}`),
   },
 
   untouched: {
@@ -305,9 +309,37 @@ export const opsEn: typeof opsIt = {
     linkName: "A link always has a name of its own.",
     writeFailed: "WordPress did not take the change: the menu is as it was.",
     halfWritten: "WordPress took only part of the change and putting it back failed: check the menu in WordPress.",
+    makeFailed: "WordPress did not take one of the items: the menu was not made.",
+    makeHalf: "WordPress did not take one of the items, and taking the half-made menu away failed: check it in WordPress.",
     changedSince: (title: string) => `“${title}” changed after this action: the newer change stands.`,
     gotChildren: (title: string) => `Other items were put under “${title}” since: it stays as it is.`,
     parentGone: (title: string) => `The item “${title}” was under is gone: it cannot be put back.`,
+    nameTaken: (name: string) => `There is already a menu called “${name}”: choose another name.`,
+    create: (name: string) => `The menu “${name}” is made, empty.`,
+    createCopy: (name: string, from: string, count: number) =>
+      count === 0
+        ? `The menu “${name}” is made, a copy of “${from}”, which has no items.`
+        : `The menu “${name}” is made, a copy of “${from}”: ${count === 1 ? "1 item" : `${n(count)} items`}.`,
+    notShownYet: "The site does not show it until you put it in a place of the theme.",
+    copySkipped: (count: number) =>
+      count === 1 ? "1 item leads to something gone: it is left out of the copy." : `${n(count)} items lead to something gone: they are left out of the copy.`,
+    sameMenuName: (name: string) => `The menu is already called “${name}”.`,
+    renameMenu: (from: string, to: string) => `The menu “${from}” will be called “${to}”.`,
+    deleteShown: (name: string, places: readonly string[]) =>
+      `“${name}” is on the site (in: ${nameList(places)}): first put another menu in that place, or leave it empty.`,
+    deleteMenu: (name: string, count: number) =>
+      count === 0 ? `The menu “${name}” is deleted.` : `The menu “${name}” is deleted, with ${count === 1 ? "its item" : `its ${n(count)} items`}.`,
+    noPlace: (place: string) => `The theme has no place “${place}”.`,
+    alreadyShown: (menu: string, place: string) => `“${place}” shows “${menu}” already.`,
+    alreadyEmpty: (place: string) => `“${place}” shows no menu.`,
+    placeShows: (place: string, menu: string, before: string | null) =>
+      before ? `In “${place}” the site will show “${menu}” instead of “${before}”.` : `In “${place}” the site will show “${menu}”.`,
+    placeEmptied: (place: string, before: string) => `In “${place}” the site will show no menu: it shows “${before}” now.`,
+    emptyShown: (menu: string, place: string) => `“${menu}” has no items: nothing will show in “${place}”.`,
+    shownNow: (name: string, places: readonly string[]) => `“${name}” is on the site now (in: ${nameList(places)}): it stays.`,
+    menuChangedSince: (name: string) => `The menu “${name}” changed after this action: the newer change stands.`,
+    menuGone: (name: string) => `The menu “${name}” is gone.`,
+    placeChanged: (place: string) => `The menu in “${place}” changed after this action: the newer change stands.`,
   },
 
   proposal: {

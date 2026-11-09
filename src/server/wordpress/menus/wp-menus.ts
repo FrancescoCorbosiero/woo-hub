@@ -1,5 +1,5 @@
 import "server-only";
-import type { Menu, MenuItem, MenuSummary, MenuTarget } from "@/lib/menus/types";
+import type { Menu, MenuItem, MenuSummary, MenuTarget, ThemePlace } from "@/lib/menus/types";
 import { decodeEntities } from "@/server/collections/index-rows";
 import { VetrinaError } from "@/server/vetrina/source";
 import { itemOf, wp, type BatchOutcome, type WpLocations, type WpMenu, type WpMenuItem, type WpMenuItemBody, type WpPage } from "../client";
@@ -130,6 +130,37 @@ export function wordpressMenus(): MenuSource {
     },
     async remove(ids) {
       return (await wp.deleteMenuItems(ids)).map(done);
+    },
+    async places() {
+      const [menus, locations] = await Promise.all([wp.menus(), wp.locations()]);
+      const byId = new Map(menus.map((m) => [m.id, m]));
+      return Object.entries(locations).map(([slug, place]): ThemePlace => {
+        const menu = place.menu ? byId.get(place.menu) : undefined;
+        return { slug, name: place.description || slug, menu: menu ? { id: menu.id, name: decodeEntities(menu.name) } : null };
+      });
+    },
+    async createMenu(name) {
+      const made = await wp.createMenu(name);
+      return { id: made.id, name: decodeEntities(made.name), slug: made.slug, locations: [], count: 0 };
+    },
+    async renameMenu(id, name) {
+      await wp.updateMenu(id, { name });
+    },
+    async deleteMenu(id) {
+      await wp.deleteMenu(id);
+    },
+    async setPlace(slug, menuId) {
+      // A place is set through a menu's own list of places: the menu put there gets it (taken from whichever had it),
+      // or the menu there loses it.
+      const menus = await wp.menus();
+      if (menuId != null) {
+        const menu = menus.find((m) => m.id === menuId);
+        if (!menu) throw new VetrinaError("not_found", `No menu ${menuId} on the site.`, 404);
+        if (!menu.locations.includes(slug)) await wp.updateMenu(menu.id, { locations: [...menu.locations, slug] });
+        return;
+      }
+      const holder = menus.find((m) => m.locations.includes(slug));
+      if (holder) await wp.updateMenu(holder.id, { locations: holder.locations.filter((l) => l !== slug) });
     },
   };
 }

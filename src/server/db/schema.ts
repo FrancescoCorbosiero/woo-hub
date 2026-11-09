@@ -660,6 +660,10 @@ export interface OperationLabelParams {
   /** A menu action: the item's name as it showed ("Saldi"); a rename's new name in `renamed` (null: back to its target's). */
   item?: string;
   renamed?: string | null;
+  /** A menu made as a copy: the menu copied (null: made empty); a menu renamed: its name before. */
+  from?: string | null;
+  /** A menu put in a place of the theme, or the place emptied: the place's name ("Menu principale"). */
+  place?: string;
 }
 
 /**

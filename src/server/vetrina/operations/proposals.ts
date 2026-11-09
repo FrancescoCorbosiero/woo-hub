@@ -59,7 +59,7 @@ async function previewOf(input: ActionInput): Promise<{ preview: OperationPrevie
 /** A homepage or menu action's `expected` is the asker's own check, done when it is proposed: the proposal's preview is the check after. */
 function withoutExpected(input: ActionInput): ActionInput {
   if (!isPageActionKind(input.kind) && !isMenuActionKind(input.kind)) return input;
-  const { expected: _expected, ...asked } = input as PageActionInput | MenuActionInput;
+  const { expected: _expected, ...asked } = input as (PageActionInput | MenuActionInput) & { expected?: unknown };
   return asked as ActionInput;
 }
 

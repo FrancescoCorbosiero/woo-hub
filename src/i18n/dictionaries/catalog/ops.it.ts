@@ -74,6 +74,10 @@ export const opsIt = {
     menuItemRemove: (item: string, menu: string) => `Voce «${item}» tolta · ${menu}`,
     menuItemRename: (item: string, renamed: string | null, menu: string) =>
       renamed == null ? `Voce «${item}» col suo nome originale · ${menu}` : `Voce «${item}» rinominata «${renamed}» · ${menu}`,
+    menuCreate: (menu: string, from: string | null) => (from ? `Menu «${menu}», copia di «${from}»` : `Nuovo menu «${menu}»`),
+    menuRename: (menu: string, from: string) => `Menu «${from}» rinominato «${menu}»`,
+    menuDelete: (menu: string) => `Menu «${menu}» eliminato`,
+    menuLocation: (menu: string | null, place: string) => (menu ? `«${menu}» in ${place}` : `Nessun menu in ${place}`),
   },
 
   /** Why a preview leaves products as they are, agreeing with how many ("Già nascosto · 1", "Già nascosti · 3"). */
@@ -379,10 +383,43 @@ export const opsIt = {
     linkName: "Un link ha sempre un nome suo.",
     writeFailed: "WordPress non ha accettato la modifica: il menu è rimasto com'era.",
     halfWritten: "WordPress ha accettato solo una parte della modifica e rimetterla non è riuscito: controlla il menu su WordPress.",
+    makeFailed: "WordPress non ha accettato una delle voci: il menu non è stato creato.",
+    makeHalf: "WordPress non ha accettato una delle voci, e togliere il menu fatto a metà non è riuscito: controllalo in WordPress.",
     /** Its way back. */
     changedSince: (title: string) => `«${title}» è cambiata dopo questa azione: la modifica più recente resta.`,
     gotChildren: (title: string) => `Sotto «${title}» sono state messe altre voci: resta com'è.`,
     parentGone: (title: string) => `La voce sotto cui stava «${title}» non c'è più: non si può rimettere.`,
+    // A whole menu: made, copied, renamed, deleted, put in a place of the theme.
+    nameTaken: (name: string) => `C'è già un menu che si chiama «${name}»: scegli un altro nome.`,
+    create: (name: string) => `Nasce il menu «${name}», vuoto.`,
+    createCopy: (name: string, from: string, count: number) =>
+      count === 0
+        ? `Nasce il menu «${name}», copia di «${from}», che non ha voci.`
+        : `Nasce il menu «${name}», copia di «${from}»: ${count === 1 ? "1 voce" : `${n(count)} voci`}.`,
+    notShownYet: "Il sito non lo mostra finché non lo metti in una posizione del tema.",
+    copySkipped: (count: number) =>
+      count === 1
+        ? "1 voce porta a qualcosa che non c'è più: resta fuori dalla copia."
+        : `${n(count)} voci portano a qualcosa che non c'è più: restano fuori dalla copia.`,
+    sameMenuName: (name: string) => `Il menu si chiama già «${name}».`,
+    renameMenu: (from: string, to: string) => `Il menu «${from}» si chiamerà «${to}».`,
+    deleteShown: (name: string, places: readonly string[]) =>
+      `«${name}» è sul sito (in: ${nameList(places)}): prima metti un altro menu in quella posizione, o lasciala vuota.`,
+    deleteMenu: (name: string, count: number) =>
+      count === 0
+        ? `Il menu «${name}» viene eliminato.`
+        : `Il menu «${name}» viene eliminato, con ${count === 1 ? "la sua voce" : `le sue ${n(count)} voci`}.`,
+    noPlace: (place: string) => `Il tema non ha la posizione «${place}».`,
+    alreadyShown: (menu: string, place: string) => `In «${place}» c'è già «${menu}».`,
+    alreadyEmpty: (place: string) => `In «${place}» non c'è nessun menu.`,
+    placeShows: (place: string, menu: string, before: string | null) =>
+      before ? `In «${place}» il sito mostrerà «${menu}» al posto di «${before}».` : `In «${place}» il sito mostrerà «${menu}».`,
+    placeEmptied: (place: string, before: string) => `In «${place}» il sito non mostrerà più nessun menu: ora c'è «${before}».`,
+    emptyShown: (menu: string, place: string) => `«${menu}» non ha voci: in «${place}» non si vedrà niente.`,
+    shownNow: (name: string, places: readonly string[]) => `«${name}» ora è sul sito (in: ${nameList(places)}): resta.`,
+    menuChangedSince: (name: string) => `Il menu «${name}» è cambiato dopo questa azione: il cambio più recente resta.`,
+    menuGone: (name: string) => `Il menu «${name}» non c'è più.`,
+    placeChanged: (place: string) => `In «${place}» il menu è cambiato dopo questa azione: il cambio più recente resta.`,
   },
 
   /**

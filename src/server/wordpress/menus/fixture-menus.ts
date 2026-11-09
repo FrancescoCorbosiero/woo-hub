@@ -1,8 +1,8 @@
 import "server-only";
-import type { Menu, MenuItem, MenuItemExtra, MenuTarget, SitePage } from "@/lib/menus/types";
+import type { Menu, MenuItem, MenuItemExtra, MenuTarget, SitePage, ThemePlace } from "@/lib/menus/types";
 import { DEMO_BRAND_PARENT, DEMO_TERM_IDS, DEMO_TERM_NAMES } from "@/server/vetrina/fixture-data";
 import { VetrinaError } from "@/server/vetrina/source";
-import type { MenuItemChange, MenuSource, NewMenuItem, Outcome } from "./source";
+import { sameMenuName, type MenuItemChange, type MenuSource, type NewMenuItem, type Outcome } from "./source";
 
 /**
  * The demo shop's menus (VETRINA_SOURCE=fixture), held in memory, over the
@@ -15,7 +15,9 @@ import type { MenuItemChange, MenuSource, NewMenuItem, Outcome } from "./source"
  *   follows the target's name;
  * - an item whose category or page is gone is invalid;
  * - deleting an item leaves its children pointing at it;
- * - a link needs a label and an address; an unknown item is refused.
+ * - a link needs a label and an address; an unknown item is refused;
+ * - two menus never share a name (in any case); a deleted menu takes its
+ *   items with it and leaves the places that showed it empty.
  *
  * Nothing is written anywhere; a restart puts them back as they always are.
  */
@@ -139,6 +141,33 @@ const refused = (code: "not_found" | "invalid", message: string, status: number)
   error: new VetrinaError(code, message, status),
 });
 
+/** WordPress's refusal of a name another menu has (wp_update_nav_menu_object). */
+function assertFreeName(s: DemoMenus, name: string, id: number): void {
+  if (s.menus.some((m) => m.id !== id && sameMenuName(m.name, name))) {
+    throw new VetrinaError("invalid", `The menu name ${name} conflicts with another menu name. Please try another. (menu_exists, HTTP 400)`, 400);
+  }
+}
+
+/** A slug as WordPress makes one from a name, unique among the menus. */
+function slugFor(s: DemoMenus, name: string): string {
+  const base =
+    name
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "menu";
+  let slug = base;
+  for (let n = 2; s.menus.some((m) => m.slug === slug); n++) slug = `${base}-${n}`;
+  return slug;
+}
+
+function menuOf(s: DemoMenus, id: number): DemoMenus["menus"][number] {
+  const menu = s.menus.find((m) => m.id === id);
+  if (!menu) throw new VetrinaError("not_found", "Term does not exist. (rest_term_invalid, HTTP 404)", 404);
+  return menu;
+}
+
 export function fixtureMenus(): MenuSource {
   return {
     kind: "fixture",
@@ -212,6 +241,40 @@ export function fixtureMenus(): MenuSource {
         s.items.splice(at, 1);
         return { ok: true, value: null };
       });
+    },
+    async places() {
+      const s = state();
+      return s.locations.map((l): ThemePlace => {
+        const menu = s.menus.find((m) => m.id === l.menu);
+        return { slug: l.slug, name: l.name, menu: menu ? { id: menu.id, name: menu.name } : null };
+      });
+    },
+    async createMenu(name) {
+      const s = state();
+      assertFreeName(s, name, 0);
+      const menu = { id: s.nextId++, name: name.trim(), slug: slugFor(s, name) };
+      s.menus.push(menu);
+      return { ...menu, locations: [], count: 0 };
+    },
+    async renameMenu(id, name) {
+      const s = state();
+      const menu = menuOf(s, id);
+      assertFreeName(s, name, id);
+      menu.name = name.trim();
+    },
+    async deleteMenu(id) {
+      const s = state();
+      menuOf(s, id);
+      s.menus = s.menus.filter((m) => m.id !== id);
+      s.items = s.items.filter((i) => i.menu !== id);
+      for (const place of s.locations) if (place.menu === id) place.menu = 0;
+    },
+    async setPlace(slug, menuId) {
+      const s = state();
+      const place = s.locations.find((l) => l.slug === slug);
+      if (!place) throw new VetrinaError("invalid", "Invalid menu location. (rest_invalid_menu_location, HTTP 400)", 400);
+      if (menuId != null) menuOf(s, menuId);
+      place.menu = menuId ?? 0;
     },
   };
 }

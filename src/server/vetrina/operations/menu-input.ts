@@ -11,6 +11,8 @@ import { words } from "./words";
  */
 
 export const MENU_LABEL_MAX = 120;
+/** A menu's name, at most (WordPress keeps a term's name in 200 characters). */
+export const MENU_NAME_MAX = 80;
 /** Items one action adds, at most. */
 export const MENU_ADD_MAX = 50;
 
@@ -35,6 +37,16 @@ const Expected = z
   .object({ digest: z.string().min(8).max(64) })
   .optional()
   .describe("The menu as you read it (its `digest` from GET /api/v1/menus/{id}): the action is refused when the menu changed since. Optional.");
+
+const MenuName = z.string().trim().min(1).max(MENU_NAME_MAX).describe("The menu's name (WordPress's own; the theme does not show it). Two menus never share one.");
+// A theme's place, by its slug ("primary"), as GET /api/v1/menu-locations lists it.
+const Location = z
+  .string()
+  .trim()
+  .min(1)
+  .max(100)
+  .regex(/^[A-Za-z0-9_-]+$/)
+  .describe("The place's slug, as GET /api/v1/menu-locations lists it.");
 
 const NewItem = z
   .discriminatedUnion("kind", [
@@ -61,6 +73,18 @@ export const MenuActionInputSchema = z.discriminatedUnion("kind", [
     itemId: ItemId,
     label: Label.nullable().describe("Its own label; null = back to its category's, brand's or page's name."),
     expected: Expected,
+  }),
+  z.object({
+    kind: z.literal("menuCreate"),
+    name: MenuName,
+    copyOf: Id.nullish().describe("A menu whose items the new one starts with (those leading to something gone left out); absent: empty."),
+  }),
+  z.object({ kind: z.literal("menuRename"), menuId: MenuId, name: MenuName }),
+  z.object({ kind: z.literal("menuDelete"), menuId: MenuId, expected: Expected }),
+  z.object({
+    kind: z.literal("menuLocation"),
+    location: Location,
+    menuId: Id.nullable().describe("The menu the place shows from now; null = none."),
   }),
 ]);
 

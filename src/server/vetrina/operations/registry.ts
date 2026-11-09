@@ -257,6 +257,41 @@ export const ACTIONS: { [K in ActionKind]: ActionSpec<K> } = {
     undo: `Within ${OPERATION_UNDO_DAYS} days, while it has the label the action gave it: its label goes back.`,
     example: { kind: "menuItemRename", menuId: 2, itemId: 45, label: "Saldi" },
   },
+  menuCreate: {
+    scope: "menu",
+    title: "Make a navigation menu",
+    description:
+      "Make a new navigation menu, empty or starting with a copy of another menu's items (`copyOf`; items leading to something gone are left out). " +
+      "It is in no place of the theme — the site does not show it — until put in one (menuLocation): a copy is the safe way to rework a menu before showing it. " +
+      "Two menus never share a name.",
+    undo: `Within ${OPERATION_UNDO_DAYS} days, while it is as the action made it and the theme shows it nowhere: it is deleted.`,
+    example: { kind: "menuCreate", name: "Menu Black Friday", copyOf: 2 },
+  },
+  menuRename: {
+    scope: "menu",
+    title: "Rename a navigation menu",
+    description: "Give a navigation menu another name (WordPress's own: the theme shows its items, not its name). Two menus never share a name.",
+    undo: `Within ${OPERATION_UNDO_DAYS} days, while it has the name the action gave it: its name goes back.`,
+    example: { kind: "menuRename", menuId: 2, name: "Menu principale" },
+  },
+  menuDelete: {
+    scope: "menu",
+    title: "Delete a navigation menu",
+    description:
+      "Delete a navigation menu with its items. Refused while a place of the theme shows it: put another menu there first, or empty the place (menuLocation). " +
+      "The categories, brands and pages it led to stay.",
+    undo: `Within ${OPERATION_UNDO_DAYS} days: the menu is made again with its items as they were (new ids), in no place, as it was. Refused when another menu has its name by then.`,
+    example: { kind: "menuDelete", menuId: 5 },
+  },
+  menuLocation: {
+    scope: "menu",
+    title: "Choose the menu a place of the theme shows",
+    description:
+      "Put a navigation menu in a place of the theme (`location`, its slug as GET /api/v1/menu-locations lists it: the header's, the footer's…), " +
+      "instead of the menu there; `menuId: null` shows none there. The site shows it at once.",
+    undo: `Within ${OPERATION_UNDO_DAYS} days, while the place shows what the action put there: the menu it showed before goes back, if it still exists.`,
+    example: { kind: "menuLocation", location: "primary", menuId: 5 },
+  },
 };
 
 export const ACTION_KINDS = Object.keys(ACTIONS) as ActionKind[];
