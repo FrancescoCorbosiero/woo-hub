@@ -1,0 +1,133 @@
+import "server-only";
+import type { Menu, MenuItem, MenuSummary, MenuTarget } from "@/lib/menus/types";
+import { decodeEntities } from "@/server/collections/index-rows";
+import { VetrinaError } from "@/server/vetrina/source";
+import { itemOf, wp, type BatchOutcome, type WpLocations, type WpMenu, type WpMenuItem, type WpMenuItemBody, type WpPage } from "../client";
+import type { MenuItemChange, MenuSource, NewMenuItem, Outcome } from "./source";
+
+/**
+ * The live site's menus, over WordPress's own REST API (../client.ts):
+ * WordPress's shapes read into the Hub's (lib/menus/types.ts), and the
+ * Hub's items written as WordPress takes them.
+ */
+
+/** WooCommerce's taxonomies for what the Hub calls a category and a brand. */
+const TAXONOMY = { category: "product_cat", brand: "product_brand" } as const;
+
+const titleText = (title: WpMenuItem["title"] | WpPage["title"]) => decodeEntities(typeof title === "string" ? title : title.rendered);
+const rawLabel = (title: WpMenuItem["title"]) => (typeof title === "string" ? null : (title.raw ?? null));
+
+function targetOf(item: WpMenuItem): MenuTarget {
+  if (item.type === "taxonomy" && item.object === TAXONOMY.category) return { kind: "category", id: item.object_id };
+  if (item.type === "taxonomy" && item.object === TAXONOMY.brand) return { kind: "brand", id: item.object_id };
+  if (item.type === "post_type" && item.object === "page") return { kind: "page", id: item.object_id };
+  if (item.type === "custom") return { kind: "link", url: item.url };
+  return { kind: "other", type: item.type, object: item.object, id: item.object_id };
+}
+
+export function menuItemOf(item: WpMenuItem): MenuItem {
+  const label = rawLabel(item.title);
+  return {
+    id: item.id,
+    parent: item.parent,
+    order: item.menu_order,
+    title: titleText(item.title) || (label ?? ""),
+    // WordPress stores no label as "": the item then shows its target's name.
+    label: label ? decodeEntities(label) : null,
+    target: targetOf(item),
+    url: item.url,
+    invalid: item.invalid,
+    extra: {
+      newTab: item.target === "_blank",
+      classes: item.classes.filter(Boolean),
+      attrTitle: item.attr_title,
+      // An item saved with no label gets " " as its description (wp_update_nav_menu_item): no description.
+      description: item.description.trim(),
+      xfn: item.xfn.filter(Boolean),
+    },
+  };
+}
+
+function summaryOf(menu: WpMenu, locations: WpLocations): MenuSummary {
+  return {
+    id: menu.id,
+    name: decodeEntities(menu.name),
+    slug: menu.slug,
+    locations: menu.locations.map((slug) => ({ slug, name: locations[slug]?.description || slug })),
+    count: menu.count,
+  };
+}
+
+/** The item's target as WordPress takes it. */
+function targetBody(target: MenuTarget): WpMenuItemBody {
+  switch (target.kind) {
+    case "category":
+    case "brand":
+      return { type: "taxonomy", object: TAXONOMY[target.kind], object_id: target.id };
+    case "page":
+      return { type: "post_type", object: "page", object_id: target.id };
+    case "link":
+      return { type: "custom", url: target.url };
+    case "other":
+      return { type: target.type as WpMenuItemBody["type"], object: target.object, object_id: target.id };
+  }
+}
+
+function newItemBody(menuId: number, item: NewMenuItem): WpMenuItemBody {
+  return {
+    menus: menuId,
+    ...targetBody(item.target),
+    title: item.label ?? "",
+    parent: item.parent,
+    menu_order: item.order,
+    ...(item.extra
+      ? {
+          target: item.extra.newTab ? "_blank" : "",
+          classes: item.extra.classes,
+          attr_title: item.extra.attrTitle,
+          description: item.extra.description,
+          xfn: item.extra.xfn,
+        }
+      : {}),
+  };
+}
+
+function changeBody(change: MenuItemChange): WpMenuItemBody {
+  return {
+    ...(change.parent !== undefined ? { parent: change.parent } : {}),
+    ...(change.order !== undefined ? { menu_order: change.order } : {}),
+    // "" = back to the target's own name, as WordPress's editor saves an emptied label.
+    ...(change.label !== undefined ? { title: change.label ?? "" } : {}),
+  };
+}
+
+const done = (outcome: BatchOutcome): Outcome<null> => (outcome.ok ? { ok: true, value: null } : outcome);
+
+export function wordpressMenus(): MenuSource {
+  return {
+    kind: "wordpress",
+    async menus() {
+      const [menus, locations] = await Promise.all([wp.menus(), wp.locations()]);
+      return menus.map((m) => summaryOf(m, locations));
+    },
+    async menu(id) {
+      const [menus, locations, items] = await Promise.all([wp.menus(), wp.locations(), wp.menuItems(id)]);
+      const menu = menus.find((m) => m.id === id);
+      if (!menu) throw new VetrinaError("not_found", `No menu ${id} on the site.`, 404);
+      return { ...summaryOf(menu, locations), count: items.length, items: items.map(menuItemOf) } satisfies Menu;
+    },
+    async pages() {
+      return (await wp.pages()).map((p) => ({ id: p.id, title: titleText(p.title), parent: p.parent, url: p.link }));
+    },
+    async create(menuId, items) {
+      const outcomes = await wp.createMenuItems(items.map((item) => newItemBody(menuId, item)));
+      return outcomes.map((o): Outcome<MenuItem> => (o.ok ? { ok: true, value: menuItemOf(itemOf(o.body)) } : o));
+    },
+    async update(changes) {
+      return (await wp.updateMenuItems(changes.map((c) => ({ id: c.id, body: changeBody(c) })))).map(done);
+    },
+    async remove(ids) {
+      return (await wp.deleteMenuItems(ids)).map(done);
+    },
+  };
+}

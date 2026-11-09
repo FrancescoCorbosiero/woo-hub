@@ -46,6 +46,14 @@ const EnvSchema = z.object({
   WOO_CONSUMER_KEY: z.string().optional(),
   WOO_CONSUMER_SECRET: z.string().optional(),
 
+  // WordPress's own REST API (wp/v2: navigation menus, pages), which Woo's
+  // keys cannot reach: a WordPress administrator's username (or email) and
+  // an Application Password of theirs (Users › Profile › Application
+  // Passwords; the spaces WordPress shows may stay). The site is
+  // WOO_BASE_URL's. Optional: without them the menus say what to set.
+  WP_APP_USER: optionalSecret,
+  WP_APP_PASSWORD: optionalSecret,
+
   // Shared secret for the scheduled endpoints (/api/cron/*). Unset = disabled.
   CRON_SECRET: z.string().optional(),
 
