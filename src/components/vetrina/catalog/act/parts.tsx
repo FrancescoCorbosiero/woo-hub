@@ -321,6 +321,7 @@ export function PickRow({
   media,
   onPick,
   disabled = false,
+  chevron = true,
 }: {
   title: React.ReactNode;
   subtitle?: React.ReactNode;
@@ -328,6 +329,8 @@ export function PickRow({
   media?: React.ReactNode;
   onPick: () => void;
   disabled?: boolean;
+  /** False where a tap marks the row (picking several) instead of going on with it. */
+  chevron?: boolean;
 }) {
   if (disabled) {
     // Every part at the same strength, the reason too: the row reads as one thing that cannot be picked.
@@ -349,6 +352,7 @@ export function PickRow({
       link
       linkComponent="button"
       linkProps={{ type: "button", onClick: onPick }}
+      chevron={chevron}
       contentClassName="w-full text-start"
       media={media}
       title={title}

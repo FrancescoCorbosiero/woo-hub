@@ -2,6 +2,7 @@ import type { catalogIt } from "./it";
 import { actEn } from "./act.en";
 import { homeEn } from "./home.en";
 import { marginsEn } from "./margins.en";
+import { menusEn } from "./menus.en";
 import { pickerEn } from "./picker.en";
 import { opsEn } from "./ops.en";
 import { originEn } from "./origin.en";
@@ -23,4 +24,5 @@ export const catalogEn: typeof catalogIt = {
   sources: sourcesEn,
   sections: sectionsEn,
   picker: pickerEn,
+  menus: menusEn,
 };
