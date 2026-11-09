@@ -257,6 +257,12 @@ else WordPress links to, with its `type`, `object` and `id`).
 `GET /api/v1/pages` — the site's published pages (`id`, `title`, `parent`,
 `url`), for an item that leads to one.
 
+`GET /api/v1/menus/check` — is this WordPress ready for the menus: the
+access, the menus, the places, the items, the pages, the batch endpoint,
+step by step (`{ ok, site, steps: [{ step, ok, detail, ms }] }`), read-only.
+`POST` with `{ "write": true }` (`admin`) adds a round trip of writes on a
+menu of its own, deleted in the end ([menus.md](menus.md#checking-a-live-site)).
+
 `GET /api/v1/menu-locations` — the theme's places for a menu: `slug` (what
 `menuLocation` takes), `name`, and the `menu` each shows (`{ id, name }`, or
 null). None at all: a block theme, whose navigation is not these menus.

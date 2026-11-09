@@ -180,6 +180,35 @@ object's name, children orphaned by a bare delete, numbers never
 renumbered by WordPress itself). The e2e suite (`e2e/menus.spec.ts`) runs
 on it.
 
+## Checking a live site
+
+Before the owner's first change, ask the site whether it is ready:
+
+```sh
+curl -H "Authorization: Bearer $HUB_API_TOKEN" "$HUB/api/v1/menus/check"
+```
+
+Read-only, step by step, each with what it found or WordPress's own
+refusal: **access** (who the Hub signs in as, and whether that user may
+change menus — an administrator, `edit_theme_options`), **menus**, the
+theme's **places** (none: a block theme, which the Hub does not cover),
+every **item**, the **pages**, and the **batch** endpoint (off is fine:
+writes then go one request at a time). `ok` is true when every step passed.
+
+With a token holding `admin`, the same check also proves the writes:
+
+```sh
+curl -X POST -H "Authorization: Bearer $HUB_API_TOKEN" -H "Content-Type: application/json" \
+  -d '{"write": true}' "$HUB/api/v1/menus/check"
+```
+
+It makes a menu of its own ("Store Hub check …", on no place of the
+theme: the site never shows it), makes items in it (one under another),
+reads them back, renumbers them in a batch, renames one, deletes one, and
+deletes the menu — whatever happened before; a menu it could not delete is
+named, to delete by hand. Nothing is filed in the log. On a staging copy
+first, then on the live site: the round trip touches no menu but its own.
+
 ## Tested how
 
 The `wp/v2` client and the planner follow WordPress 6.5's own controllers
@@ -188,8 +217,9 @@ The `wp/v2` client and the planner follow WordPress 6.5's own controllers
 the shapes, the defaults, the batch envelope, the refusals. They are covered
 by unit tests (client, planner, fixture), DB tests of the actions (including
 a partial write put back) and the e2e suite on the demo shop. **They have
-not yet run against a live WordPress**: try the first changes on a staging
-copy, or on a menu the theme shows nowhere.
+not yet run against a live WordPress**: run the check above (with
+`"write": true`) on a staging copy, then try the first changes on a menu
+the theme shows nowhere — a copy, for one.
 
 ## Not covered (yet)
 
@@ -202,6 +232,7 @@ copy, or on a menu the theme shows nowhere.
 |---|---|
 | `src/lib/menus/` | the menu's types, the planner (layout, insert, move, remove, the writes a new shape needs), the screen's one-tap moves |
 | `src/server/wordpress/client.ts` | `wp/v2` over `adapters/http.ts`: the Application Password, menus, items, places, pages, batches |
+| `src/server/wordpress/check.ts` | the live site's check (`/api/v1/menus/check`) |
 | `src/server/wordpress/menus/` | the `MenuSource` port (`source.ts`, the fingerprint), WordPress's (`wp-menus.ts`) and the demo's |
 | `src/server/vetrina/operations/menu.ts` | the four actions: assess, write, put back, undo; `menu-input.ts` their schema |
 | `src/server/api/menus.ts` | the API's reads |

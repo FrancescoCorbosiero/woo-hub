@@ -82,6 +82,16 @@ export const WpPage = z.object({
 });
 export type WpPage = z.infer<typeof WpPage>;
 
+/** The user the Hub signs in as: who, and whether menus are theirs to change (edit_theme_options). */
+export const WpMe = z.object({
+  id: z.number().int(),
+  name: z.string().default(""),
+  slug: z.string().default(""),
+  roles: z.array(z.string()).default([]),
+  capabilities: z.record(z.string(), z.unknown()).default({}),
+});
+export type WpMe = z.infer<typeof WpMe>;
+
 /** A menu item as WordPress takes it on create or update: only what is sent changes. */
 export interface WpMenuItemBody {
   menus?: number;
@@ -315,6 +325,18 @@ async function one(r: BatchRequest): Promise<BatchOutcome> {
 const ITEM_FIELDS = "id,title,status,url,attr_title,description,type,object,object_id,parent,menu_order,target,classes,xfn,invalid,menus";
 
 export const wp = {
+  /** Who the Hub signs in as (context=edit: their roles and capabilities). */
+  me: () => read("/wp/v2/users/me", WpMe, { context: "edit", _fields: "id,name,slug,roles,capabilities" }),
+  /** Whether WordPress's batch endpoint answers, asked with an empty batch: nothing is written. */
+  batchAvailable: async (): Promise<boolean> => {
+    try {
+      await write("POST", "/batch/v1", { requests: [] });
+      return true;
+    } catch (e) {
+      if (e instanceof VetrinaError && batchUnavailable(e)) return false;
+      throw e;
+    }
+  },
   /** Every menu: id, name, slug, the places it is in. */
   menus: () => readAll("/wp/v2/menus", WpMenu, { context: "edit", _fields: "id,name,slug,locations" }),
   /** A new menu, in no place. WordPress refuses a name another menu has (menu_exists). */
