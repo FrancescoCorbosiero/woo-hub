@@ -252,6 +252,24 @@ rule forbidding `src/server/**` from importing `src/server/actions/**` or
 `src/components/**`; `RUN_DB_TESTS=1` in the CI e2e job; unit tests for
 `src/server/api/v1.ts`. Decide the WordPress auth path.
 
+*Landed (2026-11-09):* callers and scopes in `serve()` (`HUB_API_TOKENS`,
+`src/lib/actors.ts`; `HUB_API_TOKEN` kept as the caller `legacy`, every
+scope; each route names its scope, 403 otherwise); `actor` and `undone_by`
+on `vetrina_operations`, `actor` and `confirmed_by` on `vetrina_proposals`
+(migration 0028), written by propose, confirm, start and undo, from the
+API's caller or the screens' `Remote-User`; confirm refused without a person
+(`isPerson`: signed in, or a `confirm`-scoped token), in the route and in
+`confirmProposal` itself; the two shortcuts proposing unless `admin`; undo
+scoped; `HUB_ROLE` (`src/server/writer.ts`) guarding the scheduler, the
+operations runner (its `recover()` too), the collections runner and
+`apply-job.ts`; the ESLint boundary, with the two upward imports marked
+where they stand and `drawer-data.ts` moved under `src/server/catalog/`
+ahead of weeks 3–6; the 17 DB suites in the CI e2e job (`npm run test:db`);
+`v1.test.ts`. *Still open from week 1:* the per-principal rate limit and
+open-proposal cap, and the sweep reopening proposals stuck in `confirming`.
+A person confirms today with a `confirm`-scoped token; the Vetrina sheet to
+confirm from the phone is not built (§7).
+
 **Weeks 2–3: the Vetrina half live for a program.**
 `src/app/api/mcp/route.ts` (Streamable HTTP, in the Next process,
 exempted in `src/proxy.ts` beside `/api/v1/`): one `propose_<kind>` tool
