@@ -47,7 +47,7 @@ export function useMenuWrites() {
    * refused.
    */
   const run = React.useCallback(
-    async (input: MenuActionInput, done: string): Promise<MenuWritten | null> => {
+    async (input: MenuActionInput, done: string, opts: { afterUndo?: () => void } = {}): Promise<MenuWritten | null> => {
       const res = await call(() => runMenuAction(input), network);
       if (!said(res)) return null;
       const operation = res.data.operation;
@@ -69,6 +69,7 @@ export function useMenuWrites() {
                 return;
               }
               toast.success(m.done.undone);
+              opts.afterUndo?.();
             });
           },
         },

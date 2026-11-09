@@ -69,3 +69,15 @@ export function ItemBadge({ kind }: { kind: MenuTargetKind | "new" }) {
 
 /** A link's address the menu takes: https://…, a path in the shop, or "#". */
 export const isMenuUrl = (url: string) => /^(https?:\/\/\S+|\/\S*|#\S*)$/.test(url.trim());
+
+/** A menu's lines, the second and third indented: items under items — the "Menu" tab's icon. */
+export function MenuGlyph({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 6h16" />
+      <path d="M8 12h12" />
+      <path d="M8 18h12" />
+      <path d="M4 12v6" />
+    </svg>
+  );
+}

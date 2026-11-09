@@ -226,8 +226,9 @@ hierarchy with counts, the empty ones folded away. Brands: an A–Z list. "+"
 creates an automatic category.
 
 **A category or a brand**: a header that is its control panel — "Visibile nel
-negozio" (the hide toggle), its rule, its homepage section, its sale, its
-order — then its products, with chips to filter (in stock, sold out, hidden, on
+negozio" (the hide toggle), its rule, its homepage section, its place in the
+site's menus (with "Aggiungi a un menu del sito", [menus.md](menus.md#from-the-catalog)),
+its sale, its order — then its products, with chips to filter (in stock, sold out, hidden, on
 sale, sub-categories, the brands inside it) and a sort. Products hidden one by
 one get "Mostra i N nascosti"; those another hidden category or brand holds
 come back only with that one's switch, and the panel names it (so does the

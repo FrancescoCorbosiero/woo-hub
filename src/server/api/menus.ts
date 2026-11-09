@@ -65,3 +65,33 @@ export async function listPages(): Promise<SitePage[]> {
 export async function listPlaces(): Promise<ThemePlace[]> {
   return (await getMenuSource()).places();
 }
+
+/** Where a category or a brand is in the site's menus, and the menus it can be added to. */
+export interface TermInMenus {
+  /** Each item leading to it: its menu (shown on the site or not), and the item it is under. */
+  found: { menuId: number; menu: string; shown: boolean; itemId: number; parent: string | null }[];
+  /** The site's menus, those the theme shows first. */
+  menus: { id: number; name: string; shown: boolean; count: number }[];
+}
+
+/**
+ * A category's or a brand's place in the site's menus, in one read of
+ * them all (three requests to WordPress): for its screen in the catalog.
+ */
+export async function termInMenus(term: { kind: "category" | "brand"; id: number }): Promise<TermInMenus> {
+  const { menus, items } = await (await getMenuSource()).everything();
+  const byId = new Map(items.map((i) => [i.id, i]));
+  const menuOf = new Map(menus.map((m) => [m.id, m]));
+  // The menus the site shows first, each group in WordPress's order.
+  const ordered = [...menus].sort((a, b) => Number(b.locations.length > 0) - Number(a.locations.length > 0));
+  const rank = new Map(ordered.map((m, i) => [m.id, i]));
+  const found = items
+    .filter((i) => i.target.kind === term.kind && i.target.id === term.id && menuOf.has(i.menuId))
+    .sort((a, b) => rank.get(a.menuId)! - rank.get(b.menuId)!)
+    .map((i) => {
+      const menu = menuOf.get(i.menuId)!;
+      const parent = i.parent ? byId.get(i.parent) : undefined;
+      return { menuId: menu.id, menu: menu.name, shown: menu.locations.length > 0, itemId: i.id, parent: parent?.title ?? null };
+    });
+  return { found, menus: ordered.map((m) => ({ id: m.id, name: m.name, shown: m.locations.length > 0, count: m.count })) };
+}

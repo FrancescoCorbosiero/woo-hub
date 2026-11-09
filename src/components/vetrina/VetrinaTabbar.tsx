@@ -8,6 +8,7 @@ import { Tabbar, TabbarLink, ToolbarPane } from "konsta/react";
 import { useI18n } from "@/i18n/provider";
 import { useSelectionBarShown } from "./catalog/act/bottom-bar";
 import { House } from "./catalog/term/glyphs";
+import { MenuGlyph } from "./menus/parts";
 
 /**
  * The Vetrina's tabs, Homepage, Catalogo and Menu (the site's navigation
@@ -126,7 +127,7 @@ export function VetrinaTabbar({ active }: { active: VetrinaTab | null }) {
             <ToolbarPane className="pointer-events-auto">
               {link("home", tabs.homepage, <House className={iconSize} />)}
               {link("catalog", tabs.catalog, <CatalogIcon className={iconSize} />)}
-              {link("menu", tabs.menu, <MenuIcon className={iconSize} />)}
+              {link("menu", tabs.menu, <MenuGlyph className={iconSize} />)}
             </ToolbarPane>
           </Tabbar>
         </motion.nav>
@@ -144,18 +145,6 @@ const stroke = {
   strokeLinecap: "round" as const,
   strokeLinejoin: "round" as const,
 };
-
-/** A menu's lines, the second and third indented: items under items. */
-function MenuIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className={className} {...stroke}>
-      <path d="M4 6h16" />
-      <path d="M8 12h12" />
-      <path d="M8 18h12" />
-      <path d="M4 12v6" />
-    </svg>
-  );
-}
 
 /** Four tiles: the shop by category and brand. */
 function CatalogIcon({ className }: { className?: string }) {

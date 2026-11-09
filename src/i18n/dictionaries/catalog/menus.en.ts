@@ -114,6 +114,24 @@ export const menusEn: typeof menusIt = {
     no: "Keep",
   },
 
+  term: {
+    inMenu: (menu: string, parent: string | null) => (parent ? `In the menu “${menu}”, under “${parent}”` : `In the menu “${menu}”`),
+    notShown: "The theme does not show this menu",
+    notInMenus: "Not in the site's menus",
+    addHint: "Tap to add it to a menu",
+    addToMenu: "Add to a menu of the site",
+    sheetTitle: (name: string) => `“${name}” in a menu`,
+    pickMenu: "Which menu",
+    pickPlace: "Where",
+    shown: "on the site",
+    hidden: "the theme does not show it",
+    end: "At the bottom of the menu",
+    under: (title: string) => `Under “${title}”`,
+    there: "already here",
+    otherMenu: "Another menu",
+    added: (name: string, menu: string) => `“${name}” added to “${menu}”`,
+  },
+
   deleteMenu: {
     title: "Delete the menu?",
     confirm: (name: string, count: number) =>

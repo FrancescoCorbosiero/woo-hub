@@ -330,6 +330,9 @@ export const wp = {
   deleteMenu: async (id: number) => {
     await write("DELETE", `/wp/v2/menus/${id}`, undefined, { force: "true" });
   },
+  /** Every item of every menu, whole, labels as stored: where something is in the site's menus, in one read. */
+  allItems: () =>
+    readAll("/wp/v2/menu-items", WpMenuItem, { context: "edit", orderby: "menu_order", order: "asc", status: "publish,draft", _fields: ITEM_FIELDS }),
   /** Every item of every menu, only which menu it is in: the menus' counts, in one read across the site. */
   itemMenus: () => readAll("/wp/v2/menu-items", WpItemMenu, { context: "edit", status: "publish,draft", _fields: "id,menus" }),
   /** The theme's places for a menu, with the menu each shows. */

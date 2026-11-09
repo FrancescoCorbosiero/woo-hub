@@ -131,6 +131,15 @@ export function wordpressMenus(): MenuSource {
     async remove(ids) {
       return (await wp.deleteMenuItems(ids)).map(done);
     },
+    async everything() {
+      const [menus, locations, items] = await Promise.all([wp.menus(), wp.locations(), wp.allItems()]);
+      const counts = new Map<number, number>();
+      for (const item of items) counts.set(item.menus, (counts.get(item.menus) ?? 0) + 1);
+      return {
+        menus: menus.map((m) => summaryOf(m, locations, counts.get(m.id) ?? 0)),
+        items: items.map((item) => ({ ...menuItemOf(item), menuId: item.menus })),
+      };
+    },
     async places() {
       const [menus, locations] = await Promise.all([wp.menus(), wp.locations()]);
       const byId = new Map(menus.map((m) => [m.id, m]));

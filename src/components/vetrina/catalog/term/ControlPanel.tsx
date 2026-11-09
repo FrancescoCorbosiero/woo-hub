@@ -9,15 +9,17 @@ import { Funnel } from "../../icons";
 import { ruleState } from "../rule-state";
 import { sectionHref } from "../sheet/links";
 import { useAppLink } from "./browse";
+import { TermMenuRows } from "../../menus/TermMenus";
 import { House, Stack } from "./glyphs";
 import { summaryParts } from "./list-model";
 import { PanelIcon } from "./PanelIcon";
 
 /**
  * The top of a term's screen: its automatic rule (categories), the homepage
- * sections showing it, and what is sold out, hidden or on sale in it.
+ * sections showing it, its place in the site's menus (when they are
+ * connected), and what is sold out, hidden or on sale in it.
  */
-export function ControlPanel({ term, onRule }: { term: CatalogTerm; onRule: () => void }) {
+export function ControlPanel({ term, onRule, onAddToMenu }: { term: CatalogTerm; onRule: () => void; onAddToMenu: () => void }) {
   const { t } = useI18n();
   const p = t.vetrinaCatalog.term.panel;
   const appLink = useAppLink();
@@ -50,6 +52,7 @@ export function ControlPanel({ term, onRule }: { term: CatalogTerm; onRule: () =
           title={<span className="opacity-50">{p.notInHomepage}</span>}
         />
       )}
+      <TermMenuRows term={{ taxonomy: term.taxonomy, id: term.id, name: term.name }} onAdd={onAddToMenu} />
       {term.count > 0 && (
         <ListItem
           media={

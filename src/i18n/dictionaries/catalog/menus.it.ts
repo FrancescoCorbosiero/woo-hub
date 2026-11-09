@@ -127,6 +127,25 @@ export const menusIt = {
     no: "Lascia",
   },
 
+  /** A category's or a brand's screen in the catalog: its place in the site's menus. */
+  term: {
+    inMenu: (menu: string, parent: string | null) => (parent ? `Nel menu «${menu}», sotto «${parent}»` : `Nel menu «${menu}»`),
+    notShown: "Il tema non mostra questo menu",
+    notInMenus: "Non è nei menu del sito",
+    addHint: "Tocca per aggiungerlo a un menu",
+    addToMenu: "Aggiungi a un menu del sito",
+    sheetTitle: (name: string) => `«${name}» nel menu`,
+    pickMenu: "In quale menu",
+    pickPlace: "Dove",
+    shown: "sul sito",
+    hidden: "il tema non lo mostra",
+    end: "In fondo al menu",
+    under: (title: string) => `Sotto «${title}»`,
+    there: "c'è già qui",
+    otherMenu: "Un altro menu",
+    added: (name: string, menu: string) => `«${name}» aggiunta a «${menu}»`,
+  },
+
   deleteMenu: {
     title: "Eliminare il menu?",
     confirm: (name: string, count: number) =>

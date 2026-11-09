@@ -201,3 +201,22 @@ test("a menu is renamed, Annulla gives its name back; the menu the site shows is
   await page.getByRole("button", { name: "Ho capito" }).click();
   expect(await itemTitles(page)).toEqual(AS_READ);
 });
+
+test("a brand's screen says where it is in the menus, and adds it to another; Annulla takes it away", async ({ page }) => {
+  // Nike: under «Brand» in the main menu.
+  await open(page, "/vetrina/catalogo/brand/201");
+  await expect(page.getByRole("link", { name: "Nel menu «Menu principale», sotto «Brand»" })).toBeVisible();
+
+  // Asics: in no menu — added at the bottom of the footer.
+  await open(page, "/vetrina/catalogo/brand/208");
+  const none = page.getByRole("button", { name: /Non è nei menu del sito/ });
+  await none.click();
+  const add = sheet(page, "«Asics» nel menu");
+  await add.getByText("Footer", { exact: true }).click();
+  await add.getByText("In fondo al menu").click();
+  await expect(toast(page, "«Asics» aggiunta a «Footer»")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Nel menu «Footer»" })).toBeVisible();
+
+  await undoFromToast(page, "«Asics» aggiunta a «Footer»");
+  await expect(none).toBeVisible();
+});

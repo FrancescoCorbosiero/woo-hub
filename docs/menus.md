@@ -110,6 +110,20 @@ instead of what). "Annulla", or the old menu put back in the place, undoes
 the switch in one step; a seasonal menu (Black Friday, the sales) goes in
 and out the same way, the everyday menu kept as it is.
 
+## From the catalog
+
+A category's or a brand's screen in the Catalogo tab says where it is in
+the site's menus — "Nel menu «Menu principale», sotto «Brand»", a tap
+opening that menu, with "Il tema non mostra questo menu" for a menu on no
+place — or that it is in none, and a tap adds it. "Aggiungi a un menu del
+sito", in the screen's "⋯", adds it to another: a menu (the ones the site
+shows first, those already holding it marked), then where — at its bottom
+or under one of its items — one `menuItemAdd`, with "Annulla".
+
+The rows are read after the screen (`termInMenus`, one read of every menu
+and item: three requests to WordPress), so WordPress never slows the
+catalog down; without WordPress's access there are no rows.
+
 ## Writing a menu safely
 
 WordPress keeps no version of a menu: its items have no modified date, so
@@ -191,4 +205,4 @@ copy, or on a menu the theme shows nowhere.
 | `src/server/wordpress/menus/` | the `MenuSource` port (`source.ts`, the fingerprint), WordPress's (`wp-menus.ts`) and the demo's |
 | `src/server/vetrina/operations/menu.ts` | the four actions: assess, write, put back, undo; `menu-input.ts` their schema |
 | `src/server/api/menus.ts` | the API's reads |
-| `src/components/vetrina/menus/` | the Menu tab |
+| `src/components/vetrina/menus/` | the Menu tab; `TermMenus.tsx` the catalog's rows and "Aggiungi al menu" |

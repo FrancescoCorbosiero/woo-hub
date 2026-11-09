@@ -20,6 +20,12 @@ import type { VetrinaError } from "@/server/vetrina/source";
  * WordPress's refusal.
  */
 
+/** The site's menus and all their items: each item with the menu it is in. */
+export interface SiteMenus {
+  menus: MenuSummary[];
+  items: (MenuItem & { menuId: number })[];
+}
+
 /** One write's outcome: done, or why not. */
 export type Outcome<T> = { ok: true; value: T } | { ok: false; error: VetrinaError };
 
@@ -57,6 +63,8 @@ export interface MenuSource {
   /** Items deleted for good (menu items have no trash). */
   remove(ids: readonly number[]): Promise<Outcome<null>[]>;
 
+  /** Every menu and every item of every menu, in one read: where something is in the site's menus. */
+  everything(): Promise<SiteMenus>;
   /** Every place the theme registered, with the menu it shows. */
   places(): Promise<ThemePlace[]>;
   /** A new, empty menu in no place; refused when another menu has the name. */

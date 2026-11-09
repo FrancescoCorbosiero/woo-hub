@@ -1,9 +1,10 @@
 "use server";
 
 import { refresh } from "next/cache";
+import { z } from "zod";
 import { defaultLocale, type Locale } from "@/i18n/config";
 import { getLocale } from "@/i18n/server";
-import type { SitePage } from "@/lib/menus/types";
+import type { Menu, SitePage } from "@/lib/menus/types";
 import type { OperationView } from "@/lib/vetrina/catalog-ops";
 import type { MenuActionInput } from "@/lib/vetrina/menu-ops";
 import type { VetrinaErrorCode } from "@/lib/vetrina/types";
@@ -12,7 +13,8 @@ import { startMenuOperation } from "@/server/vetrina/operations/service";
 import { inLanguage, words } from "@/server/vetrina/operations/words";
 import type { VetrinaResult } from "@/server/vetrina/service";
 import { VetrinaError } from "@/server/vetrina/source";
-import { getMenuSource } from "@/server/wordpress/menus/source";
+import { menuId, termInMenus, type TermInMenus } from "@/server/api/menus";
+import { getMenuSource, menuDigest } from "@/server/wordpress/menus/source";
 import { signedInActor } from "./signed-in";
 
 /**
@@ -79,4 +81,25 @@ export async function runMenuAction(
 /** The site's published pages, for an item that leads to one. */
 export async function loadSitePages(): Promise<VetrinaResult<SitePage[]>> {
   return inLanguage(await language(), () => attempt(async () => (await getMenuSource()).pages()));
+}
+
+const TermRef = z.object({ kind: z.enum(["category", "brand"]), id: z.number().int().positive() });
+
+/** Where a category or a brand is in the site's menus, for its screen in the catalog; not_configured without WordPress's access. */
+export async function loadTermInMenus(term: { kind: "category" | "brand"; id: number }): Promise<VetrinaResult<TermInMenus>> {
+  return inLanguage(await language(), async () => {
+    const parsed = TermRef.safeParse(term);
+    if (!parsed.success) return { ok: false, code: "invalid", error: words().input.invalid };
+    return attempt(() => termInMenus(parsed.data));
+  });
+}
+
+/** A menu and its fingerprint, to choose where something goes in it. */
+export async function loadMenuForAdd(id: number): Promise<VetrinaResult<{ menu: Menu; digest: string }>> {
+  return inLanguage(await language(), () =>
+    attempt(async () => {
+      const menu = await (await getMenuSource()).menu(menuId(String(id)));
+      return { menu, digest: menuDigest(menu) };
+    }),
+  );
 }

@@ -1,5 +1,5 @@
 import "server-only";
-import type { Menu, MenuItem, MenuItemExtra, MenuTarget, SitePage, ThemePlace } from "@/lib/menus/types";
+import type { Menu, MenuItem, MenuItemExtra, MenuSummary, MenuTarget, SitePage, ThemePlace } from "@/lib/menus/types";
 import { DEMO_BRAND_PARENT, DEMO_TERM_IDS, DEMO_TERM_NAMES } from "@/server/vetrina/fixture-data";
 import { VetrinaError } from "@/server/vetrina/source";
 import { sameMenuName, type MenuItemChange, type MenuSource, type NewMenuItem, type Outcome } from "./source";
@@ -168,16 +168,20 @@ function menuOf(s: DemoMenus, id: number): DemoMenus["menus"][number] {
   return menu;
 }
 
+/** Every menu, with the places that show it and its items' count. */
+function summaries(s: DemoMenus): MenuSummary[] {
+  return s.menus.map((m) => ({
+    ...m,
+    locations: s.locations.filter((l) => l.menu === m.id).map(({ slug, name }) => ({ slug, name })),
+    count: s.items.filter((i) => i.menu === m.id).length,
+  }));
+}
+
 export function fixtureMenus(): MenuSource {
   return {
     kind: "fixture",
     async menus() {
-      const s = state();
-      return s.menus.map((m) => ({
-        ...m,
-        locations: s.locations.filter((l) => l.menu === m.id).map(({ slug, name }) => ({ slug, name })),
-        count: s.items.filter((i) => i.menu === m.id).length,
-      }));
+      return summaries(state());
     },
     async menu(id) {
       const s = state();
@@ -241,6 +245,11 @@ export function fixtureMenus(): MenuSource {
         s.items.splice(at, 1);
         return { ok: true, value: null };
       });
+    },
+    async everything() {
+      const s = state();
+      const items = [...s.items].sort((a, b) => a.order - b.order || a.id - b.id).map((item) => ({ ...view(item), menuId: item.menu }));
+      return { menus: summaries(s), items };
     },
     async places() {
       const s = state();
