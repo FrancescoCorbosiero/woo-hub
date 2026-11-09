@@ -1,4 +1,5 @@
 import "server-only";
+import { actorOf, type Actor } from "@/lib/actors";
 import {
   OPERATION_UNDO_DAYS,
   type HomepageSectionOption,
@@ -52,6 +53,7 @@ export function operationView(row: VetrinaOperationRow, now = Date.now(), sectio
     label: row.labelParams ? labelText(row.labelParams) : row.label,
     status: row.status,
     via: row.via,
+    actor: row.actor,
     progress: { done: row.done, total: row.total },
     changed: row.changed,
     failed: row.failed,
@@ -61,6 +63,7 @@ export function operationView(row: VetrinaOperationRow, now = Date.now(), sectio
     finishedAt: iso(row.finishedAt),
     undoable: wayBack && undoable(row, now, OPERATION_UNDO_DAYS),
     undoneAt: iso(row.undoneAt),
+    undoneBy: row.undoneBy,
     queued: (row.status === "running" || row.status === "undoing") && isQueued(row.id),
     undo: row.undo ?? null,
     ...(sectionKey !== undefined ? { sectionKey } : {}),
@@ -74,9 +77,10 @@ export async function previewOperation(input: OperationInput): Promise<Operation
 
 /**
  * File the action and queue it; it runs in the background. The answer is its
- * row, to follow. `via`: how it came (the Vetrina's screens unless said).
+ * row, to follow. `via`: how it came (the Vetrina's screens unless said);
+ * `by`: who asked (src/lib/actors.ts), null when nobody is signed in.
  */
-export async function startOperation(input: OperationInput, via: OperationVia = "app"): Promise<OperationView> {
+export async function startOperation(input: OperationInput, via: OperationVia = "app", by: Actor | null = null): Promise<OperationView> {
   await recover();
   // In demo mode the log of this demo shop starts no later than its first action.
   await logSince();
@@ -100,6 +104,7 @@ export async function startOperation(input: OperationInput, via: OperationVia = 
     termKey: assessment.termKey,
     total: assessment.total,
     via,
+    actor: actorOf(by),
   });
   queueRun(row.id);
   return operationView(row);
@@ -112,8 +117,9 @@ export async function startOperation(input: OperationInput, via: OperationVia = 
 export async function startPageOperation<K extends PageActionKind>(
   input: Extract<PageActionInput, { kind: K }>,
   via: OperationVia = "app",
+  by: Actor | null = null,
 ): Promise<{ operation: OperationView | null; result: PageResult<K> }> {
-  const { row, sectionKey, result } = await startPageAction(input, via);
+  const { row, sectionKey, result } = await startPageAction(input, via, actorOf(by));
   return { operation: row ? operationView(row, Date.now(), sectionKey) : null, result };
 }
 
@@ -137,9 +143,10 @@ export async function listOperations(limit = 20): Promise<OperationView[]> {
 /**
  * "Annulla": queue the undo. Refused while the action is still under way,
  * once undone, past its time — and, for a place on the homepage, when the
- * section was changed since (its pins are someone's newer word).
+ * section was changed since (its pins are someone's newer word). `by`: who
+ * undoes it, filed on the row.
  */
-export async function undoOperation(id: string): Promise<OperationView> {
+export async function undoOperation(id: string, by: Actor | null = null): Promise<OperationView> {
   await recover();
   const row = await found(id);
   const w = words();
@@ -150,7 +157,7 @@ export async function undoOperation(id: string): Promise<OperationView> {
   if (!undoable(row, Date.now(), OPERATION_UNDO_DAYS)) throw new VetrinaError("invalid", w.error.tooOld(OPERATION_UNDO_DAYS), 400);
   // A homepage action is one write: its way back is written now, not queued.
   if (isPageActionKind(row.kind)) {
-    const undone = await undoPageAction(row);
+    const undone = await undoPageAction(row, actorOf(by));
     return operationView(undone.row, Date.now(), undone.sectionKey);
   }
   if (row.section) {
@@ -168,7 +175,7 @@ export async function undoOperation(id: string): Promise<OperationView> {
   }
   // A margin's rule set again since (here or on the Margins tab) is the newer word.
   if (row.kind === "margin") await checkMarginUndo(row);
-  const moved = await repo.moveStatus(id, ["done", "failed"], { status: "undoing", error: null });
+  const moved = await repo.moveStatus(id, ["done", "failed"], { status: "undoing", error: null, undoneBy: actorOf(by) });
   if (!moved) throw new VetrinaError("invalid", w.error.undoing, 409);
   queueUndo(id, { status: row.status, done: row.done, total: row.total });
   return operationView(await found(id));

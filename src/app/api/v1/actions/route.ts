@@ -10,5 +10,5 @@ export const dynamic = "force-dynamic";
  * its input as JSON Schema. See docs/api.md.
  */
 export function GET(req: NextRequest) {
-  return serve(req, async () => ({ actions: describeActions() }));
+  return serve(req, "read", async () => ({ actions: describeActions() }));
 }

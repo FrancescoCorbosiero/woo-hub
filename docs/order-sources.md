@@ -180,7 +180,10 @@ page.
 
 ## The API
 
-With `Authorization: Bearer $HUB_API_TOKEN` (setup: [api.md](api.md)).
+With a bearer token ([api.md](api.md#tokens)): reading needs `read`,
+uploading `propose`, deleting `admin`. Using a source without `dryRun`
+starts the order for a token with `admin`, and makes it a proposal for any
+other — to confirm with `POST /api/v1/proposals/{id}/confirm`, by a person.
 
 | | |
 |---|---|

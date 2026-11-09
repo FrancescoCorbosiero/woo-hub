@@ -13,28 +13,34 @@ actions, the log, proposals — is in [operations.md](operations.md).
   order, delete…) and the homepage's on its sections and blocks.
 - **Proposals**, the safe way to act: `/proposals` previews an action and
   keeps it; `/proposals/{id}/confirm` runs it, only if the shop still gives
-  that preview, and only once.
+  that preview, only once, and only on a person's word ([tokens](#tokens)).
 - **Shortcuts** that act in one call (they predate proposals): placing
   products in a term's order (`POST /catalog/order`) and using an order
-  source (`POST /order-sources/{id}/apply`, [order-sources.md](order-sources.md)).
+  source (`POST /order-sources/{id}/apply`, [order-sources.md](order-sources.md)) —
+  in one call for a caller with `admin`; for any other they make the
+  proposal instead.
 - **Undo**: `/operations/{id}/undo`, for any action in the log.
 
 ## Setup
 
-1. Make a token and put it in the Hub's `.env` (`deploy/.env` on the server):
+1. Make a token for each caller and list them in the Hub's `.env`
+   (`deploy/.env` on the server), each with what it may do ([tokens](#tokens)):
 
    ```sh
-   echo "HUB_API_TOKEN=$(openssl rand -hex 32)" >> deploy/.env
+   echo "HUB_API_TOKENS=assistant:$(openssl rand -hex 32):read+propose,phone:$(openssl rand -hex 32):read+confirm+undo" >> deploy/.env
    ```
 
-   Unset, the API answers `503` to every call.
+   `HUB_API_TOKEN`, the single token from before, keeps working: it is the
+   caller `legacy`, with every scope. With neither set, the API answers `503`
+   to every call; a wrong list stops the app at boot, saying which entry and
+   why.
 2. To call it from outside the server, let `^/api/v1/` through Authelia on the
    Hub's address, as for `/api/cron/` ([auth.md](auth.md#programmatic-api)).
    The app checks the token whatever Authelia does. On the Vetrina's address
    the API does not exist (`404`).
 3. Restart the app.
 
-Every call carries the token:
+Every call carries a token:
 
 ```sh
 export HUB=https://hub.example.com HUB_API_TOKEN=...
@@ -42,12 +48,44 @@ curl -H "Authorization: Bearer $HUB_API_TOKEN" "$HUB/api/v1/catalog/terms"
 ```
 
 Answers are JSON: `{ "ok": true, "data": … }`, or
-`{ "ok": false, "code": "invalid" | "not_found" | "stale" | "unauthorized" | "not_configured" | "failed", "error": "…" }`
-with a matching HTTP status (400, 404, 409, 401, 503, 500) — and `data` when
+`{ "ok": false, "code": "invalid" | "not_found" | "stale" | "unauthorized" | "forbidden" | "not_configured" | "failed", "error": "…" }`
+with a matching HTTP status (400, 404, 409, 401, 403, 503, 500) — and `data` when
 the refusal has something to go on with (a confirmation over a shop that
 changed: the new proposal). The words inside
 (labels, previews, refusals) are Italian; send `Accept-Language: en` for
 English.
+
+## Tokens
+
+Every token is a caller with a name — the log files it as who asked,
+`token:<name>` — and the scopes it may use:
+
+| Scope | Opens |
+|---|---|
+| `read` | every read, `/actions`, a proposal (`GET`), a shortcut's `dryRun` preview |
+| `propose` | `POST /proposals`; the shortcuts, as proposals; uploading an order source |
+| `confirm` | `POST /proposals/{id}/confirm` |
+| `undo` | `POST /operations/{id}/undo` |
+| `admin` | the shortcuts in one call; deleting an order source |
+
+`HUB_API_TOKENS` is `name:token:scopes`, entries apart by commas, scopes
+joined by `+`: names of letters, digits, `.`, `_`, `-`; tokens of 24
+characters or more, one per caller. A call without the scope its endpoint
+needs answers `403` (`forbidden`), saying what it needs and what the token
+has (`src/lib/actors.ts`, `src/server/api/v1.ts`).
+
+**`confirm` is a person's.** A proposal's yes is the owner's: give `confirm`
+only to a token a person keeps — the phone client they confirm from, their
+own script — never to the program that proposes. `HUB_API_TOKEN` has every
+scope, `confirm` included: a program holding it could say yes to its own
+proposals, so an assistant never gets it. An assistant gets a token of its own,
+`read+propose`: its confirm is refused (`403`), and so is a `confirm` passed
+to the server's own function by anything that is not a person
+(`confirmProposal`, `operations/proposals.ts`). The log says who did what:
+a proposal's `actor` (who proposed) and `confirmedBy` (who decided it), an
+action's `actor` (who started it — for a proposal's, who confirmed) and
+`undoneBy`. On the screens, the person signed in is the actor of what they
+do there: Authelia's `Remote-User`, which never reaches `/api/v1`.
 
 ## How the shop's order works
 
@@ -156,9 +194,13 @@ curl -H "Authorization: Bearer $HUB_API_TOKEN" -H "Content-Type: application/jso
 } } }
 ```
 
-Without `dryRun` the action starts and runs in the background: `202` with the
-operation, which shows in the Vetrina's "Attività" like one started there.
-Already in that order answers `400` ("Sono già in quest'ordine.").
+Without `dryRun`, a caller with `admin` starts the action, and it runs in the
+background: `202` with the operation, which shows in the Vetrina's
+"Attività" like one started there. Any other caller (with `propose`) gets the
+action as a proposal: `201` with `{ "dryRun": false, "proposal": … }`, to
+confirm like any other ([proposals](#post-apiv1proposals)) — nothing moves
+until a person says yes. Already in that order answers `400` ("Sono già in
+quest'ordine.").
 
 ```json
 { "ok": true, "data": { "dryRun": false, "operation": {
@@ -199,7 +241,7 @@ written. `201` with the proposal:
 
 ```json
 { "ok": true, "data": {
-  "id": "5b1d…", "kind": "sale", "status": "open", "via": "api",
+  "id": "5b1d…", "kind": "sale", "status": "open", "via": "api", "actor": "token:assistant", "confirmedBy": null,
   "label": "Saldo −20% · 34 prodotti",
   "summary": ["Saldo −20% · 34 prodotti", "Cambia 34 prodotti.", "Restano come sono: 2 già in saldo.",
               "Nike Dunk Low Panda: 129,00 € → 102,99 €", "…"],
@@ -222,8 +264,10 @@ minutes after it was made).
 
 ### `POST /api/v1/proposals/{id}/confirm`
 
-The owner's yes. The preview is made again: if the shop still gives the
-same one, the action runs — `202` with `{ "operation": … }`, the action as
+The owner's yes — with `confirm`, a person's token ([tokens](#tokens)): the
+token that proposed, a program's, gets `403`. The preview is made again: if
+the shop still gives the same one, the action runs, filed as the
+confirmer's — `202` with `{ "operation": … }`, the action as
 the log has it (follow it at `/operations/{id}`; a homepage action is done at
 once). Confirmed again, it answers the same action: a retry never runs it
 twice.
@@ -243,12 +287,13 @@ homepage's, with how it came (`via`: `app`, `api`, `assistant`,
 ### `GET /api/v1/operations/{id}`
 
 The action as the log has it: `status` (`running`, `done`, `failed`,
-`undoing`, `undone`), `via`, `progress`, `changed`, `failed` (refused by the
-store), `error`, `undoable`, and after an undo `undo: { restored, kept, failed }`.
+`undoing`, `undone`), `via`, `actor` (who started it), `progress`,
+`changed`, `failed` (refused by the store), `error`, `undoable`, and after
+an undo `undo: { restored, kept, failed }` and `undoneBy`.
 
 ### `POST /api/v1/operations/{id}/undo`
 
-"Annulla", for 7 days. An action on products: each value goes back where
+"Annulla", for 7 days, with `undo`. An action on products: each value goes back where
 the store still shows the value the action wrote (one changed since stays,
 and is counted as `kept`) — `202`, then follow it with
 `GET /operations/{id}`; refused (`409`) while the action still runs. A
@@ -257,6 +302,9 @@ the action left it (found by its fingerprint wherever it is now) — refused
 (`409`) when it changed since, since the newer change stands.
 
 ## A script
+
+It starts the order in one call, so its token has `admin` (`HUB_API_TOKEN`
+has every scope); without it, the call answers a proposal to confirm.
 
 ```sh
 #!/bin/sh
@@ -270,8 +318,9 @@ until [ "$(curl -fsS -H "$auth" "$HUB/api/v1/operations/$id" | jq -r .data.statu
 curl -fsS -H "$auth" "$HUB/api/v1/operations/$id" | jq .data
 ```
 
-The code: the routes in `src/app/api/v1/`, the token and the answers in
-`src/server/api/v1.ts`, the reads in `src/server/api/reads.ts`, the order in
+The code: the routes in `src/app/api/v1/`, each saying the scope it needs;
+the callers and their scopes in `src/lib/actors.ts`; the token check and the
+answers in `src/server/api/v1.ts`; the reads in `src/server/api/reads.ts`, the order in
 `src/server/api/catalog-order.ts` over `src/server/vetrina/operations/order.ts`,
 the actions' registry and proposals in `src/server/vetrina/operations/`
 (`registry.ts`, `proposals.ts`).

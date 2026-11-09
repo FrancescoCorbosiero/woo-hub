@@ -15,13 +15,13 @@ function sourceId(id: string): string {
 /** GET /api/v1/order-sources/{id} — one source, matched to the shop now (the products it names that the shop lacks). */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  return serve(req, () => loadSource(sourceId(id)));
+  return serve(req, "read", () => loadSource(sourceId(id)));
 }
 
-/** DELETE /api/v1/order-sources/{id} — the orders it was used for stay as they are. */
+/** DELETE /api/v1/order-sources/{id} — the orders it was used for stay as they are. Needs admin: nothing brings a source back. */
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  return serve(req, async () => {
+  return serve(req, "admin", async () => {
     await deleteSource(sourceId(id));
     return null;
   });

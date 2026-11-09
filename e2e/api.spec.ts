@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { api, open, sectionCard, sheet } from "./helpers";
+import { api, ASSISTANT_TOKEN, open, PHONE_TOKEN, sectionCard, sheet } from "./helpers";
 
 /**
  * The programmatic API (/api/v1) on the demo shop: an action asked from
@@ -118,6 +118,44 @@ test("a proposal confirmed over a shop that changed runs nothing, and answers th
   // The demo homepage as it was: the newest undone first.
   await api(request, "POST", `/operations/${moved.id}/undo`);
   await api(request, "POST", `/operations/${meanwhile.id}/undo`);
+});
+
+test("an assistant's token proposes but cannot say yes; a person's token confirms, and the log says who", async ({ request }) => {
+  const assistant = { token: ASSISTANT_TOKEN };
+  const phone = { token: PHONE_TOKEN };
+
+  // It reads, and proposes…
+  await api(request, "GET", "/homepage", assistant);
+  const proposal = await api<Proposal & { actor: string }>(request, "POST", "/proposals", {
+    ...assistant,
+    body: { action: { kind: "sectionSwitch", key: TRENDING_SECTION, on: false } },
+    status: 201,
+  });
+  expect(proposal).toMatchObject({ status: "open", actor: "token:assistant" });
+  // …but its own yes is refused, as is an undo: neither is its to give.
+  await api(request, "POST", `/proposals/${proposal.id}/confirm`, { ...assistant, status: 403 });
+  await api(request, "POST", "/operations/00000000-0000-4000-8000-000000000000/undo", { ...assistant, status: 403 });
+  // Its one-call order is a proposal too: nothing moves until a person says yes.
+  const before = await order(request);
+  const shortcut = await api<{ proposal: Proposal }>(request, "POST", "/catalog/order", {
+    ...assistant,
+    body: { id: TRENDING, ids: [before[before.length - 1]], position: "top" },
+    status: 201,
+  });
+  expect(shortcut.proposal.status).toBe("open");
+  expect(await order(request)).toEqual(before);
+
+  // The phone's token is a person's: its yes runs the action, filed as the phone's, the proposal as the assistant's.
+  const { operation } = await api<{ operation: Operation & { actor: string } }>(request, "POST", `/proposals/${proposal.id}/confirm`, phone);
+  expect(operation).toMatchObject({ status: "done", via: "api", actor: "token:phone" });
+  expect(await api(request, "GET", `/proposals/${proposal.id}`, phone)).toMatchObject({
+    status: "confirmed",
+    actor: "token:assistant",
+    confirmedBy: "token:phone",
+  });
+
+  // The demo homepage as it was, undone by the same person.
+  expect(await api(request, "POST", `/operations/${operation.id}/undo`, phone)).toMatchObject({ status: "undone", undoneBy: "token:phone" });
 });
 
 test("the reads an assistant starts from: the homepage, the products, the log", async ({ request }) => {

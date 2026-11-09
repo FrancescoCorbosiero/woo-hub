@@ -466,12 +466,13 @@ export async function assessPage(input: PageActionInput): Promise<PageAssessment
 export async function startPageAction<K extends PageActionKind>(
   input: Input<K>,
   via: OperationVia = "app",
+  actor: string | null = null,
 ): Promise<{ row: VetrinaOperationRow | null; sectionKey: string | null; result: PageResult<K> }> {
   const assessment = await assessPage(input);
   const written = await assessment.write();
   // What the homepage's sections show may have moved: the catalog's marks follow at once.
   forgetHomepagePresence();
-  const row = await file(input, assessment.label, written.record, via);
+  const row = await file(input, assessment.label, written.record, via, actor);
   return { row, sectionKey: written.sectionKey, result: written.result };
 }
 
@@ -480,6 +481,7 @@ async function file(
   label: OperationLabelParams,
   record: OperationPageRecord | null,
   via: OperationVia,
+  actor: string | null,
 ): Promise<VetrinaOperationRow | null> {
   // The screen's read is how it was checked, not part of what was asked.
   const { expected: _expected, ...asked } = input;
@@ -491,6 +493,7 @@ async function file(
       label: labelText(label, words("it")),
       labelParams: label,
       via,
+      actor,
       page: record,
     });
   } catch (e) {
@@ -502,12 +505,16 @@ async function file(
 /**
  * "Annulla" for a homepage action: the way back written over the page as it
  * is now. The answer is the section's key after it (null when none).
+ * `undoneBy`: who undid it (src/lib/actors.ts actorId), filed on the row.
  */
-export async function undoPageAction(row: VetrinaOperationRow): Promise<{ row: VetrinaOperationRow; sectionKey: string | null }> {
+export async function undoPageAction(
+  row: VetrinaOperationRow,
+  undoneBy: string | null = null,
+): Promise<{ row: VetrinaOperationRow; sectionKey: string | null }> {
   if (!row.page) throw new VetrinaError("invalid", words().page.notUndoable, 400);
   const sectionKey = await writeBack(row.page);
   forgetHomepagePresence();
-  await repo.moveStatus(row.id, ["done"], { status: "undone", undoneAt: new Date(), undo: { restored: 0, kept: 0, failed: 0 }, error: null });
+  await repo.moveStatus(row.id, ["done"], { status: "undone", undoneAt: new Date(), undoneBy, undo: { restored: 0, kept: 0, failed: 0 }, error: null });
   return { row: (await repo.getOperation(row.id)) ?? row, sectionKey };
 }
 

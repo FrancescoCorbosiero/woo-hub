@@ -9,17 +9,19 @@ export const dynamic = "force-dynamic";
  * POST /api/v1/proposals — `{ "action": { "kind": "sale", … } }`: the action
  * checked and previewed on the shop as it is, nothing written. The answer
  * (201) is the proposal: its preview, in sentences too, and its id to
- * confirm within 15 minutes. See docs/api.md.
+ * confirm within 15 minutes — by a person (the confirm scope). Needs
+ * propose; filed with the caller's name. See docs/api.md.
  */
 export async function POST(req: NextRequest) {
   const body: unknown = await req.json().catch(() => undefined);
   return serve(
     req,
-    async () => {
+    "propose",
+    async (_req, caller) => {
       if (typeof body !== "object" || body == null || !("action" in body)) {
         throw new VetrinaError("invalid", 'The body is { "action": { "kind": … } } (GET /api/v1/actions lists them).', 400);
       }
-      return propose((body as { action: unknown }).action, "api");
+      return propose((body as { action: unknown }).action, "api", caller);
     },
     201,
   );

@@ -404,11 +404,13 @@ crontab line:
 
 ## Programmatic API
 
-`/api/v1/*`, with `Authorization: Bearer $HUB_API_TOKEN`: every action the
-Vetrina can do, on products and on the homepage — described for a script or
-an assistant (`/actions`), asked as **proposals** the owner confirms (the
-action runs only if the shop still gives the preview they saw, and only
-once), logged and undoable like the Vetrina's own — and the reads they start
+`/api/v1/*`, with a bearer token per caller and its scopes (`HUB_API_TOKENS`,
+or the single `HUB_API_TOKEN` with every scope): every action the Vetrina can
+do, on products and on the homepage — described for a script or an assistant
+(`/actions`), asked as **proposals** a person confirms (the action runs only
+if the shop still gives the preview they saw, and only once; an assistant's
+token may propose, never confirm), logged with who asked and who said yes,
+and undoable like the Vetrina's own — and the reads they start
 from (the homepage, the products, the log). Order sources (a ranking from
 elsewhere, e.g. an LLM's reading of a reference shop's page, used with
 "Usa l'ordine di «…»": [docs/order-sources.md](docs/order-sources.md)) too.

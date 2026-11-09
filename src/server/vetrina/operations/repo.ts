@@ -44,6 +44,8 @@ export async function insertOperation(row: {
   termKey: string | null;
   total: number;
   via: OperationVia;
+  /** Who asked (src/lib/actors.ts actorId), null when nobody is signed in. */
+  actor: string | null;
 }): Promise<VetrinaOperationRow> {
   const [inserted] = await db.insert(vetrinaOperations).values(row).returning();
   return inserted;
@@ -58,6 +60,7 @@ export async function insertPageOperation(row: {
   label: string;
   labelParams: OperationLabelParams;
   via: OperationVia;
+  actor: string | null;
   page: OperationPageRecord | null;
 }): Promise<VetrinaOperationRow> {
   const [inserted] = await db
@@ -188,7 +191,7 @@ export async function hiddenSinceBy(op: VetrinaOperationRow, ids: readonly numbe
 export type OperationUpdate = Partial<
   Pick<
     VetrinaOperationRow,
-    "status" | "done" | "total" | "changed" | "failed" | "error" | "finishedAt" | "undoneAt" | "undo"
+    "status" | "done" | "total" | "changed" | "failed" | "error" | "finishedAt" | "undoneAt" | "undoneBy" | "undo"
   >
 > & { section?: OperationSectionRecord | null };
 
@@ -435,7 +438,7 @@ export async function markInterrupted(messages: { run: string; undo: string }): 
     .returning({ id: vetrinaOperations.id });
   const undos = await db
     .update(vetrinaOperations)
-    .set({ status: "failed", error: messages.undo })
+    .set({ status: "failed", error: messages.undo, undoneBy: null })
     .where(eq(vetrinaOperations.status, "undoing"))
     .returning({ id: vetrinaOperations.id });
   return runs.length + undos.length;

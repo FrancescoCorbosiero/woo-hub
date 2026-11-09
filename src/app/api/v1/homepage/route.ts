@@ -11,5 +11,5 @@ export const dynamic = "force-dynamic";
  * texts. See docs/api.md.
  */
 export function GET(req: NextRequest) {
-  return serve(req, () => readHomepage());
+  return serve(req, "read", () => readHomepage());
 }

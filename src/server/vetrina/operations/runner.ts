@@ -183,6 +183,7 @@ export function queueUndo(id: string, previous: Pick<VetrinaOperationRow, "statu
         status: previous.status,
         done: previous.done,
         total: previous.total,
+        undoneBy: null,
         error: words().error.undoFailed(messageOf(e)),
       });
       console.warn(`[vetrina-ops] undo of «${op.label}» failed: ${messageOf(e)}`);

@@ -10,5 +10,5 @@ export const dynamic = "force-dynamic";
  * an action's `target: { "kind": "query" }` takes. See docs/api.md.
  */
 export function GET(req: NextRequest) {
-  return serve(req, async () => readProducts(ProductsQuery.parse(Object.fromEntries(req.nextUrl.searchParams))));
+  return serve(req, "read", async () => readProducts(ProductsQuery.parse(Object.fromEntries(req.nextUrl.searchParams))));
 }

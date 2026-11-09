@@ -216,12 +216,20 @@ carry `CRON_SECRET`, not a session.
 
 ## Programmatic API
 
-`/api/v1/*` ([api.md](api.md)) is for scripts: its calls carry
-`Authorization: Bearer $HUB_API_TOKEN`, not a session. To reach it from
-outside, add a bypass rule for `^/api/v1/` on the Hub's address in Authelia's
-`config/configuration.yml`, next to the cron one. The app still refuses any
-call without the token (and answers 503 while `HUB_API_TOKEN` is unset); on
-the Vetrina's address the API does not exist.
+`/api/v1/*` ([api.md](api.md)) is for scripts and assistants: its calls carry
+a bearer token, not a session — one per caller, each with its scopes
+(`HUB_API_TOKENS`; `HUB_API_TOKEN`, the single token from before, has every
+scope: [api.md](api.md#tokens)). To reach it from outside, add a bypass rule
+for `^/api/v1/` on the Hub's address in Authelia's `config/configuration.yml`,
+next to the cron one. The app still refuses any call without a token it
+knows (and answers 503 while none is set); on the Vetrina's address the API
+does not exist.
+
+A proposal's yes needs the `confirm` scope, which only a token a person keeps
+should have. On the screens the person is who Authelia says: their
+`Remote-User` is the actor of what they do there. The proxy removes any
+`Remote-User` from `/api/v1/*` calls, so no caller of the API passes for a
+signed-in person.
 
 ## Moving from the shared password
 

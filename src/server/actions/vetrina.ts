@@ -5,12 +5,14 @@ import { z } from "zod";
 import { RAIL_FALLBACKS, RAIL_LISTS } from "@/config/schema";
 import { defaultLocale, type Locale } from "@/i18n/config";
 import { getLocale } from "@/i18n/server";
+import type { Actor } from "@/lib/actors";
 import type { OperationView } from "@/lib/vetrina/catalog-ops";
 import { attempt, readCards, readHistory, readRail, type VetrinaResult, type VetrinaRail } from "@/server/vetrina/service";
 import { previewSectionSource, type SourceChange, type SourceResult } from "@/server/vetrina/layout";
 import { startPageOperation } from "@/server/vetrina/operations/service";
 import { inLanguage } from "@/server/vetrina/operations/words";
 import type { ProductCard, RailHistoryState, RailWriteResult } from "@/lib/vetrina/types";
+import { signedInActor } from "./signed-in";
 
 /**
  * The Vetrina editor's server actions: thin, validated wrappers over
@@ -37,14 +39,15 @@ async function inOwnLanguage<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /**
- * A write to the homepage, in the owner's language: once it went through,
- * the screen that asked gets the page read again in the same answer
- * (next/cache's refresh). A router.refresh() of its own, sent right after
- * the action, could be dropped by the router — the screen then showed the
- * old page for seconds.
+ * A write to the homepage, in the owner's language, filed as the signed-in
+ * person's (`by`): once it went through, the screen that asked gets the page
+ * read again in the same answer (next/cache's refresh). A router.refresh() of
+ * its own, sent right after the action, could be dropped by the router — the
+ * screen then showed the old page for seconds.
  */
-async function write<T>(fn: () => Promise<T>): Promise<VetrinaResult<T>> {
-  const res = await inOwnLanguage(() => attempt(fn));
+async function write<T>(fn: (by: Actor | null) => Promise<T>): Promise<VetrinaResult<T>> {
+  const by = await signedInActor();
+  const res = await inOwnLanguage(() => attempt(() => fn(by)));
   if (res.ok) refresh();
   return res;
 }
@@ -93,12 +96,12 @@ export async function publishVetrinaRail(input: z.input<typeof PublishSchema>): 
   const parsed = PublishSchema.safeParse(input);
   if (!parsed.success) return { ok: false, code: "invalid", error: parsed.error.issues[0]?.message ?? "Dati non validi." };
   const { expectedModifiedGmt, expectedAttrsHash, ...settings } = parsed.data;
-  return write(async () => {
+  return write(async (by) => {
     const { operation, result } = await startPageOperation({
       kind: "sectionEdit",
       ...settings,
       expected: { modifiedGmt: expectedModifiedGmt, attrsHash: expectedAttrsHash },
-    });
+    }, "app", by);
     return { ...result, operation };
   });
 }
@@ -116,12 +119,12 @@ export async function publishVetrinaBlock(input: z.input<typeof PublishBlockSche
   const parsed = PublishBlockSchema.safeParse(input);
   if (!parsed.success) return { ok: false, code: "invalid", error: parsed.error.issues[0]?.message ?? "Dati non validi." };
   const { expectedModifiedGmt, expectedAttrsHash, ...block } = parsed.data;
-  return write(async () => {
+  return write(async (by) => {
     const { operation, result } = await startPageOperation({
       kind: "blockEdit",
       ...block,
       expected: { modifiedGmt: expectedModifiedGmt, attrsHash: expectedAttrsHash },
-    });
+    }, "app", by);
     return { ...result, operation };
   });
 }
@@ -158,12 +161,12 @@ export async function changeVetrinaSource(input: z.input<typeof SourceSchema>): 
   const parsed = SourceSchema.safeParse(input);
   if (!parsed.success) return { ok: false, code: "invalid", error: parsed.error.issues[0]?.message ?? "Dati non validi." };
   const { expectedModifiedGmt, expectedAttrsHash, ...change } = parsed.data;
-  return write(async () => {
+  return write(async (by) => {
     const { operation, result } = await startPageOperation({
       kind: "sectionSource",
       ...change,
       expected: { modifiedGmt: expectedModifiedGmt, attrsHash: expectedAttrsHash },
-    });
+    }, "app", by);
     return { ...result, operation };
   });
 }
@@ -184,8 +187,8 @@ export async function addVetrinaSection(
   const parsed = AddSchema.safeParse(input);
   if (!parsed.success) return { ok: false, code: "invalid", error: parsed.error.issues[0]?.message ?? "Dati non validi." };
   const { expectedModifiedGmt, ...add } = parsed.data;
-  return write(async () => {
-    const { operation, result } = await startPageOperation({ kind: "sectionAdd", ...add, expected: { modifiedGmt: expectedModifiedGmt } });
+  return write(async (by) => {
+    const { operation, result } = await startPageOperation({ kind: "sectionAdd", ...add, expected: { modifiedGmt: expectedModifiedGmt } }, "app", by);
     return { ...result, operation };
   });
 }
@@ -197,12 +200,12 @@ export async function removeVetrinaSection(input: {
 }): Promise<VetrinaResult<Logged<{ modifiedGmt: string }>>> {
   const parsed = z.object({ key: Key, expectedModifiedGmt: Gmt }).safeParse(input);
   if (!parsed.success) return { ok: false, code: "invalid", error: "Sezione non valida." };
-  return write(async () => {
+  return write(async (by) => {
     const { operation, result } = await startPageOperation({
       kind: "sectionRemove",
       key: parsed.data.key,
       expected: { modifiedGmt: parsed.data.expectedModifiedGmt },
-    });
+    }, "app", by);
     return { ...result, operation };
   });
 }
@@ -214,12 +217,12 @@ export async function arrangeVetrinaSections(input: {
 }): Promise<VetrinaResult<Logged<{ keys: Record<string, string>; modifiedGmt: string }>>> {
   const parsed = z.object({ keys: z.array(Key).min(1).max(100), expectedModifiedGmt: Gmt }).safeParse(input);
   if (!parsed.success) return { ok: false, code: "invalid", error: "Sezioni non valide." };
-  return write(async () => {
+  return write(async (by) => {
     const { operation, result } = await startPageOperation({
       kind: "sectionsArrange",
       keys: parsed.data.keys,
       expected: { modifiedGmt: parsed.data.expectedModifiedGmt },
-    });
+    }, "app", by);
     return { ...result, operation };
   });
 }
@@ -232,13 +235,13 @@ export async function moveVetrinaSection(input: {
 }): Promise<VetrinaResult<Logged<{ keys: Record<string, string>; modifiedGmt: string }>>> {
   const parsed = z.object({ key: Key, position: z.number().int().min(1).max(100), expectedModifiedGmt: Gmt }).safeParse(input);
   if (!parsed.success) return { ok: false, code: "invalid", error: "Sezione non valida." };
-  return write(async () => {
+  return write(async (by) => {
     const { operation, result } = await startPageOperation({
       kind: "sectionMove",
       key: parsed.data.key,
       position: parsed.data.position,
       expected: { modifiedGmt: parsed.data.expectedModifiedGmt },
-    });
+    }, "app", by);
     return { ...result, operation };
   });
 }
@@ -254,13 +257,13 @@ export async function switchVetrinaSection(input: {
     .object({ key: Key, on: z.boolean(), expectedModifiedGmt: Gmt, expectedAttrsHash: Hash })
     .safeParse(input);
   if (!parsed.success) return { ok: false, code: "invalid", error: "Sezione non valida." };
-  return write(async () => {
+  return write(async (by) => {
     const { operation, result } = await startPageOperation({
       kind: "sectionSwitch",
       key: parsed.data.key,
       on: parsed.data.on,
       expected: { modifiedGmt: parsed.data.expectedModifiedGmt, attrsHash: parsed.data.expectedAttrsHash },
-    });
+    }, "app", by);
     return { ...result, operation };
   });
 }

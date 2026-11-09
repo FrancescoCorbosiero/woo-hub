@@ -1,5 +1,6 @@
 import "server-only";
 import { z } from "zod";
+import { parsePrincipals } from "@/lib/actors";
 import { isTimeZone, parseTimes } from "@/lib/schedule";
 
 /**
@@ -48,9 +49,14 @@ const EnvSchema = z.object({
   // Shared secret for the scheduled endpoints (/api/cron/*). Unset = disabled.
   CRON_SECRET: z.string().optional(),
 
-  // Bearer token of the Hub's programmatic API (/api/v1/*: the catalog's
-  // order, its actions' progress and undo). Unset = the API is disabled.
+  // The Hub's programmatic API (/api/v1/*): its callers, one bearer token
+  // each, with what each may do (src/lib/actors.ts, docs/api.md#tokens):
+  //   name:token:scopes[,name:token:scopes…]   scopes: read+propose+confirm+undo+admin
+  // e.g. an assistant read+propose; confirm only on a token a person keeps.
+  // HUB_API_TOKEN, the single token from before, stays a caller of its own
+  // ("legacy") with every scope. Neither set = the API is disabled (503).
   HUB_API_TOKEN: z.string().min(24).optional(),
+  HUB_API_TOKENS: blankIsUnset(z.string().optional()),
 
   // Automatic self-repair inside the daily scheduler: put back missing
   // pictures / brand / category on products already online. OFF by default —
@@ -156,6 +162,10 @@ const EnvSchema = z.object({
 
   // App
   DEFAULT_MARKET: z.string().default("IT"),
+}).superRefine((e, ctx) => {
+  // The API's callers, read whole at boot: a wrong entry stops the app here, not as a 401 later.
+  const callers = parsePrincipals(e.HUB_API_TOKENS, e.HUB_API_TOKEN);
+  if (!callers.ok) ctx.addIssue({ code: "custom", path: ["HUB_API_TOKENS"], message: callers.error });
 });
 
 export type Env = z.infer<typeof EnvSchema>;

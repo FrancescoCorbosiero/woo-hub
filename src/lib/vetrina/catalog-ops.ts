@@ -255,6 +255,13 @@ export interface OperationView {
   status: OperationStatus;
   /** How it came: "app" for the Vetrina's own screens. */
   via: OperationVia;
+  /**
+   * Optional (added with the API's callers): who asked — "user:<name>" signed
+   * in on the screens, "token:<caller>" over the API; for a proposal's
+   * action, the person who confirmed it (src/lib/actors.ts). Null when
+   * nobody was signed in.
+   */
+  actor?: string | null;
   progress: { done: number; total: number };
   /** Products changed, and refused by the store. */
   changed: number;
@@ -270,6 +277,8 @@ export interface OperationView {
    */
   undoable: boolean;
   undoneAt: string | null;
+  /** Optional (added with the API's callers): who undid it, as `actor` says who. */
+  undoneBy?: string | null;
   /** Optional (added in phase 3): waiting for the action before it to finish (status "running", or "undoing" for its undo). */
   queued?: boolean;
   /**

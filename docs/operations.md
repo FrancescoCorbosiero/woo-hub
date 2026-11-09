@@ -4,7 +4,7 @@ How the Vetrina changes the shop, whoever asks: the owner on its screens, a
 script over the API ([api.md](api.md)), an assistant acting for the owner.
 They all run the same actions, through the same code, into the same log —
 and anything asked from outside the screens goes through a **proposal** the
-owner says yes to.
+owner says yes to: a person, never the program that asked.
 
 ## Actions
 
@@ -35,6 +35,10 @@ Every action is a row of `vetrina_operations`, kept 30 days:
 - its label, rendered in the reader's language each time it is shown;
 - **how it came** (`via`): `app` (the screens), `api`, `assistant`,
   `scheduler` — the Attività sheet says it beside the time;
+- **who** (`actor`, `undone_by`; `src/lib/actors.ts`): the person signed in
+  on the screens (`user:<name>`, Authelia's `Remote-User`), or the API's
+  caller by its token's name (`token:<name>`) — for a proposal's action, the
+  person who confirmed it; and who undid it;
 - how it went (status, progress, products changed and refused);
 - its way back.
 
@@ -71,15 +75,23 @@ propose(action) ──► open ──confirm──► same preview ──► con
    kept with its fingerprint (sha256 of the preview as stable JSON) and its
    language. The answer has the preview **in sentences** (`summary`) — what the
    owner should read before saying yes.
-2. **confirm**: one confirmation takes it (two at once cannot both run it).
-   The preview is made again, in the proposal's language. The same fingerprint:
-   the action runs, filed in the log with the proposal's `via`. Another: nothing
-   runs — a new proposal takes its place, with the new preview, and comes back
-   with the refusal. Confirmed again later, it answers the action it started.
+2. **confirm**: by a person only — someone signed in on the screens, or a
+   token holding the `confirm` scope, which only a person keeps
+   ([api.md](api.md#tokens)); anything else is refused before anything is
+   read. One confirmation takes it (two at once cannot both run it). The
+   preview is made again, in the proposal's language. The same fingerprint:
+   the action runs, filed in the log with the proposal's `via` and the
+   confirmer as its `actor`. Another: nothing runs — a new proposal takes its
+   place, with the new preview, and comes back with the refusal. Confirmed
+   again later, it answers the action it started. The proposal keeps who
+   proposed it (`actor`) and who decided it (`confirmed_by`).
 
 So the owner's yes is always to the preview they read: a price that moved, a
 product that left the category, a section someone moved meanwhile — each
-makes a new proposal rather than a surprise.
+makes a new proposal rather than a surprise. And it is always the owner's: a
+token that may only read and propose — an assistant's — cannot confirm what
+it proposed, nor start an action in one call (`POST /catalog/order` and
+`/order-sources/{id}/apply` answer it with a proposal).
 
 ## For an assistant
 
@@ -92,9 +104,9 @@ process (so its actions are filed with `via: "assistant"`):
 | find products | `readProducts(query)` — the query an action's target takes |
 | list categories, brands | `listTerms(taxonomy)` — `src/server/api/catalog-order.ts` |
 | read the log | `listOperations(limit)` |
-| propose an action | `propose(action, "assistant")` — one tool per kind from the registry, its input the kind's JSON Schema |
-| confirm | `confirmProposal(id)` |
-| undo | `undoOperation(id)` |
+| propose an action | `propose(action, "assistant", by)` — one tool per kind from the registry, its input the kind's JSON Schema |
+| confirm | `confirmProposal(id, by)` — `by` a person (`isPerson`), never the assistant's own token |
+| undo | `undoOperation(id, by)` |
 
 The flow it follows: read → propose → show the owner the summary → on their
 yes, confirm → if the shop changed, show the new summary and ask again. The

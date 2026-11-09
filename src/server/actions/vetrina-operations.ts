@@ -21,6 +21,7 @@ import { parseOperationInput, parseTarget } from "@/server/vetrina/operations/in
 import * as operations from "@/server/vetrina/operations/service";
 import { currentLanguage, inLanguage, words } from "@/server/vetrina/operations/words";
 import { attemptPlain, type VetrinaResult } from "@/server/vetrina/service";
+import { signedInActor } from "./signed-in";
 
 /**
  * The Vetrina catalog's actions on products — hide and show, sale and its
@@ -28,7 +29,8 @@ import { attemptPlain, type VetrinaResult } from "@/server/vetrina/service";
  * (validated in server/vetrina/operations/input.ts) — as server actions: thin,
  * validated wrappers over server/vetrina/operations. Every one answers
  * { ok, data } or { ok: false, code, error }, like the rest of the Vetrina,
- * in the language the owner reads it in.
+ * in the language the owner reads it in. What one starts or undoes is filed
+ * as the signed-in person's (signed-in.ts).
  */
 
 const invalid = (error: string) => ({ ok: false as const, code: "invalid" as const, error });
@@ -75,7 +77,8 @@ export async function startOperation(input: OperationInput): Promise<VetrinaResu
   return answer(async () => {
     const parsed = parseOperationInput(input);
     if (!parsed.ok) return invalid(parsed.error);
-    return attempt(() => operations.startOperation(parsed.data));
+    const by = await signedInActor();
+    return attempt(() => operations.startOperation(parsed.data, "app", by));
   });
 }
 
@@ -109,7 +112,8 @@ export async function undoOperation(input: { id: string }): Promise<VetrinaResul
   return answer(async () => {
     const parsed = OperationId.safeParse(input);
     if (!parsed.success) return invalid(words().input.operation);
-    const res = await attempt(() => operations.undoOperation(parsed.data.id));
+    const by = await signedInActor();
+    const res = await attempt(() => operations.undoOperation(parsed.data.id, by));
     if (res.ok && isPageActionKind(res.data.kind)) refresh();
     return res;
   });

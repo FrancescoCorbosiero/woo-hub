@@ -1,7 +1,10 @@
 import "server-only";
 import { z } from "zod";
+import { may, type Actor } from "@/lib/actors";
 import type { OperationInput, OperationPreview, OperationView } from "@/lib/vetrina/catalog-ops";
+import type { ProposalView } from "@/lib/vetrina/proposals";
 import { parseOperationInput } from "@/server/vetrina/operations/input";
+import { propose } from "@/server/vetrina/operations/proposals";
 import * as operations from "@/server/vetrina/operations/service";
 import { getSource, putSource } from "@/server/vetrina/order-sources/service";
 import { VetrinaError } from "@/server/vetrina/source";
@@ -9,7 +12,8 @@ import { VetrinaError } from "@/server/vetrina/source";
 /**
  * Order sources over the API (/api/v1/order-sources): an LLM's (or a
  * script's) ranking uploaded as it is, replaced by its name, and used on a
- * category, a brand or the whole catalog — previewed (dryRun) or started.
+ * category, a brand or the whole catalog — previewed (dryRun), started (an
+ * admin caller) or proposed for a person to confirm (any other).
  */
 
 /**
@@ -54,14 +58,19 @@ export const ApplyBody = z.object({
   dryRun: z.boolean().default(false),
 });
 
-/** "Usa l'ordine di «X»" over the API: the preview with dryRun, else the action started. */
+/**
+ * "Usa l'ordine di «X»" over the API: the preview with dryRun; else the
+ * action started for an admin caller, proposed for any other (catalog-order.ts).
+ */
 export async function apply(
   sourceId: string,
   body: z.infer<typeof ApplyBody>,
-): Promise<{ dryRun: true; preview: OperationPreview } | { dryRun: false; operation: OperationView }> {
+  by: Actor,
+): Promise<{ dryRun: true; preview: OperationPreview } | { dryRun: false; operation: OperationView } | { dryRun: false; proposal: ProposalView }> {
   await getSource(sourceId);
   const parsed = parseOperationInput({ kind: "sourceOrder", sourceId, term: body.term ?? null } satisfies OperationInput);
   if (!parsed.ok) throw new VetrinaError("invalid", parsed.error, 400);
   if (body.dryRun) return { dryRun: true, preview: await operations.previewOperation(parsed.data) };
-  return { dryRun: false, operation: await operations.startOperation(parsed.data, "api") };
+  if (may(by, "admin")) return { dryRun: false, operation: await operations.startOperation(parsed.data, "api", by) };
+  return { dryRun: false, proposal: await propose(parsed.data, "api", by) };
 }

@@ -1,6 +1,7 @@
 import "server-only";
 import { and, eq, gt, lt } from "drizzle-orm";
 import type { Locale } from "@/i18n/config";
+import { actorId, actorOf, isPerson, type Actor } from "@/lib/actors";
 import type { ActionInput, OperationInput, OperationPreview, OperationVia, OperationView } from "@/lib/vetrina/catalog-ops";
 import { isPageActionKind, type PageActionInput } from "@/lib/vetrina/page-ops";
 import { PROPOSAL_MINUTES, type ProposalView } from "@/lib/vetrina/proposals";
@@ -25,11 +26,13 @@ import { currentLanguage, inLanguage, words } from "./words";
  *
  * - propose: the action checked and previewed as the screens preview it,
  *   refused when it could not run; kept PROPOSAL_MINUTES.
- * - confirm: the preview made again, in the proposal's language. The same
- *   fingerprint: the action runs (filed in the log, how it came included).
- *   Another: nothing runs — a new proposal takes its place, with the new
- *   preview, for the owner to look at again. Refused now (the page changed
- *   under it, a product is gone): the proposal is over, and says why.
+ * - confirm: by a person only (src/lib/actors.ts isPerson) — never by the
+ *   program that proposed. The preview made again, in the proposal's
+ *   language. The same fingerprint: the action runs (filed in the log, how
+ *   it came and who confirmed it included). Another: nothing runs — a new
+ *   proposal takes its place, with the new preview, for the owner to look at
+ *   again. Refused now (the page changed under it, a product is gone): the
+ *   proposal is over, and says why.
  */
 
 const KEEP_DAYS = 30;
@@ -62,6 +65,8 @@ function proposalView(row: VetrinaProposalRow, now = Date.now()): ProposalView {
     summary: summaryOf(row.labelParams, row.preview),
     status: row.status === "open" && row.expiresAt.getTime() <= now ? "expired" : row.status,
     via: row.via,
+    actor: row.actor,
+    confirmedBy: row.confirmedBy,
     createdAt: row.createdAt.toISOString(),
     expiresAt: row.expiresAt.toISOString(),
     operationId: row.operationId,
@@ -73,6 +78,7 @@ async function insert(
   input: ActionInput,
   via: OperationVia,
   made: { preview: OperationPreview; label: OperationLabelParams },
+  actor: string | null,
 ): Promise<VetrinaProposalRow> {
   const [row] = await db
     .insert(vetrinaProposals)
@@ -80,6 +86,7 @@ async function insert(
       kind: input.kind,
       input,
       via,
+      actor,
       locale: currentLanguage(),
       // Italian for the server's own logs; a view renders label_params in the reader's language.
       label: labelText(made.label, words("it")),
@@ -101,12 +108,16 @@ async function found(id: string): Promise<VetrinaProposalRow> {
 const update = (id: string, set: Partial<typeof vetrinaProposals.$inferInsert>) =>
   db.update(vetrinaProposals).set(set).where(eq(vetrinaProposals.id, id));
 
-/** Propose an action: checked, previewed on the shop as it is, kept for the owner's yes. Nothing is written. */
-export async function propose(input: unknown, via: OperationVia): Promise<ProposalView> {
+/**
+ * Propose an action: checked, previewed on the shop as it is, kept for the
+ * owner's yes. Nothing is written. `by`: who proposes (src/lib/actors.ts),
+ * filed with it.
+ */
+export async function propose(input: unknown, via: OperationVia, by: Actor | null = null): Promise<ProposalView> {
   const parsed = parseAction(input);
   if (!parsed.ok) throw new VetrinaError("invalid", parsed.error, 400);
   const made = await previewOf(parsed.data);
-  return proposalView(await insert(withoutExpected(parsed.data), via, made));
+  return proposalView(await insert(withoutExpected(parsed.data), via, made, actorOf(by)));
 }
 
 export async function loadProposal(id: string): Promise<ProposalView> {
@@ -118,9 +129,17 @@ export async function loadProposal(id: string): Promise<ProposalView> {
  * proposal showed. Confirmed twice, it answers the action it started the
  * first time. The answer is the action as the log has it (null when the log
  * could not file a homepage action, written all the same).
+ *
+ * `by` must be a person (isPerson): someone signed in on the screens, or a
+ * token holding the confirm scope, which only a person keeps. A program's
+ * token — the one that proposed, say — is refused before anything is read:
+ * it is not the owner's yes. The action is filed as the person's, and so is
+ * the decision on the proposal.
  */
-export async function confirmProposal(id: string): Promise<OperationView | null> {
+export async function confirmProposal(id: string, by: Actor): Promise<OperationView | null> {
   const w = words().proposal;
+  if (!isPerson(by)) throw new VetrinaError("forbidden", w.personOnly, 403);
+  const confirmedBy = actorId(by);
   const row = await found(id);
   const view = proposalView(row);
   switch (view.status) {
@@ -146,41 +165,43 @@ export async function confirmProposal(id: string): Promise<OperationView | null>
     .set({ status: "confirming" })
     .where(and(eq(vetrinaProposals.id, id), eq(vetrinaProposals.status, "open"), gt(vetrinaProposals.expiresAt, new Date())))
     .returning({ id: vetrinaProposals.id });
-  if (claimed.length === 0) return confirmProposal(id);
+  if (claimed.length === 0) return confirmProposal(id, by);
 
   let made: { preview: OperationPreview; label: OperationLabelParams };
   try {
     made = await inLanguage(row.locale as Locale, () => previewOf(row.input));
   } catch (e) {
-    return refuse(id, e);
+    return refuse(id, e, confirmedBy);
   }
   if (digestOf(made.preview) !== row.digest) {
-    // The shop changed since the owner saw it: nothing runs; the new preview is for the owner to look at again.
-    const replacement = await inLanguage(row.locale as Locale, () => insert(row.input, row.via, made));
-    await update(id, { status: "changed", replacedBy: replacement.id, decidedAt: new Date() });
+    // The shop changed since the owner saw it: nothing runs; the new preview is for the owner to look at
+    // again — proposed, like the first, by whoever proposed that.
+    const replacement = await inLanguage(row.locale as Locale, () => insert(row.input, row.via, made, row.actor));
+    await update(id, { status: "changed", replacedBy: replacement.id, decidedAt: new Date(), confirmedBy });
     throw new VetrinaError("stale", w.changed, 409, { proposal: proposalView(replacement) });
   }
 
   let operation: OperationView | null;
   try {
     operation = isPageActionKind(row.input.kind)
-      ? (await startPageOperation(row.input as PageActionInput, row.via)).operation
-      : await startOperation(row.input as OperationInput, row.via);
+      ? (await startPageOperation(row.input as PageActionInput, row.via, by)).operation
+      : await startOperation(row.input as OperationInput, row.via, by);
   } catch (e) {
-    return refuse(id, e);
+    return refuse(id, e, confirmedBy);
   }
-  await update(id, { status: "confirmed", operationId: operation?.id ?? null, decidedAt: new Date() });
+  await update(id, { status: "confirmed", operationId: operation?.id ?? null, decidedAt: new Date(), confirmedBy });
   return operation;
 }
 
 /**
  * The action refused when confirmed: one of ours (the page changed under
- * it, a product gone) ends the proposal, saying why; anything else (the
- * site not answering) leaves it open, to be confirmed again.
+ * it, a product gone) ends the proposal, saying why — and who confirmed it;
+ * anything else (the site not answering) leaves it open, to be confirmed
+ * again.
  */
-async function refuse(id: string, e: unknown): Promise<never> {
+async function refuse(id: string, e: unknown, confirmedBy: string): Promise<never> {
   if (e instanceof VetrinaError && (e.code === "invalid" || e.code === "stale" || e.code === "not_found")) {
-    await update(id, { status: "refused", error: e.message, decidedAt: new Date() });
+    await update(id, { status: "refused", error: e.message, decidedAt: new Date(), confirmedBy });
   } else {
     await update(id, { status: "open" });
   }

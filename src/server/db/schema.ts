@@ -679,6 +679,10 @@ export const vetrinaOperations = pgTable(
     status: text("status", { enum: ["running", "done", "failed", "undoing", "undone"] }).notNull().default("running"),
     // How it came: the Vetrina's screens, the API, an assistant, the scheduler (OPERATION_VIAS).
     via: text("via").$type<OperationVia>().notNull().default("app"),
+    // Who asked (src/lib/actors.ts): "user:<Authelia username>" on the screens, "token:<caller>"
+    // over the API — for a proposal's action, the person who confirmed it. Null where nobody is
+    // signed in (local development, the scheduler).
+    actor: text("actor"),
     done: integer("done").notNull().default(0),
     total: integer("total").notNull().default(0),
     changed: integer("changed").notNull().default(0),
@@ -693,6 +697,8 @@ export const vetrinaOperations = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     undoneAt: timestamp("undone_at", { withTimezone: true }),
+    // Who undid it, as `actor` says who: set while its undo runs, cleared if the undo fails.
+    undoneBy: text("undone_by"),
     // A whole term's hide that stopped hiding anything (its products shown
     // another way) or that a newer hide of the term took over from: closed,
     // it never stands again, whatever its products do later.
@@ -753,6 +759,10 @@ export const vetrinaProposals = pgTable(
     // As asked; for a homepage action, without the screen's `expected` (the proposal's own preview is the check).
     input: jsonb("input").$type<ActionInput>().notNull(),
     via: text("via").$type<OperationVia>().notNull(),
+    // Who proposed it ("token:<caller>", src/lib/actors.ts); and who decided it — confirmed, or
+    // found changed or refused when confirming: always a person (isPerson).
+    actor: text("actor"),
+    confirmedBy: text("confirmed_by"),
     // The language its preview was made in: "confirm" makes it again in the same one, to compare.
     locale: text("locale").notNull(),
     label: text("label").notNull(),

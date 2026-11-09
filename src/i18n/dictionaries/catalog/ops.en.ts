@@ -273,6 +273,7 @@ export const opsEn: typeof opsIt = {
     sampled: (read: number) => `The numbers are an estimate from the first ${products(read)} read from the shop: the action counts exactly.`,
     prices: (up: number, down: number) => `Prices going up: ${n(up)}; going down: ${n(down)}.`,
     notFound: "No such proposal.",
+    personOnly: "A proposal is confirmed by a person: someone signed in to the Hub, or with a token that may confirm.",
     expired: (minutes: number) => `The proposal has expired (it lasts ${minutes} minutes): ask for a new one.`,
     confirming: "It is being done already.",
     changed: "The shop changed since you saw it: here is the new preview, to confirm again.",

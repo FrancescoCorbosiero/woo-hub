@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
  * brand): id, name, slug, parent, path, products. See docs/api.md.
  */
 export function GET(req: NextRequest) {
-  return serve(req, async () => {
+  return serve(req, "read", async () => {
     const taxonomy = z.enum(["category", "brand"]).default("category").parse(req.nextUrl.searchParams.get("taxonomy") ?? undefined);
     return listTerms(taxonomy);
   });
