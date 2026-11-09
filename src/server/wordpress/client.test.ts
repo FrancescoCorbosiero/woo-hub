@@ -83,10 +83,12 @@ describe("WordPress's REST API, signed in with an Application Password", () => {
   it("asks the shop's own site, signed in as the user, for every menu", async () => {
     env.WOO_BASE_URL = "https://shop.example.com/wp-json/wc/v3/";
     answers.push(() => json([{ id: 7, name: "Principale", slug: "principale", locations: ["primary"], description: "", meta: [] }]));
-    expect(await wp.menus()).toEqual([{ id: 7, name: "Principale", slug: "principale", locations: ["primary"], count: 0 }]);
+    expect(await wp.menus()).toEqual([{ id: 7, name: "Principale", slug: "principale", locations: ["primary"] }]);
     const [call] = calls;
     expect(`${call.url.origin}${call.url.pathname}`).toBe("https://shop.example.com/wp-json/wp/v2/menus");
     expect(call.url.searchParams.get("context")).toBe("edit");
+    // WordPress's menus carry no count (the controller takes it out of the schema): never asked for.
+    expect(call.url.searchParams.get("_fields")).toBe("id,name,slug,locations");
     expect(call.headers.Authorization).toBe(`Basic ${Buffer.from("admin:abcd efgh ijkl mnop qrst uvwx").toString("base64")}`);
   });
 
@@ -101,6 +103,24 @@ describe("WordPress's REST API, signed in with an Application Password", () => {
     expect(calls.map((c) => c.url.searchParams.get("page"))).toEqual(["1", "2"]);
     const query = calls[0].url.searchParams;
     expect([query.get("menus"), query.get("orderby"), query.get("per_page"), query.get("status")]).toEqual(["7", "menu_order", "100", "publish,draft"]);
+  });
+
+  it("reads which menu each item is in, across the site, to count the menus' items", async () => {
+    answers.push(() => json([{ id: 12, menus: 7 }, { id: 13, menus: 7 }], 200, { "x-wp-totalpages": "2" }));
+    answers.push(() => json([{ id: 30, menus: 9 }, { id: 31 }], 200, { "x-wp-totalpages": "2" }));
+    expect(await wp.itemMenus()).toEqual([
+      { id: 12, menus: 7 },
+      { id: 13, menus: 7 },
+      { id: 30, menus: 9 },
+      { id: 31, menus: 0 },
+    ]);
+    const query = calls[0].url.searchParams;
+    expect([calls[0].url.pathname, query.get("menus"), query.get("_fields"), query.get("status")]).toEqual([
+      "/wp-json/wp/v2/menu-items",
+      null,
+      "id,menus",
+      "publish,draft",
+    ]);
   });
 
   it("reads the theme's places, keyed by their slugs", async () => {

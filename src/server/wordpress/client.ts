@@ -34,15 +34,21 @@ const MAX_PAGES = 20;
 
 const Title = z.union([z.string(), z.object({ raw: z.string().optional(), rendered: z.string().default("") })]);
 
+/**
+ * A menu as wp/v2/menus gives it. No count of its items: the menus
+ * controller takes `count` out of the terms' schema (and `link`,
+ * `taxonomy`), so the items are counted from the items (itemMenus).
+ */
 export const WpMenu = z.object({
   id: z.number().int(),
   name: z.string(),
   slug: z.string(),
   locations: z.array(z.string()).default([]),
-  /** Its items (the nav_menu term's count). */
-  count: z.number().int().default(0),
 });
 export type WpMenu = z.infer<typeof WpMenu>;
+
+/** Which menu an item is in: an item answers its nav_menu term as one id (0: none). */
+export const WpItemMenu = z.object({ id: z.number().int(), menus: z.number().int().default(0) });
 
 /** GET /wp/v2/menu-locations: every place the theme registered, keyed by its slug. */
 export const WpLocations = z.record(z.string(), z.object({ name: z.string(), description: z.string().default(""), menu: z.number().int().default(0) }));
@@ -310,7 +316,9 @@ const ITEM_FIELDS = "id,title,status,url,attr_title,description,type,object,obje
 
 export const wp = {
   /** Every menu: id, name, slug, the places it is in. */
-  menus: () => readAll("/wp/v2/menus", WpMenu, { context: "edit", _fields: "id,name,slug,locations,count" }),
+  menus: () => readAll("/wp/v2/menus", WpMenu, { context: "edit", _fields: "id,name,slug,locations" }),
+  /** Every item of every menu, only which menu it is in: the menus' counts, in one read across the site. */
+  itemMenus: () => readAll("/wp/v2/menu-items", WpItemMenu, { context: "edit", status: "publish,draft", _fields: "id,menus" }),
   /** The theme's places for a menu, with the menu each shows. */
   locations: () => read("/wp/v2/menu-locations", WpLocations, { context: "edit" }),
   /** A menu's items, in menu order, labels as stored (context=edit: title.raw). */

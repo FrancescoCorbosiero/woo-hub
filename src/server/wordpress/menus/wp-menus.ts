@@ -48,13 +48,13 @@ export function menuItemOf(item: WpMenuItem): MenuItem {
   };
 }
 
-function summaryOf(menu: WpMenu, locations: WpLocations): MenuSummary {
+function summaryOf(menu: WpMenu, locations: WpLocations, count: number): MenuSummary {
   return {
     id: menu.id,
     name: decodeEntities(menu.name),
     slug: menu.slug,
     locations: menu.locations.map((slug) => ({ slug, name: locations[slug]?.description || slug })),
-    count: menu.count,
+    count,
   };
 }
 
@@ -107,14 +107,16 @@ export function wordpressMenus(): MenuSource {
   return {
     kind: "wordpress",
     async menus() {
-      const [menus, locations] = await Promise.all([wp.menus(), wp.locations()]);
-      return menus.map((m) => summaryOf(m, locations));
+      const [menus, locations, items] = await Promise.all([wp.menus(), wp.locations(), wp.itemMenus()]);
+      const counts = new Map<number, number>();
+      for (const item of items) counts.set(item.menus, (counts.get(item.menus) ?? 0) + 1);
+      return menus.map((m) => summaryOf(m, locations, counts.get(m.id) ?? 0));
     },
     async menu(id) {
       const [menus, locations, items] = await Promise.all([wp.menus(), wp.locations(), wp.menuItems(id)]);
       const menu = menus.find((m) => m.id === id);
       if (!menu) throw new VetrinaError("not_found", `No menu ${id} on the site.`, 404);
-      return { ...summaryOf(menu, locations), count: items.length, items: items.map(menuItemOf) } satisfies Menu;
+      return { ...summaryOf(menu, locations, items.length), items: items.map(menuItemOf) } satisfies Menu;
     },
     async pages() {
       return (await wp.pages()).map((p) => ({ id: p.id, title: titleText(p.title), parent: p.parent, url: p.link }));

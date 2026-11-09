@@ -8,6 +8,10 @@ import type { WpMenuItem } from "../client";
  */
 vi.mock("@/lib/env", () => ({ env: { VETRINA_SOURCE: "fixture" } }));
 const client = vi.hoisted(() => ({
+  menus: vi.fn(),
+  locations: vi.fn(),
+  itemMenus: vi.fn(),
+  menuItems: vi.fn(),
   createMenuItems: vi.fn(),
   updateMenuItems: vi.fn(),
   deleteMenuItems: vi.fn(),
@@ -39,6 +43,36 @@ const wpItem = (over: Partial<WpMenuItem>): WpMenuItem => ({
   invalid: false,
   menus: 7,
   ...over,
+});
+
+describe("WordPress's menus, read", () => {
+  it("counts each menu's items from the items, since WordPress's menus carry no count", async () => {
+    client.menus.mockResolvedValueOnce([
+      { id: 7, name: "Principale", slug: "principale", locations: ["primary"] },
+      { id: 9, name: "Footer &amp; info", slug: "footer", locations: [] },
+      { id: 11, name: "Vuoto", slug: "vuoto", locations: [] },
+    ]);
+    client.locations.mockResolvedValueOnce({ primary: { name: "primary", description: "Menu principale", menu: 7 } });
+    client.itemMenus.mockResolvedValueOnce([
+      { id: 1, menus: 7 },
+      { id: 2, menus: 7 },
+      { id: 3, menus: 9 },
+    ]);
+    expect(await wordpressMenus().menus()).toEqual([
+      { id: 7, name: "Principale", slug: "principale", locations: [{ slug: "primary", name: "Menu principale" }], count: 2 },
+      { id: 9, name: "Footer & info", slug: "footer", locations: [], count: 1 },
+      { id: 11, name: "Vuoto", slug: "vuoto", locations: [], count: 0 },
+    ]);
+  });
+
+  it("counts a menu's items as read, and says when the menu is not there", async () => {
+    client.menus.mockResolvedValue([{ id: 7, name: "Principale", slug: "principale", locations: [] }]);
+    client.locations.mockResolvedValue({});
+    client.menuItems.mockResolvedValueOnce([wpItem({ id: 1 }), wpItem({ id: 2, menu_order: 2 })]);
+    expect(await wordpressMenus().menu(7)).toMatchObject({ id: 7, count: 2, items: [{ id: 1 }, { id: 2 }] });
+    client.menuItems.mockResolvedValueOnce([]);
+    await expect(wordpressMenus().menu(8)).rejects.toMatchObject({ code: "not_found" });
+  });
 });
 
 describe("WordPress's menu items, read", () => {
