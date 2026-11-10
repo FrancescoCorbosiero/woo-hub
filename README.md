@@ -246,8 +246,8 @@ Publish filter/sort/paginate in SQL.
   whoever put them there. The membership is written to the store as real
   categories, so the category page, the menus and the Vetrina rail that shows
   it all follow. A live preview names who joins and who leaves before saving;
-  an automatic run never empties a category nor moves more than
-  `COLLECTIONS_MAX_CHANGES` products at once without a confirmation; every
+  an automatic run never empties a category nor moves more than 200 products
+  (a setting: Feeds › Automatic sync) at once without a confirmation; every
   product moved is logged. In the Vetrina, a rail's category can be made
   automatic from the phone, and a product's tags edited from its sheet move it
   at once. See [docs/smart-collections.md](docs/smart-collections.md).
@@ -276,80 +276,92 @@ Publish filter/sort/paginate in SQL.
 
 ## Scheduled runs
 
-**The app schedules itself.** In production (`next start`, Docker) an in-app
-scheduler (`src/server/scheduler.ts`, started from `src/instrumentation.ts`)
-runs four cadences:
+**The app schedules itself**, on the owner's settings: the **Feeds tab ›
+Automatic sync › Settings**. The everyday choice is up front — *update the
+store automatically, every N minutes* (15 out of the box) and *the full sync
+every day at 04:30* — and everything else has a default and sits under
+**Advanced**. The settings are stored with the rest of the config
+(`AppConfig.automation`, [`src/lib/automation.ts`](src/lib/automation.ts)), not
+in the environment: a change saved there applies within a minute (at once in
+the process that saved it), with nothing to restart.
 
-- **The daily sync**, every day at `SCHEDULER_TIMES` (default `04:30`) in
-  `SCHEDULER_TIMEZONE` (default `Europe/Rome`). In order:
+In production (`next start`, Docker) an in-app scheduler
+(`src/server/scheduler.ts`, started from `src/instrumentation.ts`) runs these
+cadences:
+
+- **The full (daily) sync**, every day at the settings' times (default
+  `04:30`; several are allowed, e.g. `04:30, 13:30`) in the shop's time zone
+  (default `Europe/Rome`). In order:
   1. the **store pull** (the Hub's copy of every product on WooCommerce);
   2. the GoldenSneakers complete sync;
   3. a KicksDB re-pricing pass;
-  4. with `AUTO_SYNC=on`, the **store sync** of the whole store, a few at a
-     time, the feed's products left to the feed cycle (below);
+  4. with *the KicksDB prices of the rest of the store too* ticked, the
+     **store sync** of the whole store, a few at a time, the feed's products
+     left to the feed cycle (below);
   5. the **automatic categories**, against a full read of the store;
-  6. self-repair (with `AUTO_REPAIR=on`), metadata backfill and
-     recategorization.
+  6. self-repair (with *Automatic repair* ticked, under Advanced), metadata
+     backfill and recategorization.
 
   A failed step doesn't stop the others and is retried an hour later, twice
-  at most. `SCHEDULER_TIMES=04:30,13:30` runs it twice a day.
-- **The feed cycle**, every `SCHEDULER_FEEDS_MINUTES` on the clock (`15` runs
-  at :00, :15, :30 and :45). It is on by default, every 15 minutes, when the
-  GoldenSneakers API is set (`GS_FEED_URL` and `GS_FEED_TOKEN`); `0` turns it
-  off. It runs the GoldenSneakers sync, then the store sync of the feed's
-  products (unless `AUTO_SYNC=off`), so the store follows the feed within a
-  quarter of an hour. KicksDB-priced products wait for the daily sync,
-  because planning them asks KicksDB about every one of them, every time. A
-  cycle skips its turn while another run is going, and the daily sync waits
-  for a cycle to finish. While a store pull is running (from the Sync tab, say)
-  the cycle syncs the feed but leaves the store for the next one.
-- **The orders pull**, every `SCHEDULER_ORDERS_MINUTES` (default 15; `0` =
-  by hand only): the latest orders reach the Orders tab without a click.
+  at most.
+- **The feed cycle**, every N minutes on the clock (`15` runs at :00, :15,
+  :30 and :45), while *Update the store automatically* is on and the
+  GoldenSneakers API is set (`GS_FEED_URL` and `GS_FEED_TOKEN`). It runs the
+  GoldenSneakers sync, then the store sync of the feed's products, so the
+  store follows the feed within the interval. KicksDB-priced products wait for
+  the daily sync, because planning them asks KicksDB about every one of them,
+  every time. A cycle skips its turn while another run is going, and the daily
+  sync waits for a cycle to finish. While a store pull is running (from the
+  Sync tab, say) the cycle syncs the feed but leaves the store for the next one.
+- **The orders pull**, every 15 minutes by default (Advanced; `0` = by hand
+  only): the latest orders reach the Orders tab without a click.
 - **The photo queue**, whenever something is due (looked at every minute,
   two products at a time): the photos of the products the Publisher created
   hidden (see Publish above). It pauses while a store pull runs, because a
   product put on sale as the pull assembles its copy of the store would be
   left out of it.
-- **The automatic categories' check**, every `SCHEDULER_COLLECTIONS_MINUTES`
-  (default 5; `0` = only in the daily sync): one light request asks the store
-  what changed, then every automatic category takes in or lets go of the
-  products its rule now says. The daily sync re-reads the whole store for
-  them. The check runs even while no category is automatic: the store index
-  it keeps is also what the Vetrina's catalog lists. It then only reads;
-  nothing is written to the store.
+- **The automatic categories' check**, every 5 minutes by default (Advanced;
+  `0` = only in the daily sync): one light request asks the store what
+  changed, then every automatic category takes in or lets go of the products
+  its rule now says. The daily sync re-reads the whole store for them. The
+  check runs even while no category is automatic: the store index it keeps is
+  also what the Vetrina's catalog lists. It then only reads; nothing is
+  written to the store.
 
 **The store sync** does unattended what the Sync tab does with "apply all":
 it plans the price and stock changes the sources call for and writes them to
-WooCommerce. `AUTO_SYNC` decides where it runs:
-- unset (the default): in the feed cycle, for the feed's products only. The
-  feed owns them, and keeping the store in step with it is the cycle's job.
-  The daily sync writes nothing;
-- `AUTO_SYNC=on`: in the daily sync too, for the whole store (KicksDB prices
-  and missing sizes included). While the feed cycle runs, the daily sync
-  leaves the feed's products to it: the two never write the same product;
-- `AUTO_SYNC=off`: nowhere. Every change is applied by hand in the Sync tab.
+WooCommerce. The settings decide where it runs:
+- *Update the store automatically* on (the default): in the feed cycle, for
+  the feed's products only. The feed owns them, and keeping the store in step
+  with it is the cycle's job;
+- …and *the KicksDB prices of the rest of the store too*: in the daily sync
+  too, for the whole store (KicksDB prices and missing sizes included). While
+  the feed cycle runs, the daily sync leaves the feed's products to it: the
+  two never write the same product;
+- *Update the store automatically* off: nowhere, and there is no feed cycle —
+  the feed is downloaded with the daily sync. Every change is applied by hand
+  in the Sync tab.
 
 It is narrower than the tab on purpose:
 - It writes **prices and stock, and the sizes a product is missing** (added,
   never removed): no size cleanup (which deletes variations) and no GTINs.
   The feed cycle adds the sizes of the feed's products that are in stock in
-  the feed. The daily sync of `AUTO_SYNC=on` adds every missing size, as the
-  Sync tab does, KicksDB-priced ones included: a size StockX started listing
-  after the product was published, created as Publish creates every size it
-  lists and sold on demand like the product's other sizes.
-- A feed cycle that would change more than `AUTO_SYNC_MAX_CHANGES` variations
-  (default 500) writes nothing. The Feeds tab shows the reason, and the change
-  is reviewed and applied by hand in the Sync tab. In a quarter of an hour, a
-  change that large is a new price list or a broken feed.
-- The daily sync writes at most `AUTO_SYNC_STORE_MAX_CHANGES` variations a
-  run (default: `AUTO_SYNC_MAX_CHANGES`), whole products, and leaves the rest
-  for the next run; the Feeds tab shows how many are waiting. It used to
-  write nothing past its limit, like the cycle — but a whole store's KicksDB
-  prices move by thousands of sizes from one day to the next, and what a run
-  refused was still there the next day, with that day's on top: past the
-  limit once, the store was never synced again. Size it to what the prices
-  move between two runs, or run the daily sync more often
-  (`SCHEDULER_TIMES=04:30,12:30,20:30`).
+  the feed. The daily sync with the KicksDB prices adds every missing size, as
+  the Sync tab does, KicksDB-priced ones included: a size StockX started
+  listing after the product was published, created as Publish creates every
+  size it lists and sold on demand like the product's other sizes.
+- A feed cycle that would change more than the **feed safety limit**
+  (Advanced, default 500 variations) writes nothing. The Feeds tab shows the
+  reason, and the change is reviewed and applied by hand in the Sync tab. In a
+  quarter of an hour, a change that large is a new price list or a broken feed.
+- The daily sync writes at most **changes at a time** (Advanced, default 500)
+  variations a run, whole products, and leaves the rest for the next run; the
+  Feeds tab shows how many are waiting. It used to write nothing past its
+  limit, like the cycle — but a whole store's KicksDB prices move by thousands
+  of sizes from one day to the next, and what a run refused was still there
+  the next day, with that day's on top: past the limit once, the store was
+  never synced again. Size it to what the prices move between two runs, or run
+  the daily sync more often (`04:30, 12:30, 20:30`).
 - Manual price locks are honored, as in the tab.
 - **A price changed on the store is never written over.** The plan keeps the
   ones the snapshot already shows; and since the snapshot is up to a day old
@@ -371,13 +383,33 @@ the server was down, or whose run failed, runs a minute after the next boot.
 A deploy after a good run starts nothing. The Feeds tab shows the cadences,
 the last runs, whether the store is synced automatically, and any error.
 
-**Be told when it doesn't run.** Set `SCHEDULER_HEARTBEAT_URL` to a
-dead-man's-switch check (for example a free healthchecks.io check with a
-1-day period and a few hours' grace). Each fully successful daily run calls
-that URL. If the calls stop, because a run failed or the server is down, the
-service alerts you. `SCHEDULER_FEEDS_HEARTBEAT_URL` does the same for the
-feed cycle. Give that check a period matching the cycle, e.g. 15 minutes with
-an hour's grace.
+**Be told when it doesn't run.** Under Advanced, *Alert when the full sync
+stops* takes a dead-man's-switch check's URL (for example a free
+healthchecks.io check with a 1-day period and a few hours' grace). Each fully
+successful daily run calls that URL. If the calls stop, because a run failed
+or the server is down, the service alerts you. *Alert when the feed stops*
+does the same for the feed cycle. Give that check a period matching the cycle,
+e.g. 15 minutes with an hour's grace.
+
+**Upgrading from the environment variables.** These settings used to be
+environment variables. A deploy that still sets them keeps working: they are
+the settings' starting values until the first save on the Feeds tab, and are
+not read after it. The tab lists the ones still set, so they can be removed:
+
+| Former variable | Setting (Feeds › Automatic sync) |
+| --- | --- |
+| `AUTO_SYNC` | *Update the store automatically* (`off`); *the KicksDB prices of the rest of the store too* (`on`) |
+| `SCHEDULER_FEEDS_MINUTES` | *every N minutes* (`0` was the store sync off) |
+| `SCHEDULER_TIMES` | *Full sync every day at* |
+| `SCHEDULER_TIMEZONE` | Advanced › *The shop's time zone* |
+| `AUTO_SYNC_MAX_CHANGES` | Advanced › *Feed safety limit* |
+| `AUTO_SYNC_STORE_MAX_CHANGES` | Advanced › *Changes at a time (KicksDB prices)* |
+| `SCHEDULER_ORDERS_MINUTES` | Advanced › *Orders: update every* |
+| `SCHEDULER_COLLECTIONS_MINUTES` | Advanced › *Automatic categories: check every* |
+| `COLLECTIONS_MAX_CHANGES` | Advanced › *Automatic categories: most products moved* |
+| `AUTO_REPAIR` | Advanced › *Automatic repair* |
+| `SCHEDULER_HEARTBEAT_URL` | Advanced › *Alert when the full sync stops* |
+| `SCHEDULER_FEEDS_HEARTBEAT_URL` | Advanced › *Alert when the feed stops* |
 
 `SCHEDULER=on|off` overrides the default (on in production, off in dev). The
 scheduler needs a long-running server — `next start`, Docker, a VPS — not a

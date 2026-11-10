@@ -95,8 +95,8 @@ renamed, a typo saved by mistake — and the category empties itself on the next
 run, taking the homepage rail with it. So **an automatic run**:
 
 - **never empties a category** that has products;
-- **never moves more than `COLLECTIONS_MAX_CHANGES`** products (default 200) in
-  or out of one category at once.
+- **never moves more than the limit** (default 200 products; Feeds › Automatic
+  sync › Advanced) in or out of one category at once.
 
 Either case is **held**: nothing is written for that category, the Hub's tab and
 the Vetrina say why and what would change, and a person confirms it ("Conferma e
@@ -128,7 +128,7 @@ and the sales count.
 
 | Run | When | What it reads |
 |---|---|---|
-| **Check** | every `SCHEDULER_COLLECTIONS_MINUTES` (default 5) | products modified since the newest change the index holds (`modified_after`), usually none: one request |
+| **Check** | every 5 minutes by default (Feeds › Automatic sync › Advanced) | products modified since the newest change the index holds (`modified_after`), usually none: one request |
 | **Full read** | the daily sync; the tab's "Rileggi"; the first check after the server starts, and every check until one gets through | every product, `_fields`-trimmed, 100 per request |
 | **Live re-read** | before every write | exactly the products about to be written |
 
@@ -181,10 +181,17 @@ error.
 
 ## 7. Configuration
 
-| Variable | Default | Meaning |
+Two settings, in the Hub (**Feeds › Automatic sync › Advanced**), not in the
+environment — saved there, they apply within a minute:
+
+| Setting | Default | Meaning |
 |---|---|---|
-| `SCHEDULER_COLLECTIONS_MINUTES` | `5` | minutes between checks; `0` = only in the daily sync |
-| `COLLECTIONS_MAX_CHANGES` | `200` | most products an automatic run moves in or out of one category |
+| *Automatic categories: check every* | `5` minutes | minutes between checks; `0` = only in the daily sync |
+| *Automatic categories: most products moved* | `200` per category | most products an automatic run moves in or out of one category |
+
+They used to be `SCHEDULER_COLLECTIONS_MINUTES` and `COLLECTIONS_MAX_CHANGES`:
+a deploy that still sets them has them as the settings' starting values, until
+the first save on the Feeds tab.
 
 The check needs the scheduler (on in production). With `SCHEDULER=off`, categories
 move when a rule is saved or confirmed, on "Rileggi", or when the tab is opened.
