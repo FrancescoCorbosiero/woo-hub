@@ -36,6 +36,8 @@ const POLL_IDLE_MS = 30_000;
 const INTERVALS = [5, 10, 15, 20, 30, 45, 60, 120];
 /** iOS's green, as the section editor's switches. */
 const TOGGLE_COLORS = { checkedBgIos: "bg-[#34c759] dark:bg-[#30d158]" };
+/** A switch's finger-sized target, as the catalog's: only the switch flips, a tap on the row's words starts nothing. */
+const SWITCH_TARGET = "relative before:absolute before:-inset-x-2 before:-inset-y-2 before:content-['']";
 
 /**
  * "Negozio": the store kept in step with the supplier's list. Up top,
@@ -125,9 +127,9 @@ export function ShopHome({ result }: { result: VetrinaResult<ShopOverview> }) {
           <List strong inset dividers aria-label={s.settings.title} className="!mt-2">
             <ListItem
               title={s.settings.storeSync}
-              label
               after={
                 <Toggle
+                  className={SWITCH_TARGET}
                   checked={settings.storeSync}
                   colors={TOGGLE_COLORS}
                   aria-label={s.settings.storeSync}
@@ -149,9 +151,9 @@ export function ShopHome({ result }: { result: VetrinaResult<ShopOverview> }) {
             {overview.kicksdb && (
               <ListItem
                 title={s.settings.kicksdb}
-                label
                 after={
                   <Toggle
+                    className={SWITCH_TARGET}
                     checked={settings.dailyStoreSync}
                     colors={TOGGLE_COLORS}
                     aria-label={s.settings.kicksdb}

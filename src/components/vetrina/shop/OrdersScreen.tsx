@@ -322,16 +322,16 @@ function OrderContent({ order, onClose, onChanged }: { order: OrderView; onClose
                   .catch(() => undefined)
               }
             >
-              {o.copyAddress}
+              <span className="truncate">{w.copy}</span>
             </Button>
             {(order.customerPhone || order.shipping.phone) && (
               <Button rounded tonal component="a" href={`tel:${order.customerPhone || order.shipping.phone}`} className="!h-10 flex-1">
-                {w.call}
+                <span className="truncate">{w.call}</span>
               </Button>
             )}
             {order.customerEmail && (
               <Button rounded tonal component="a" href={`mailto:${order.customerEmail}`} className="!h-10 flex-1">
-                {w.write}
+                <span className="truncate">{w.write}</span>
               </Button>
             )}
           </div>

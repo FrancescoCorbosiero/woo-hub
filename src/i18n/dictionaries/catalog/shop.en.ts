@@ -155,6 +155,7 @@ export const shopEn: typeof shopIt = {
     pull: "Update the orders",
     pulled: (count) => (count === 1 ? "1 order updated" : `${n(count)} orders updated`),
     number: (number) => `Order #${number}`,
+    copy: "Copy",
     call: "Call",
     write: "Write",
     reopen: "Reopen",

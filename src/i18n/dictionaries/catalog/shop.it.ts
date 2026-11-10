@@ -172,6 +172,8 @@ export const shopIt = {
     pull: "Aggiorna gli ordini",
     pulled: (count: number) => (count === 1 ? "1 ordine aggiornato" : `${n(count)} ordini aggiornati`),
     number: (number: string) => `Ordine #${number}`,
+    /** The address card's: short, beside "Chiama" and "Scrivi" on a phone's width. */
+    copy: "Copia",
     call: "Chiama",
     write: "Scrivi",
     reopen: "Riapri",

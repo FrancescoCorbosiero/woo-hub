@@ -1343,7 +1343,6 @@ export const en: Dictionary = {
     paidWith: (method: string) => `Paid with ${method}`,
     customerNote: "Customer note",
     address: "Shipping",
-    copyAddress: "Copy address",
     copied: "Copied ✓",
     tracking: "Tracking",
     trackingCarrier: "Carrier",

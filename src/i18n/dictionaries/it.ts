@@ -1388,7 +1388,6 @@ export const it = {
     paidWith: (method: string) => `Pagato con ${method}`,
     customerNote: "Nota del cliente",
     address: "Spedizione",
-    copyAddress: "Copia indirizzo",
     copied: "Copiato ✓",
     tracking: "Tracking",
     trackingCarrier: "Corriere",
