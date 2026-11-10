@@ -2,6 +2,8 @@ import "server-only";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import { feedItems, type FeedItemRow } from "@/server/db/schema";
+import { changedBy, rowsToWrite } from "@/server/db/upsert";
+import { chunkArray } from "@/lib/chunk";
 import { skuKey } from "@/lib/skus";
 import type { GsOffer } from "./goldensneakers-model";
 
@@ -14,80 +16,126 @@ export async function existingFeedKeys(feed: string): Promise<Set<string>> {
       .select({ sku: feedItems.sku, euNorm: feedItems.euNorm })
       .from(feedItems)
       .where(eq(feedItems.feed, feed));
-    return new Set(rows.map((r) => `${r.sku}::${r.euNorm}`));
+    return new Set(rows.map(offerKey));
   } catch {
     return new Set();
   }
 }
 
-/** Upsert a sync's offers (insert-or-refresh, active=true). */
+/** The (sku, size) key a sync knows an offer by. */
+export const offerKey = (o: { sku: string; euNorm: string }) => `${o.sku}::${o.euNorm}`;
+
+/**
+ * Upsert a sync's offers: new sizes inserted, sizes whose price, stock or
+ * details changed (or that come back after vanishing) rewritten and active
+ * again — and every other row left exactly as it is. The feed is synced every
+ * quarter of an hour and most of it does not move in that time: rewriting it
+ * whole each time (a new row version, its index entries, its WAL) was the
+ * bulk of what the Hub's Postgres wrote to disk. Returns the rows written.
+ *
+ * `synced_at` is therefore when a sync last CHANGED the row, not when one
+ * last saw it: what a sync left out is told by its own list of offers (see
+ * deactivateMissing), never by an old timestamp.
+ */
 export async function upsertFeedItems(
   feed: string,
   offers: GsOffer[],
   syncedAt: Date,
-): Promise<void> {
-  if (offers.length === 0) return;
-  const now = syncedAt;
+): Promise<number> {
+  if (offers.length === 0) return 0;
+  const content = {
+    sizeLabel: sql`excluded.size_label`,
+    sizeUs: sql`excluded.size_us`,
+    barcode: sql`excluded.barcode`,
+    offerPrice: sql`excluded.offer_price`,
+    presentedPrice: sql`excluded.presented_price`,
+    quantity: sql`excluded.quantity`,
+    productName: sql`excluded.product_name`,
+    brandName: sql`excluded.brand_name`,
+    // A sync that arrives without a usable image must never blank a
+    // known-good one — images only ever improve.
+    image: sql`case when excluded.image = '' then ${feedItems.image} else excluded.image end`,
+    active: sql`true`,
+    raw: sql`excluded.raw`,
+  };
+  const target = [feedItems.feed, feedItems.sku, feedItems.euNorm];
+  let written = 0;
   // Chunked: a full feed can be thousands of rows.
-  for (let i = 0; i < offers.length; i += 500) {
-    const part = offers.slice(i, i + 500);
-    await db
+  for (const part of chunkArray(offers, 500)) {
+    const changed = await rowsToWrite(
+      feedItems,
+      target,
+      part.map((o) => ({
+        feed,
+        sku: o.sku,
+        euNorm: o.euNorm,
+        sizeLabel: o.sizeLabel,
+        sizeUs: o.sizeUs,
+        barcode: o.barcode,
+        offerPrice: o.offerPrice,
+        presentedPrice: o.presentedPrice,
+        quantity: o.quantity,
+        productName: o.productName,
+        brandName: o.brandName,
+        image: o.image,
+        active: true,
+        raw: o.raw,
+        syncedAt,
+      })),
+      content,
+    );
+    if (changed.length === 0) continue;
+    const rows = await db
       .insert(feedItems)
-      .values(
-        part.map((o) => ({
-          feed,
-          sku: o.sku,
-          euNorm: o.euNorm,
-          sizeLabel: o.sizeLabel,
-          sizeUs: o.sizeUs,
-          barcode: o.barcode,
-          offerPrice: o.offerPrice,
-          presentedPrice: o.presentedPrice,
-          quantity: o.quantity,
-          productName: o.productName,
-          brandName: o.brandName,
-          image: o.image,
-          active: true,
-          raw: o.raw,
-          syncedAt: now,
-        })),
-      )
+      .values(changed)
       .onConflictDoUpdate({
-        target: [feedItems.feed, feedItems.sku, feedItems.euNorm],
-        set: {
-          sizeLabel: sql`excluded.size_label`,
-          sizeUs: sql`excluded.size_us`,
-          barcode: sql`excluded.barcode`,
-          offerPrice: sql`excluded.offer_price`,
-          presentedPrice: sql`excluded.presented_price`,
-          quantity: sql`excluded.quantity`,
-          productName: sql`excluded.product_name`,
-          brandName: sql`excluded.brand_name`,
-          // A sync that arrives without a usable image must never blank a
-          // known-good one — images only ever improve.
-          image: sql`case when excluded.image = '' then ${feedItems.image} else excluded.image end`,
-          active: sql`true`,
-          raw: sql`excluded.raw`,
-          syncedAt: sql`excluded.synced_at`,
-          // first_seen_at intentionally kept: it records feed entry time.
-        },
-      });
+        target,
+        // first_seen_at intentionally kept: it records feed entry time.
+        set: { ...content, syncedAt: sql`excluded.synced_at` },
+        setWhere: changedBy(feedItems, content),
+      })
+      .returning({ sku: feedItems.sku });
+    written += rows.length;
   }
+  return written;
 }
 
 /**
- * Deactivate rows that were NOT part of this sync (scs-b2b's
- * deactivate-never-delete). Returns how many were switched off.
+ * Deactivate the active rows this sync did NOT carry (scs-b2b's
+ * deactivate-never-delete), by the sync's own list of (sku, size) keys.
+ * Returns how many were switched off. An empty list switches nothing off:
+ * an empty feed is refused before it gets here, never read as "everything
+ * vanished".
  */
-export async function deactivateMissing(feed: string, syncedAt: Date): Promise<number> {
-  const rows = await db
-    .update(feedItems)
-    .set({ active: false })
-    .where(
-      and(eq(feedItems.feed, feed), eq(feedItems.active, true), sql`${feedItems.syncedAt} < ${syncedAt}`),
-    )
-    .returning({ sku: feedItems.sku });
-  return rows.length;
+export async function deactivateMissing(
+  feed: string,
+  present: ReadonlySet<string>,
+  syncedAt: Date,
+): Promise<number> {
+  if (present.size === 0) return 0;
+  const active = await db
+    .select({ sku: feedItems.sku, euNorm: feedItems.euNorm })
+    .from(feedItems)
+    .where(and(eq(feedItems.feed, feed), eq(feedItems.active, true)));
+  const gone = active.filter((r) => !present.has(offerKey(r)));
+  let deactivated = 0;
+  for (const part of chunkArray(gone, 500)) {
+    const rows = await db
+      .update(feedItems)
+      .set({ active: false, syncedAt })
+      .where(
+        and(
+          eq(feedItems.feed, feed),
+          eq(feedItems.active, true),
+          sql`(${feedItems.sku}, ${feedItems.euNorm}) in (
+            select g.sku, g."euNorm" from jsonb_to_recordset(${JSON.stringify(part)}::jsonb) as g(sku text, "euNorm" text)
+          )`,
+        ),
+      )
+      .returning({ sku: feedItems.sku });
+    deactivated += rows.length;
+  }
+  return deactivated;
 }
 
 /** The set of SKUs the feed currently covers (active rows) — the ownership set. */

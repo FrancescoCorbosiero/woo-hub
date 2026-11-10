@@ -275,7 +275,9 @@ confirm from the phone is not built (§7).
 exempted in `src/proxy.ts` beside `/api/v1/`): one `propose_<kind>` tool
 per registry kind with `inputSchema` from `describeActions()`, plus read,
 `get_proposal`, `confirm_proposal` and `undo_operation` tools, all filing
-`via: "assistant"`. `asOf` on catalog reads from the index's `seen_at`.
+`via: "assistant"`. `asOf` on catalog reads from the runner's last read
+(`lastReadAt`), else the index's newest `seen_at` — which moves only when a
+read changes a row, not on every read.
 Hardcoded Italian refusals moved behind `words()`. A data-driven e2e
 round-trip over every kind in the registry.
 

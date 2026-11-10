@@ -467,6 +467,55 @@ describe.skipIf(!enabled)("the automatic categories' runs (real SQL)", () => {
     expect(getRunnerStatus().lastError).toBeNull();
   });
 
+  /** Each index row's version: a row Postgres rewrote has a new xmin, whatever its values. */
+  async function versions(): Promise<Map<number, string>> {
+    const { db } = await load();
+    const { sql } = await import("drizzle-orm");
+    const { rowsOf } = await import("@/server/db/rows");
+    const res = await db.execute(sql`select product_id as id, xmin::text as v from store_index`);
+    return new Map(rowsOf<{ id: number; v: string }>(res).map((r) => [Number(r.id), r.v]));
+  }
+
+  it("rewrites nothing when a check or a full read finds the store as the index holds it", async () => {
+    const { runCheck, runFull, getRunnerStatus, readIndex } = await load();
+    const store = new FakeStore();
+    // Two pages, every product last modified at the same moment: the check's
+    // overlap reads all of them again, every time.
+    for (let id = 1; id <= 150; id++) store.add({ id });
+    await saldi([{ field: "tag", op: "is", value: "999", label: "never" }]);
+    expect(await runCheck({ client: store.client })).toMatchObject({ read: 150 });
+    const before = await versions();
+    expect(before.size).toBe(150);
+
+    const asked = Date.now();
+    expect(await runCheck({ client: store.client })).toMatchObject({ read: 150, moved: 0 });
+    expect(await runFull({ client: store.client })).toMatchObject({ read: 150, moved: 0 });
+    expect(await versions()).toEqual(before);
+    // It read the store all the same, and says so.
+    expect(getRunnerStatus().lastReadAt).toBeGreaterThanOrEqual(asked);
+
+    // An edit: that product's row, and only it, is written.
+    store.edit(7, { name: "Renamed in WordPress" });
+    await runCheck({ client: store.client });
+    const after = await versions();
+    expect([...after].filter(([id, v]) => before.get(id) !== v).map(([id]) => id)).toEqual([7]);
+    expect((await readIndex()).find((p) => p.id === 7)?.name).toBe("Renamed in WordPress");
+  });
+
+  it("an older reading never replaces a newer row, nor rewrites it", async () => {
+    const { upsertIndexRows, readIndex } = await load();
+    const { toIndexRow } = await import("./index-rows");
+    const store = new FakeStore();
+    const p = store.add({ id: 1 });
+    const older = toIndexRow(store.view(p));
+    store.edit(1, { name: "Newer" });
+    expect(await upsertIndexRows([toIndexRow(store.view(p))])).toBe(1);
+    const before = await versions();
+    expect(await upsertIndexRows([older])).toBe(0);
+    expect(await versions()).toEqual(before);
+    expect((await readIndex())[0].name).toBe("Newer");
+  });
+
   it("drops from the index what a full read no longer finds", async () => {
     const { runFull, readIndex } = await load();
     const store = new FakeStore();

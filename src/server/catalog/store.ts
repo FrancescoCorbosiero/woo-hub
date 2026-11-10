@@ -6,6 +6,9 @@ import { getFreshBySkus, getAnyBySkus, upsertCatalog, countCatalog } from "./rep
 export const dbCatalogStore: CatalogStore = {
   getFresh: getFreshBySkus,
   getAny: getAnyBySkus,
-  upsert: upsertCatalog,
+  // What a KicksDB fetch brought: every row refreshed, fetchedAt moved (the default).
+  upsert: async (market, products) => {
+    await upsertCatalog(market, products);
+  },
   count: countCatalog,
 };

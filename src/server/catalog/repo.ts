@@ -1,10 +1,11 @@
 import "server-only";
-import { and, desc, eq, gte, inArray, lt, ne, notInArray, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
 import type { ProductScopeAxes } from "@core/config";
 import type { SourceProduct } from "@core/core-spine";
 import { db } from "@/server/db/client";
 import { catalogProducts, feedItems, mediaJobs, storeSnapshot } from "@/server/db/schema";
 import { countOf } from "@/server/db/rows";
+import { changedBy, rowsToWrite } from "@/server/db/upsert";
 import { SNAPSHOT_ID } from "@/server/store-json/repo";
 import { skuKey } from "@/lib/skus";
 import { chunkArray } from "@/lib/chunk";
@@ -14,6 +15,11 @@ import { classifyTitle } from "./classify";
  * Return catalog entries for the given SKUs that are still FRESH (fetched within
  * ttlSeconds), keyed by canonical SKU. Stale or missing SKUs are simply absent,
  * so the caller refetches and upserts them.
+ *
+ * A feed's own rows (source "goldensneakers") are fresh while the feed carries
+ * the product: its sync writes every change it brings into them (see
+ * upsertCatalog's `unchanged: "skip"`), so their fetchedAt says when the feed
+ * last CHANGED the product — not how current the row is.
  *
  * Best-effort: the catalog is a cache, so a DB error (e.g. the table not yet
  * migrated) degrades to "no cache" rather than failing the whole preview.
@@ -37,7 +43,16 @@ export async function getFreshBySkus(
         and(
           eq(catalogProducts.market, market),
           inArray(catalogProducts.sku, keys),
-          gte(catalogProducts.fetchedAt, threshold),
+          or(
+            gte(catalogProducts.fetchedAt, threshold),
+            and(
+              ne(catalogProducts.source, "kicksdb"),
+              sql`exists (
+                select 1 from ${feedItems} f
+                where f.feed = ${catalogProducts.source} and f.sku = ${catalogProducts.sku} and f.active
+              )`,
+            ),
+          ),
           // The store mirror is inventory, never a price source: a "woo" row
           // must read as a cache MISS so the normal KicksDB fetch happens
           // (and, when verified, flips the row to kicksdb).
@@ -533,9 +548,24 @@ export function minAskOf(p: SourceProduct): number | null {
  * The denormalized discovery columns (image/minAsk/variantCount) are recomputed
  * on every write; addedAt is only set on first insert (it means "joined the
  * catalog", while fetchedAt means "last refreshed").
+ *
+ * `unchanged` says what happens to a row the products would leave as it is:
+ *  - "refresh" (default): rewritten all the same, fetchedAt moved — a KicksDB
+ *    fetch restarts the row's freshness even when the answer is the same;
+ *  - "skip": left alone, fetchedAt included — for sources that keep their own
+ *    rows current and register them again every run: a feed's sync (every
+ *    quarter of an hour; its rows' freshness is the feed's, see
+ *    getFreshBySkus) and the store's mirror. Rewriting every one of them,
+ *    changed or not, is a new row version and an entry in each of this
+ *    table's ten indexes per product, every run.
+ * Returns the rows written (inserted or updated); 0 when the cache is unavailable.
  */
-export async function upsertCatalog(market: string, products: SourceProduct[]): Promise<void> {
-  if (products.length === 0) return;
+export async function upsertCatalog(
+  market: string,
+  products: SourceProduct[],
+  opts: { unchanged?: "refresh" | "skip" } = {},
+): Promise<number> {
+  if (products.length === 0) return 0;
 
   const now = new Date();
   const values = products.map((p) => {
@@ -576,43 +606,55 @@ export async function upsertCatalog(market: string, products: SourceProduct[]): 
     };
   });
 
+  const content = {
+    source: sql`excluded.source`,
+    stockxId: sql`excluded.stockx_id`,
+    title: sql`excluded.title`,
+    brand: sql`excluded.brand`,
+    // A refresh without an image must never blank a known-good one;
+    // the jsonb copy is patched to match so data.image never diverges
+    // from the denormalized column.
+    image: sql`case when excluded.image = '' then ${catalogProducts.image} else excluded.image end`,
+    category: sql`excluded.category`,
+    secondaryCategory: sql`excluded.secondary_category`,
+    gender: sql`excluded.gender`,
+    model: sql`excluded.model`,
+    productType: sql`excluded.product_type`,
+    minAsk: sql`excluded.min_ask`,
+    variantCount: sql`excluded.variant_count`,
+    data: sql`case when excluded.image = '' and ${catalogProducts.image} <> ''
+      then jsonb_set(excluded.data, '{image}', to_jsonb(${catalogProducts.image}))
+      else excluded.data end`,
+  };
+  const target = [catalogProducts.market, catalogProducts.sku];
+  const skip = opts.unchanged === "skip";
+  let written = 0;
   try {
     // Chunked: a whole-store registration can be thousands of rows, and a
     // single multi-row INSERT would overflow Postgres's parameter limit.
-    for (const chunk of chunkArray(values, 500)) {
-      await db
+    for (const part of chunkArray(values, 500)) {
+      const chunk = skip ? await rowsToWrite(catalogProducts, target, part, content) : part;
+      if (chunk.length === 0) continue;
+      const rows = await db
         .insert(catalogProducts)
         .values(chunk)
         .onConflictDoUpdate({
-          target: [catalogProducts.market, catalogProducts.sku],
+          target,
           set: {
-            source: sql`excluded.source`,
-            stockxId: sql`excluded.stockx_id`,
-            title: sql`excluded.title`,
-            brand: sql`excluded.brand`,
-            // A refresh without an image must never blank a known-good one;
-            // the jsonb copy is patched to match so data.image never diverges
-            // from the denormalized column.
-            image: sql`case when excluded.image = '' then ${catalogProducts.image} else excluded.image end`,
-            category: sql`excluded.category`,
-            secondaryCategory: sql`excluded.secondary_category`,
-            gender: sql`excluded.gender`,
-            model: sql`excluded.model`,
-            productType: sql`excluded.product_type`,
-            minAsk: sql`excluded.min_ask`,
-            variantCount: sql`excluded.variant_count`,
-            data: sql`case when excluded.image = '' and ${catalogProducts.image} <> ''
-              then jsonb_set(excluded.data, '{image}', to_jsonb(${catalogProducts.image}))
-              else excluded.data end`,
+            ...content,
             fetchedAt: sql`excluded.fetched_at`,
             updatedAt: sql`excluded.updated_at`,
             // added_at intentionally NOT updated: it records first insert.
           },
-        });
+          ...(skip ? { setWhere: changedBy(catalogProducts, content) } : {}),
+        })
+        .returning({ sku: catalogProducts.sku });
+      written += rows.length;
     }
   } catch (e) {
     console.warn("[catalog] write skipped (cache unavailable):", describeDbError(e));
   }
+  return written;
 }
 
 /**

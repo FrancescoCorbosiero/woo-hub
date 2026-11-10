@@ -1,7 +1,7 @@
 import "server-only";
 import { getWooClient } from "@/server/woo/client";
 import { initialStatusForWoo, normalizeWooOrder, type OrderModel } from "./model";
-import { seedWorkflowStatuses, upsertOrders } from "./repo";
+import { notePulled, seedWorkflowStatuses, upsertOrders } from "./repo";
 
 /**
  * The orders pull: fetch the most recent orders over Woo REST and refresh the
@@ -20,7 +20,8 @@ const PAGES = 2;
 
 export interface OrdersPullReport {
   fetched: number; // orders the API returned
-  saved: number; // rows upserted (fetched minus unparseable)
+  saved: number; // orders in the snapshot after the pull (fetched minus unparseable)
+  changed: number; // of those, the ones new or changed since the last pull (the only ones written)
   rejected: number; // payloads that were not orders
   totalOnStore: number | null; // X-WP-Total when Woo provides it
 }
@@ -28,7 +29,7 @@ export interface OrdersPullReport {
 export async function pullRecentOrders(): Promise<OrdersPullReport> {
   const client = getWooClient(); // throws a friendly message when unconfigured
 
-  const report: OrdersPullReport = { fetched: 0, saved: 0, rejected: 0, totalOnStore: null };
+  const report: OrdersPullReport = { fetched: 0, saved: 0, changed: 0, rejected: 0, totalOnStore: null };
   const models: OrderModel[] = [];
 
   for (let page = 1; page <= PAGES; page++) {
@@ -43,7 +44,7 @@ export async function pullRecentOrders(): Promise<OrdersPullReport> {
     if (orders.length < PER_PAGE) break; // last page
   }
 
-  await upsertOrders(models);
+  report.changed = await upsertOrders(models);
   report.saved = models.length;
 
   // Settled history starts settled: orders already completed/cancelled on Woo
@@ -56,5 +57,6 @@ export async function pullRecentOrders(): Promise<OrdersPullReport> {
     }),
   );
 
+  notePulled();
   return report;
 }

@@ -294,7 +294,8 @@ export type StoreSyncRunRow = typeof storeSyncRuns.$inferSelect;
  * External-feed offers: one row per (feed, sku, size). The KicksDB catalog
  * stays pure — feed data lives here and a product-level ownership switch
  * decides which source drives a product. Rows are deactivated (never deleted)
- * when they vanish from a sync, so history survives and nothing churns.
+ * when they vanish from a sync, so history survives and nothing churns — and
+ * a sync rewrites only the rows it changes (see upsertFeedItems).
  */
 export const feedItems = pgTable(
   "feed_items",
@@ -314,6 +315,8 @@ export const feedItems = pgTable(
     active: boolean("active").notNull().default(true),
     raw: jsonb("raw").$type<unknown>(),
     firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    // When a sync last CHANGED the row (prices, stock, details, active): a row
+    // a sync finds as it was is not rewritten, so this is no "last seen".
     syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -363,6 +366,8 @@ export const storeOrders = pgTable(
     raw: jsonb("raw").$type<unknown>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
     modifiedAt: timestamp("modified_at", { withTimezone: true }),
+    // When a pull last changed the order: an order a pull finds as it was is
+    // not rewritten (see upsertOrders, and lastPulledAt for the last pull).
     pulledAt: timestamp("pulled_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("store_orders_created_idx").on(t.createdAt)],
@@ -529,7 +534,9 @@ export const storeIndex = pgTable(
     // The store's own last-modified time: the frequent check asks for what
     // changed after the newest one held here.
     dateModified: timestamp("date_modified", { withTimezone: true }),
-    // When a read last saw it: a full read drops what it no longer sees.
+    // When the row was last written: a read that brought a change in, or a
+    // write's answer. A row a read finds as it was is not rewritten; a full
+    // read drops what it did not see (by id) unless written since it began.
     seenAt: timestamp("seen_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("store_index_modified_idx").on(t.dateModified), index("store_index_seen_idx").on(t.seenAt)],

@@ -69,6 +69,12 @@ export interface RunnerStatus {
   queued: RunKind[];
   lastFullAt: number | null;
   lastCheckAt: number | null;
+  /**
+   * When this process last read the store into the index (a check that asked
+   * what changed, or a full read). The index itself cannot say: a read that
+   * finds every product as it already holds it writes nothing.
+   */
+  lastReadAt: number | null;
   /** Products the last decision moved. */
   lastMoved: number | null;
   lastError: string | null;
@@ -105,6 +111,7 @@ function state(): State {
     queued: [],
     lastFullAt: null,
     lastCheckAt: null,
+    lastReadAt: null,
     lastMoved: null,
     lastError: null,
     incremental: null,
@@ -121,6 +128,7 @@ export function getRunnerStatus(): RunnerStatus {
     queued: [...s.queued],
     lastFullAt: s.lastFullAt,
     lastCheckAt: s.lastCheckAt,
+    lastReadAt: s.lastReadAt,
     lastMoved: s.lastMoved,
     lastError: s.lastError,
     incremental: s.incremental,
@@ -204,14 +212,9 @@ async function readAll(woo: WooClient): Promise<number> {
     const { products, total } = await woo.getProductIndexPage({ page, perPage: PER_PAGE });
     const fresh = products.filter((p) => !seen.has(p.id));
     for (const p of fresh) seen.add(p.id);
-    const rows = fresh.map(toIndexRow);
-    const now = new Date();
-    await repo.upsertIndexRows(rows, now);
-    // A row the upsert kept (the index already held a newer one) was seen all the same.
-    await repo.touchIndexRows(
-      rows.map((r) => r.id),
-      now,
-    );
+    // Only what changed is written. The rest — almost everything, almost
+    // every day — the read knows it saw by `seen`, not by rewriting each row.
+    await repo.upsertIndexRows(fresh.map(toIndexRow));
     s.progress = { done: seen.size, total };
     const verdict = pageVerdict({ page, rows: products.length, fresh: fresh.length, perPage: PER_PAGE, maxPages: MAX_FULL_PAGES });
     if (verdict === "continue") continue;
@@ -225,11 +228,12 @@ async function readAll(woo: WooClient): Promise<number> {
     break;
   }
   if (complete) {
-    const gone = await repo.deleteUnseen(startedAt);
+    const gone = await repo.deleteUnseen(startedAt, seen);
     if (gone > 0) console.log(`[collections] ${gone} product(s) gone from the store, dropped from the index`);
     s.readFrom = begun;
   }
   s.lastFullAt = Date.now();
+  s.lastReadAt = s.lastFullAt;
   return seen.size;
 }
 
@@ -288,6 +292,7 @@ async function readChanges(woo: WooClient): Promise<number> {
       break;
     }
   }
+  s.lastReadAt = Date.now();
   return seen.size;
 }
 
