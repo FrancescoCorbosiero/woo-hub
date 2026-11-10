@@ -5,7 +5,7 @@ import { getActiveConfig } from "@/server/config/repo";
 import { getSource, kicksdbConfigured } from "@/server/adapters/kicksdb";
 import { listCatalogEntries, upsertCatalog } from "@/server/catalog/repo";
 import type { CatalogItem } from "@/lib/catalog";
-import { loadDrawerData, type DrawerData } from "@/components/catalog/drawer-data";
+import { loadDrawerData, type DrawerData } from "@/server/catalog/drawer-data";
 
 export interface CatalogListResult {
   ok: boolean;

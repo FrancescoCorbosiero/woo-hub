@@ -179,6 +179,19 @@ const WRITE_ONCE: RetryPolicy = { attempts: 1, backoffMs: 0, timeoutMs: 95_000 }
 /** Writes that set fields to values: repeating one is harmless, but give it time. */
 const IDEMPOTENT_WRITE: RetryPolicy = { attempts: 3, backoffMs: 1_000, timeoutMs: 60_000 };
 
+
+/** The REST collection of a store taxonomy: products/categories, products/brands, products/tags. */
+export type StoreTermKind = "categories" | "brands" | "tags";
+
+const StoreTermSchema = z.looseObject({
+  id: z.number(),
+  name: z.string(),
+  slug: z.string(),
+  parent: z.number().optional(),
+  description: z.string().optional(),
+  count: z.number().optional(),
+});
+export type StoreTerm = z.infer<typeof StoreTermSchema>;
 export class WooClient {
   constructor(
     private readonly baseUrl: string,
@@ -376,7 +389,7 @@ export class WooClient {
    * ---------------------------------------------------------------- */
 
   /** Product brands (`products/brands`). Empty when the store has no such taxonomy. */
-  async listBrands(): Promise<{ id: number; name: string; slug: string }[]> {
+  async listBrands(): Promise<{ id: number; name: string; slug: string; parent?: number }[]> {
     return this.listTerms("products/brands");
   }
 
@@ -423,6 +436,62 @@ export class WooClient {
     slug: string,
   ): Promise<{ id: number; name: string; slug: string } | null> {
     return this.createTerm("products/attributes", { name, slug, type: "select" });
+  }
+
+  /* ---------------------------------------------------------------- *
+   * Managing the store's terms (the Vetrina's taxonomy actions).
+   *
+   * Unlike the identity helpers above these throw: an owner who renames a
+   * category must hear why the store said no. `kind` is the REST collection:
+   * categories and brands nest, tags are flat.
+   * ---------------------------------------------------------------- */
+
+  /** One term, its description included. */
+  async getStoreTerm(kind: StoreTermKind, id: number): Promise<StoreTerm> {
+    const raw = await requestJson(this.apiUrl(`products/${kind}/${id}`), { method: "GET", headers: this.headers() }, this.retry);
+    return StoreTermSchema.parse(raw);
+  }
+
+  /** A new term; WooCommerce refuses a name taken under the same parent (term_exists). */
+  async createStoreTerm(kind: StoreTermKind, body: { name: string; parent?: number; slug?: string; description?: string }): Promise<StoreTerm> {
+    const raw = await requestJson(
+      this.apiUrl(`products/${kind}`),
+      { method: "POST", headers: this.headers(), body: JSON.stringify(body) },
+      WRITE_ONCE,
+    );
+    return StoreTermSchema.parse(raw);
+  }
+
+  /** A term's name or parent; only what is sent changes (its slug stays, and with it every link to it). */
+  async updateStoreTerm(kind: StoreTermKind, id: number, body: { name?: string; parent?: number }): Promise<StoreTerm> {
+    const raw = await requestJson(
+      this.apiUrl(`products/${kind}/${id}`),
+      { method: "PUT", headers: this.headers(), body: JSON.stringify(body) },
+      WRITE_ONCE,
+    );
+    return StoreTermSchema.parse(raw);
+  }
+
+  /** A term deleted for good (terms have no trash); WordPress moves its sub-terms up to its parent. */
+  async deleteStoreTerm(kind: StoreTermKind, id: number): Promise<void> {
+    await requestJson(this.apiUrl(`products/${kind}/${id}`, { force: "true" }), { method: "DELETE", headers: this.headers() }, WRITE_ONCE);
+  }
+
+  /** The products holding a term directly, any status but the trash, read live: up to 2,000. */
+  async productIdsInTerm(kind: StoreTermKind, id: number): Promise<number[]> {
+    const param = kind === "categories" ? "category" : kind === "tags" ? "tag" : "brand";
+    const out: number[] = [];
+    for (let page = 1; page <= 20; page++) {
+      const raw = await requestJson(
+        this.apiUrl("products", { [param]: String(id), status: "any", per_page: "100", page: String(page), _fields: "id" }),
+        { method: "GET", headers: this.headers() },
+        this.retry,
+      );
+      const rows = z.array(z.looseObject({ id: z.number() })).parse(raw);
+      out.push(...rows.map((r) => r.id));
+      if (rows.length < 100) break;
+    }
+    return out;
   }
 
   /** Paged term listing; a taxonomy the store does not have answers 404 → []. */

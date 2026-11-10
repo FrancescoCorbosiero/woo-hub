@@ -1,7 +1,9 @@
 import "server-only";
 import { hubConfig } from "@/config";
 import type { ActionInput, OperationInput, TermKey } from "@/lib/vetrina/catalog-ops";
+import { isMenuActionKind } from "@/lib/vetrina/menu-ops";
 import { isPageActionKind } from "@/lib/vetrina/page-ops";
+import { isTermActionKind, type OperationTermRecord, type TermTaxonomy } from "@/lib/vetrina/term-ops";
 import { queueProductWrite, requestCheck } from "@/server/collections/runner";
 import { collectionsByTerm } from "@/server/collections/service";
 import type {
@@ -14,6 +16,7 @@ import { readCatalogTrees, type CatalogTrees } from "@/server/vetrina/catalog";
 import { publishRail, readRail } from "@/server/vetrina/service";
 import { VetrinaError } from "@/server/vetrina/source";
 import type { WooClient } from "@/server/woo/client";
+import { dropAliasesOf, recordAlias, repointAliases, aliasesLeadingTo } from "@/server/woo/term-aliases";
 import { chunks, mapLimit, resolveTarget, rowsInOrder, termName, wholeTermAction } from "./context";
 import { patchSnapshotSales, readFresh, readSizes, settleBatch, writeSales, type SaleWrite } from "./live";
 import {
@@ -39,6 +42,8 @@ import { findTag } from "./preview";
 import * as repo from "./repo";
 import { pinnable, railFill, sectionMembers } from "./sections";
 import { heldByTermHides, heldTerms, standingTermHide, standingTermHides, termNewcomers } from "./standing";
+import { childrenIn, namedUnder, readTerms, removalRefusal, REST, snapshotOf, termIn, tiesOf } from "./term-facts";
+import { runPriceMatch, undoPriceMatch } from "./price-match";
 import { words } from "./words";
 
 /**
@@ -203,8 +208,8 @@ export async function sweepTermHides(client: WooClient): Promise<number> {
  * Tags and categories
  * ---------------------------------------------------------------- */
 
-type TermField = "tags" | "categories";
-type TermChange = { add: number } | { remove: number };
+type TermField = "tags" | "categories" | "brands";
+type TermChange = { add: number } | { remove: number } | { replace: number; with: number };
 
 /**
  * Add or remove one tag or category on these products: their whole lists
@@ -495,18 +500,25 @@ const sameList = (a: readonly number[], b: readonly number[]) => a.length === b.
  * ---------------------------------------------------------------- */
 
 /** An action on products: every kind the background runner knows. */
-const isCatalogInput = (input: ActionInput): input is OperationInput => !isPageActionKind(input.kind);
+const isCatalogInput = (input: ActionInput): input is OperationInput =>
+  !isPageActionKind(input.kind) && !isMenuActionKind(input.kind) && !isTermActionKind(input.kind);
 
 /** Run an action over its target, resolved again now: a catalog query acts on what it matches when it runs. */
 export async function runOperation(ctx: RunCtx): Promise<void> {
   const input = ctx.op.input;
   // The homepage's own actions are written at once (page.ts), never queued here.
-  if (isPageActionKind(input.kind)) throw new Error(`a homepage action is not run in the background: ${input.kind}`);
+  if (isPageActionKind(input.kind) || isMenuActionKind(input.kind) || isTermActionKind(input.kind)) {
+    throw new Error(`an action done at once is not run in the background: ${input.kind}`);
+  }
   // A margin is a pricing rule and a reprice, not writes product by product (margin.ts).
   if (input.kind === "margin") return runMargin(ctx, input);
   // An order is placed over its term's whole order, not product by product over the target (order.ts).
   if (input.kind === "order") return runOrder(ctx, input);
   if (input.kind === "sourceOrder") return runSourceOrder(ctx, input);
+  // A term merged or deleted: its products, then the term itself (below).
+  if (input.kind === "termMerge" || input.kind === "termDelete") return runTermRemoval(ctx, input);
+  // Prices matched to another site's: locks through the sync, or a simple product's own price (price-match.ts).
+  if (input.kind === "priceMatch") return runPriceMatch(ctx, input);
   if (!isCatalogInput(input)) return;
   const { ids, trees } = await resolveTarget(input.target, { wholeTerm: wholeTermAction(input) });
   ctx.tally.total = ids.length;
@@ -766,6 +778,9 @@ async function undoSection(section: OperationSectionRecord): Promise<void> {
 export async function runUndo(ctx: RunCtx, items: Item[], section: OperationSectionRecord | null): Promise<OperationUndoOutcome> {
   // A margin's undo puts its rule back and reprices (margin.ts): its record is the rule, not products' values.
   if (ctx.op.kind === "margin") return undoMargin(ctx);
+  // A term merged or deleted: made again first, then its products given back to it.
+  if (ctx.op.kind === "termMerge" || ctx.op.kind === "termDelete") return undoTermRemoval(ctx, items);
+  if (ctx.op.kind === "priceMatch") return undoPriceMatch(ctx.client, items);
   const out: UndoTally = { restored: new Set(), kept: new Set(), failed: new Set(), held: new Set() };
   const of = (field: Item["field"]) => items.filter((i) => i.field === field);
   ctx.tally.done = 0;
@@ -785,4 +800,154 @@ export async function runUndo(ctx: RunCtx, items: Item[], section: OperationSect
     failed: out.failed.size,
     ...(out.held.size > 0 ? { held: out.held.size, heldBy: out.heldBy ?? [] } : {}),
   };
+}
+
+/* ---------------------------------------------------------------- *
+ * A term merged or deleted
+ * ---------------------------------------------------------------- */
+
+const fieldOf = (taxonomy: TermTaxonomy): TermField => (taxonomy === "category" ? "categories" : taxonomy === "brand" ? "brands" : "tags");
+
+/** Products read again after a pass, for those that came to the term meanwhile: a few passes at most. */
+const PASSES = 3;
+
+/**
+ * A merge or a deletion: every product holding the term — read live, every
+ * status but the trash — holds `into` instead, or lets go of it, product by
+ * product, each filed for "Annulla" (as "Togli dalla categoria" does);
+ * a merge's sub-terms go under `into`; then the term itself is deleted, a
+ * merge's name left as an alias of `into` (for Publish). A product the store
+ * refuses keeps the term, and so does the store: the term is deleted only
+ * once nothing holds it, or WordPress would let go of products with no way
+ * back.
+ */
+async function runTermRemoval(ctx: RunCtx, input: Extract<OperationInput, { kind: "termMerge" | "termDelete" }>): Promise<void> {
+  const tx = input.taxonomy;
+  const field = fieldOf(tx);
+  const kind = REST[tx];
+  const list = await readTerms(ctx.client, tx);
+  const term = termIn(list, input.termId, tx);
+  const into = input.kind === "termMerge" ? termIn(list, input.into, tx) : null;
+  // What leans on it, again as the run starts: a homepage section or a rule may have come since it was confirmed.
+  const refusal = removalRefusal(term.name, await tiesOf(tx, term.id)) ?? (into && (await tiesOf(tx, into.id)).automatic ? words().error.automatic(into.name) : null);
+  if (refusal) throw new VetrinaError("invalid", refusal, 400);
+
+  const record: Extract<OperationTermRecord, { kind: "termMerge" | "termDelete" }> = {
+    kind: input.kind,
+    taxonomy: tx,
+    term: await snapshotOf(ctx.client, tx, term),
+    into: into ? { id: into.id, name: into.name } : null,
+    children: [],
+    deleted: false,
+    aliases: [],
+  };
+  await repo.setTermRecord(ctx.op.id, record);
+
+  const change: TermChange = into ? { replace: term.id, with: into.id } : { remove: term.id };
+  const moves: TermMove[] = [];
+  const seen = new Set<number>();
+  let written = 0;
+  let ids = await ctx.client.productIdsInTerm(kind, term.id);
+  ctx.tally.total = ids.length + 1;
+  await ctx.step();
+  for (let pass = 0; pass < PASSES && ids.length > 0; pass++) {
+    for (const chunk of chunks(ids, CHUNK)) {
+      const outcome = await writeTerms(ctx.op, ctx.client, chunk, field, change);
+      for (const id of chunk) seen.add(id);
+      written += outcome.written.length;
+      moves.push(...outcome.moves);
+      ctx.tally.changed += outcome.written.length;
+      ctx.tally.failed += outcome.refused.length;
+      ctx.tally.done += chunk.length;
+      await ctx.step();
+    }
+    // Products that came to the term while it ran: another pass, for them only.
+    const left = await ctx.client.productIdsInTerm(kind, term.id);
+    ids = left.filter((id) => !seen.has(id));
+    if (ids.length === 0 && left.length > 0) {
+      // Products the store refused still hold it: the term stays, and the run says so.
+      throw new VetrinaError("failed", words().term.stillHeld(term.name, left.length));
+    }
+    ctx.tally.total += ids.length;
+  }
+  if (written > 0) requestCheck();
+  await repriceMoved(moves);
+
+  // A merge's sub-terms go under the term merged into (one whose name is taken there moves up with the deletion instead).
+  if (into) {
+    for (const child of childrenIn(list, term.id)) {
+      const name = list.get(child)!.name;
+      if (namedUnder(list, name, into.id, child)) continue;
+      try {
+        await ctx.client.updateStoreTerm(kind, child, { parent: into.id });
+        record.children.push(child);
+      } catch {
+        // WordPress's own way, then: up to the deleted term's parent.
+      }
+    }
+  } else {
+    record.children = childrenIn(list, term.id);
+  }
+  // The aliases that led to it: to the term merged into now (a deletion's are kept for "Annulla", leading nowhere till then).
+  record.aliases = (await aliasesLeadingTo(tx, term.id)).map((a) => a.id);
+  if (into) await repointAliases(record.aliases, into.id);
+  await repo.setTermRecord(ctx.op.id, record);
+
+  await ctx.client.deleteStoreTerm(kind, term.id);
+  record.deleted = true;
+  await repo.setTermRecord(ctx.op.id, record);
+  ctx.tally.done += 1;
+  // The term itself is a change too: an empty term deleted has its "Annulla" all the same.
+  ctx.tally.changed += 1;
+  await ctx.step();
+  // Publish files what comes under the old name into the term it was merged into.
+  if (into && tx !== "tag") {
+    await recordAlias({ taxonomy: tx, parent: term.parent, name: term.name, termId: into.id, operationId: ctx.op.id }).catch(() => undefined);
+  }
+}
+
+/**
+ * Its "Annulla": the term made again (its name, slug, parent and
+ * description; a new id — WordPress gives no old one back), a merge's
+ * sub-terms back under it, its aliases leading to it again; then each
+ * product's terms as they were, the old id read as the new one — a product
+ * changed since stays as it is.
+ */
+async function undoTermRemoval(ctx: RunCtx, items: Item[]): Promise<OperationUndoOutcome> {
+  const record = ctx.op.term;
+  if (!record || (record.kind !== "termMerge" && record.kind !== "termDelete")) throw new VetrinaError("invalid", words().error.nothingToUndo, 400);
+  const w = words().term;
+  const tx = record.taxonomy;
+  const kind = REST[tx];
+  let id = record.term.id;
+  if (record.deleted) {
+    const list = await readTerms(ctx.client, tx);
+    const parent = record.term.parent;
+    if (parent && !list.has(parent)) throw new VetrinaError("stale", w.parentGoneNow(record.term.name), 409);
+    if (namedUnder(list, record.term.name, parent)) throw new VetrinaError("stale", w.takenNow(tx, record.term.name), 409);
+    const made = await ctx.client.createStoreTerm(kind, {
+      name: record.term.name,
+      ...(parent ? { parent } : {}),
+      slug: record.term.slug,
+      ...(record.term.description ? { description: record.term.description } : {}),
+    });
+    id = made.id;
+    // Its sub-terms back under it: those still where the action left them.
+    const left = record.into ? record.into.id : parent;
+    for (const child of record.children) {
+      if (list.get(child)?.parent !== left) continue;
+      await ctx.client.updateStoreTerm(kind, child, { parent: id }).catch(() => undefined);
+    }
+    await repointAliases(record.aliases, id);
+    await dropAliasesOf(ctx.op.id);
+  }
+  const field = fieldOf(tx);
+  const remap = (list: unknown) => (list as number[]).map((x) => (x === record.term.id ? id : x));
+  const mapped = items.filter((i) => i.field === field).map((i) => ({ ...i, before: remap(i.before), after: remap(i.after) }));
+  const out: UndoTally = { restored: new Set(), kept: new Set(), failed: new Set(), held: new Set() };
+  ctx.tally.done = 0;
+  ctx.tally.total = productsOf(mapped).length;
+  await ctx.step();
+  await undoTerms(ctx, mapped, field, out);
+  return { restored: out.restored.size, kept: out.kept.size, failed: out.failed.size };
 }

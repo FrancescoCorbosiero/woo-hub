@@ -1,4 +1,4 @@
-import type { OrderSourceItem, SourceMatchSummary, UnmatchedItem } from "@/lib/vetrina/order-sources";
+import type { OrderSourceItem, SourceMatchSummary, SourcePairs, UnmatchedItem } from "@/lib/vetrina/order-sources";
 import { nameKey, skuKey } from "./format";
 
 /**
@@ -125,6 +125,58 @@ export function matchSource(items: readonly OrderSourceItem[], products: readonl
       taken.add(id);
       ranked.push(id);
     }
+  });
+  return { ranked, perItem, unmatched };
+}
+
+/** An item's key in a source's pairs: its SKU, else its name (SourcePairs). */
+export function pairKey(item: OrderSourceItem): string {
+  const sku = skuKey(item.sku ?? "");
+  return sku ? `sku:${sku}` : `name:${nameKey(item.name ?? "")}`;
+}
+
+/**
+ * The match, with the items paired by hand (SourcePairs, the comparison)
+ * honoured: a pair's product is its item's, and no other item takes it; a
+ * pair of null leaves its item out ("none of the shop's"). The rest are
+ * matched as ever, without those products — so a name two products fitted
+ * may now fit the one left. A pair whose product is no longer in the shop
+ * counts for nothing: the matcher's answer stands.
+ */
+export function matchPaired(
+  items: readonly OrderSourceItem[],
+  products: readonly MatchProduct[],
+  pairs: SourcePairs | null | undefined,
+): SourceMatch {
+  if (!pairs || Object.keys(pairs).length === 0) return matchSource(items, products);
+  const known = new Set(products.map((p) => p.id));
+  /** By index: the product paired, or null for "none". */
+  const paired = new Map<number, number | null>();
+  const claimed = new Set<number>();
+  items.forEach((item, i) => {
+    const pair = pairs[pairKey(item)];
+    if (pair === null) paired.set(i, null);
+    else if (pair !== undefined && known.has(pair) && !claimed.has(pair)) {
+      paired.set(i, pair);
+      claimed.add(pair);
+    }
+  });
+  if (paired.size === 0) return matchSource(items, products);
+  const rest = matchSource(
+    items.map((item, i) => (paired.has(i) ? { sku: null, name: null } : item)),
+    products.filter((p) => !claimed.has(p.id)),
+  );
+  const ambiguousAt = new Set(rest.unmatched.filter((u) => u.ambiguous).map((u) => u.position));
+  const perItem = rest.perItem.map((ids, i) => {
+    if (!paired.has(i)) return ids;
+    const id = paired.get(i);
+    return id == null ? [] : [id];
+  });
+  const ranked: number[] = [];
+  const unmatched: UnmatchedItem[] = [];
+  perItem.forEach((ids, i) => {
+    if (ids.length > 0) ranked.push(...ids);
+    else unmatched.push({ position: i + 1, sku: items[i].sku, name: items[i].name, ambiguous: ambiguousAt.has(i + 1) });
   });
   return { ranked, perItem, unmatched };
 }

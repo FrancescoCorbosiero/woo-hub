@@ -1,0 +1,1 @@
+ALTER TABLE "vetrina_order_sources" ADD COLUMN "pairs" jsonb;

@@ -1,5 +1,5 @@
 import "server-only";
-import type { WooClient } from "./client";
+import type { StoreTermKind, WooClient } from "./client";
 
 /**
  * The store's taxonomy listings — attributes (the size one included), brands,
@@ -67,9 +67,23 @@ export function withTaxonomyCache(client: WooClient): WooClient {
             thenForget("categories", () => target.createCategory(name, parent));
         case "createAttributeTerm":
           return (id: number, name: string) => thenForget(`terms:${id}`, () => target.createAttributeTerm(id, name));
+        // The taxonomy actions: each write drops its taxonomy's list, so the catalog and Publish see it at once.
+        case "createStoreTerm":
+          return (kind: StoreTermKind, body: { name: string; parent?: number; slug?: string; description?: string }) =>
+            thenForget(kind, () => target.createStoreTerm(kind, body));
+        case "updateStoreTerm":
+          return (kind: StoreTermKind, id: number, body: { name?: string; parent?: number }) =>
+            thenForget(kind, () => target.updateStoreTerm(kind, id, body));
+        case "deleteStoreTerm":
+          return (kind: StoreTermKind, id: number) => thenForget(kind, () => target.deleteStoreTerm(kind, id));
       }
       const value = Reflect.get(target, prop, target);
       return typeof value === "function" ? value.bind(target) : value;
     },
   });
+}
+
+/** Forget a taxonomy's list (its REST collection's name), for a write made without the cached client. */
+export function forgetTaxonomy(kind: StoreTermKind): void {
+  cache.delete(kind);
 }

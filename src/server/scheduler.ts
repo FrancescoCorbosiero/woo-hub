@@ -11,10 +11,12 @@ import {
   slotMissed,
   type AutoSync,
 } from "@/lib/schedule";
+// eslint-disable-next-line no-restricted-imports -- predates the boundary rule; hoisted into src/server in weeks 3-6 (docs/middleware-readiness.md §6)
 import { runKicksdbRefresh } from "@/server/actions/feeds";
 import { kicksdbConfigured } from "@/server/adapters/kicksdb";
 import { db } from "@/server/db/client";
 import { schedulerRuns, type SchedulerRunRow } from "@/server/db/schema";
+import { isWriter } from "@/server/writer";
 
 /**
  * In-app scheduler: the app syncs itself, no external cron needed.
@@ -842,6 +844,11 @@ export function startScheduler(): void {
   const enabled =
     env.SCHEDULER === "on" || (env.SCHEDULER === undefined && process.env.NODE_ENV === "production");
   if (!enabled) return;
+  // One writer per shop (src/server/writer.ts): this process serves, another one syncs.
+  if (!isWriter()) {
+    console.log("[scheduler] not started: HUB_ROLE=web — the writer process (HUB_ROLE=writer) runs the syncs");
+    return;
+  }
 
   // Dev hot-reload can re-run instrumentation; never double the timers.
   if (s.started) return;

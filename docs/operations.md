@@ -4,19 +4,21 @@ How the Vetrina changes the shop, whoever asks: the owner on its screens, a
 script over the API ([api.md](api.md)), an assistant acting for the owner.
 They all run the same actions, through the same code, into the same log —
 and anything asked from outside the screens goes through a **proposal** the
-owner says yes to.
+owner says yes to: a person, never the program that asked.
 
 ## Actions
 
 Every change is an **action**: a named kind with a typed input, checked on the
-server, previewed, filed in the log, and undoable. Two families:
+server, previewed, filed in the log, and undoable. Four families:
 
 | Scope | Kinds | Runs |
 |---|---|---|
-| **catalog** — products | `hide`, `show`, `sale`, `unsale`, `tag`, `untag`, `categorize`, `uncategorize`, `pin`, `margin`, `order`, `sourceOrder`, `delete` | in the background, one at a time, product by product (`operations/runner.ts`, `writes.ts`, `remove.ts`) |
+| **catalog** — products | `hide`, `show`, `sale`, `unsale`, `tag`, `untag`, `categorize`, `uncategorize`, `pin`, `margin`, `order`, `sourceOrder`, `priceMatch`, `delete` | in the background, one at a time, product by product (`operations/runner.ts`, `writes.ts`, `remove.ts`; `price-match.ts`: another shop's prices, as locks the sync keeps — [order-sources.md](order-sources.md#allinea-i-prezzi-pricematch)) |
 | **homepage** — sections and blocks | `sectionSwitch`, `sectionMove`, `sectionsArrange`, `sectionAdd`, `sectionRemove`, `sectionSource`, `sectionEdit`, `blockEdit` | at once: one write to the page, a WordPress revision (`operations/page.ts`) |
+| **menu** — the site's navigation menus | `menuItemAdd`, `menuItemMove`, `menuItemRemove`, `menuItemRename`, `menuCreate`, `menuRename`, `menuDelete`, `menuLocation` | at once: the menu's changed items, in WordPress's batches, put back if WordPress takes only part; a whole menu in one request (`operations/menu.ts`, [menus.md](menus.md)) |
+| **taxonomy** — the store's categories, brands and tags | `termCreate`, `termRename`, `termMove` (at once); `termMerge`, `termDelete` (in the background, product by product, the term last) | `operations/terms.ts`, `writes.ts`; a renamed, moved or merged term leaves an alias for Publish ([taxonomy.md](taxonomy.md)) |
 
-The types are in `src/lib/vetrina/catalog-ops.ts` and `page-ops.ts`. One
+The types are in `src/lib/vetrina/catalog-ops.ts`, `page-ops.ts` and `menu-ops.ts`. One
 registry describes them all for programs (`operations/registry.ts`): what each
 does, how it is undone, a valid example, and its input as JSON Schema made
 from the very schema the server checks (`GET /api/v1/actions`).
@@ -25,7 +27,7 @@ Before it runs, an action is **assessed** on the shop as it is: refused when it
 could not run (the same refusals the write would give: a section already off,
 a product already in that place, a list the config does not allow), and
 otherwise previewed — the products it changes, before → after, those it leaves
-as they are and why, what the owner should know; a homepage action in
+as they are and why, what the owner should know; a homepage or menu action in
 sentences.
 
 ## The log
@@ -35,6 +37,10 @@ Every action is a row of `vetrina_operations`, kept 30 days:
 - its label, rendered in the reader's language each time it is shown;
 - **how it came** (`via`): `app` (the screens), `api`, `assistant`,
   `scheduler` — the Attività sheet says it beside the time;
+- **who** (`actor`, `undone_by`; `src/lib/actors.ts`): the person signed in
+  on the screens (`user:<name>`, Authelia's `Remote-User`), or the API's
+  caller by its token's name (`token:<name>`) — for a proposal's action, the
+  person who confirmed it; and who undid it;
 - how it went (status, progress, products changed and refused);
 - its way back.
 
@@ -50,6 +56,10 @@ puts back what the action changed, where nobody changed it since:
   is refused: the newer change stands. A move goes back only while the
   sections are exactly as it left them; a section taken away goes back next to
   the same neighbour, with its texts, products and settings.
+- **A menu action**: the same, item by item — found by id and by its
+  neighbour, put back while it is as the action left it, refused when it
+  changed since. A taken-away item comes back where it was, with its label
+  and settings, and its items back under it.
 
 The screens' own toasts carry the log's "Annulla" — the same one Attività
 offers later.
@@ -71,15 +81,23 @@ propose(action) ──► open ──confirm──► same preview ──► con
    kept with its fingerprint (sha256 of the preview as stable JSON) and its
    language. The answer has the preview **in sentences** (`summary`) — what the
    owner should read before saying yes.
-2. **confirm**: one confirmation takes it (two at once cannot both run it).
-   The preview is made again, in the proposal's language. The same fingerprint:
-   the action runs, filed in the log with the proposal's `via`. Another: nothing
-   runs — a new proposal takes its place, with the new preview, and comes back
-   with the refusal. Confirmed again later, it answers the action it started.
+2. **confirm**: by a person only — someone signed in on the screens, or a
+   token holding the `confirm` scope, which only a person keeps
+   ([api.md](api.md#tokens)); anything else is refused before anything is
+   read. One confirmation takes it (two at once cannot both run it). The
+   preview is made again, in the proposal's language. The same fingerprint:
+   the action runs, filed in the log with the proposal's `via` and the
+   confirmer as its `actor`. Another: nothing runs — a new proposal takes its
+   place, with the new preview, and comes back with the refusal. Confirmed
+   again later, it answers the action it started. The proposal keeps who
+   proposed it (`actor`) and who decided it (`confirmed_by`).
 
 So the owner's yes is always to the preview they read: a price that moved, a
 product that left the category, a section someone moved meanwhile — each
-makes a new proposal rather than a surprise.
+makes a new proposal rather than a surprise. And it is always the owner's: a
+token that may only read and propose — an assistant's — cannot confirm what
+it proposed, nor start an action in one call (`POST /catalog/order` and
+`/order-sources/{id}/apply` answer it with a proposal).
 
 ## For an assistant
 
@@ -91,10 +109,11 @@ process (so its actions are filed with `via: "assistant"`):
 | read the homepage | `readHomepage()` — `src/server/api/reads.ts` |
 | find products | `readProducts(query)` — the query an action's target takes |
 | list categories, brands | `listTerms(taxonomy)` — `src/server/api/catalog-order.ts` |
+| read the menus, the places, the pages | `listMenus()`, `readMenu(id)` (with its `digest`), `listPlaces()`, `listPages()` — `src/server/api/menus.ts` |
 | read the log | `listOperations(limit)` |
-| propose an action | `propose(action, "assistant")` — one tool per kind from the registry, its input the kind's JSON Schema |
-| confirm | `confirmProposal(id)` |
-| undo | `undoOperation(id)` |
+| propose an action | `propose(action, "assistant", by)` — one tool per kind from the registry, its input the kind's JSON Schema |
+| confirm | `confirmProposal(id, by)` — `by` a person (`isPerson`), never the assistant's own token |
+| undo | `undoOperation(id, by)` |
 
 The flow it follows: read → propose → show the owner the summary → on their
 yes, confirm → if the shop changed, show the new summary and ask again. The

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nameKey, parseOrderSource, skuKey } from "./format";
+import { nameKey, parseOrderSource, priceOf, skuKey } from "./format";
 import { looksLikeHomepage } from "@/lib/vetrina/order-sources";
 import { matchSource, matchSummary, type MatchProduct } from "./match";
 
@@ -66,6 +66,41 @@ describe("parseOrderSource — the agreed format", () => {
       { sku: "DD1391-100", name: "Nike Dunk Low; Panda" },
       { sku: null, name: "adidas Samba" },
     ]);
+  });
+
+  it("keeps each product's price there, however the list writes it, and none where it gives none", () => {
+    expect(
+      items(
+        JSON.stringify({
+          items: [
+            { sku: "DD1391-100", price: 129.99 },
+            { name: "adidas Samba OG", prezzo: "119,90 €" },
+            { name: "Jordan 4 Retro", price: "€ 1.299,00" },
+            { name: "ASICS Gel-NYC", price: "n/d" },
+          ],
+        }),
+      ),
+    ).toEqual([
+      { sku: "DD1391-100", name: null, price: 129.99 },
+      { sku: null, name: "adidas Samba OG", price: 119.9 },
+      { sku: null, name: "Jordan 4 Retro", price: 1299 },
+      { sku: null, name: "ASICS Gel-NYC" },
+    ]);
+    expect(items('sku;name;prezzo\nDD1391-100;Nike Dunk Low;"129,99"\nIE3437;adidas Samba;')).toEqual([
+      { sku: "DD1391-100", name: "Nike Dunk Low", price: 129.99 },
+      { sku: "IE3437", name: "adidas Samba" },
+    ]);
+  });
+
+  it("reads a price as a person or a shop writes it", () => {
+    expect(priceOf(129.99)).toBe(129.99);
+    expect(priceOf("129,99 €")).toBe(129.99);
+    expect(priceOf("€ 1.299,00")).toBe(1299);
+    expect(priceOf("$1,299.50")).toBe(1299.5);
+    expect(priceOf("1,299")).toBe(1299);
+    expect(priceOf("EUR 89")).toBe(89);
+    expect(priceOf("da 129 €")).toBe(129);
+    for (const none of ["", "gratis", 0, -5, null, undefined, Number.NaN]) expect(priceOf(none)).toBeNull();
   });
 
   it("reads one product per line, numbered or not, with or without a code first", () => {
@@ -217,7 +252,7 @@ describe("the LLM's instructions", () => {
     for (const prompt of [sourcesIt.llmPrompt, sourcesEn.llmPrompt]) {
       const example = prompt.slice(prompt.indexOf("{"), prompt.lastIndexOf("}") + 1).replace(/<[^>]+>/g, "X1234-100");
       const res = parseOrderSource(example);
-      expect(res.ok && res.source.items).toEqual([{ sku: "X1234-100", name: "X1234-100" }]);
+      expect(res.ok && res.source.items).toEqual([{ sku: "X1234-100", name: "X1234-100", price: 129.99 }]);
     }
   });
 });

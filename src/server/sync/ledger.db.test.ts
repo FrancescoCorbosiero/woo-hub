@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * THROWAWAY Postgres with the migrations applied, and they empty the feed, the
  * ledger, the overrides and the snapshot. Run with
  *
- *   RUN_DB_TESTS=1 DATABASE_URL=postgres://…@localhost:…/… REDIS_URL=… npm test
+ *   DATABASE_URL=postgres://…@localhost:…/hub_test npm run test:db
  *
  * (without KICKS_SECRET: the products here are the GoldenSneakers feed's).
  * Imports are dynamic because the db client validates the environment on load.

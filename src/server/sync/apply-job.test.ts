@@ -2,6 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getApplyJob, runningApplyJob, startApplyJob, type ApplyProgress } from "./apply-job";
 import type { ApplyOutcome } from "@/server/woo/apply";
 
+// Which process this is (HUB_ROLE, src/server/writer.ts): the writer unless a test says otherwise.
+const env = vi.hoisted(() => ({ HUB_ROLE: undefined as "writer" | "web" | undefined }));
+vi.mock("@/lib/env", () => ({ env }));
+
 const outcome = { auditId: "a1", dryRun: false, status: "applied", updated: 3 } as ApplyOutcome;
 
 /** A stand-in apply the test finishes by hand. */
@@ -25,6 +29,7 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 describe("the Sync tab's live apply, in the background", () => {
   beforeEach(() => {
     delete (globalThis as { __storeHubApplyJobs?: unknown }).__storeHubApplyJobs;
+    env.HUB_ROLE = undefined;
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -85,6 +90,18 @@ describe("the Sync tab's live apply, in the background", () => {
     const read = getApplyJob(job.id)!;
     read.status = "failed";
     expect(getApplyJob(job.id)?.status).toBe("running");
+  });
+
+  it("starts only in the writer process: a second process on the same database never writes", async () => {
+    env.HUB_ROLE = "web";
+    const apply = vi.fn(deferred().run);
+    expect(() => startApplyJob(apply)).toThrow(/HUB_ROLE=web/);
+    await settle();
+    expect(apply).not.toHaveBeenCalled();
+    expect(runningApplyJob()).toBeNull();
+
+    env.HUB_ROLE = "writer";
+    expect(startApplyJob(deferred().run)).toMatchObject({ status: "running" });
   });
 
   it("an unknown job reads as gone (the server restarted), and a finished one is forgotten after an hour", async () => {

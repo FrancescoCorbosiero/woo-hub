@@ -8,7 +8,7 @@ import type { ScopedPricingRule } from "@core/config";
  * margin set from the Vetrina meanwhile is never dropped, nor a removed one
  * brought back. Opt-in, like the other DB suites:
  *
- *   RUN_DB_TESTS=1 DATABASE_URL=postgres://…@localhost:…/… npm test
+ *   DATABASE_URL=postgres://…@localhost:…/hub_test npm run test:db
  *
  * The suite puts back the config it found.
  */

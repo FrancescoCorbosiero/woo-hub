@@ -1,12 +1,13 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { Button, Preloader } from "konsta/react";
 import { toast } from "sonner";
 import { useI18n } from "@/i18n/provider";
 import { looksLikeHomepage, type OrderSourceCheck, type OrderSourceSummary, type UnmatchedItem } from "@/lib/vetrina/order-sources";
 import { checkOrderSource, deleteOrderSource, saveOrderSource } from "@/server/actions/vetrina-order-sources";
-import { ChevronLeft } from "../../icons";
+import { ChevronLeft, ChevronRight } from "../../icons";
 import { call } from "../act/call";
 import { Warning } from "../act/icons";
 import { formatTime } from "../act/model";
@@ -275,6 +276,17 @@ function SourceView({
             )}
           </div>
         )}
+        <Link
+          href={`/vetrina/catalogo/classifica/${source.id}`}
+          onClick={onClose}
+          className={`${CARD} flex w-full items-center gap-3 px-4 py-3 text-start active:opacity-60`}
+        >
+          <span className="min-w-0 flex-1">
+            <span className="block text-[16px] text-primary">{s.compare.open}</span>
+            <span className="mt-0.5 block text-[13px] leading-snug opacity-60">{s.compare.openHint}</span>
+          </span>
+          <ChevronRight className="h-5 w-5 shrink-0 opacity-30" />
+        </Link>
         <UnmatchedCard unmatched={source.unmatched} total={source.unmatchedCount} />
         <p className="px-1 text-[13px] leading-snug opacity-60">{s.applyAllHint}</p>
         {confirming ? (

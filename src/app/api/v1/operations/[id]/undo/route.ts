@@ -7,9 +7,10 @@ export const dynamic = "force-dynamic";
 /**
  * POST /api/v1/operations/{id}/undo — "Annulla": each value back where the
  * store still shows what the action wrote. Runs in the background (202):
- * follow it at /api/v1/operations/{id}. See docs/api.md.
+ * follow it at /api/v1/operations/{id}. Needs undo; the log files who undid
+ * it. See docs/api.md.
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  return serve(req, () => undoOperation(operationId(id)), 202);
+  return serve(req, "undo", (_req, caller) => undoOperation(operationId(id), caller), 202);
 }

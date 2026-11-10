@@ -1,4 +1,6 @@
+import type { TermActionInput, TermTaxonomy } from "./term-ops";
 import type { CatalogQuery, CatalogTaxonomy } from "./catalog";
+import type { MenuActionInput } from "./menu-ops";
 import type { PageActionInput, PageActionKind } from "./page-ops";
 
 /**
@@ -129,15 +131,48 @@ export type OperationInput =
    * the feed decides what is in the shop, and would only bring it back.
    * "Annulla" takes it out of the trash, sizes and all.
    */
-  | { kind: "delete"; target: OperationTarget };
+  | { kind: "delete"; target: OperationTarget }
+  /**
+   * A category, a brand or a tag merged into another: every product holding
+   * it holds `into` instead (product by product, each filed for "Annulla"),
+   * its sub-terms go under `into`, and then it is deleted — its old name kept
+   * as an alias of `into`, for Publish (src/lib/vetrina/term-ops.ts).
+   */
+  | { kind: "termMerge"; taxonomy: TermTaxonomy; termId: number; into: number }
+  /**
+   * A category, a brand or a tag deleted: every product holding it lets go of
+   * it (product by product, each filed for "Annulla"; a product left with no
+   * category goes to the shop's default one, as WooCommerce does), then the
+   * term itself, its sub-terms moving up to its parent. "Annulla" makes it
+   * again and gives it back its products.
+   */
+  | { kind: "termDelete"; taxonomy: TermTaxonomy; termId: number }
+  /**
+   * "Allinea i prezzi": each product's sizes moved by one amount, so that its
+   * cheapest size costs `price` — the price another site (a list compared
+   * with the shop: order sources) shows for it. A product the Hub prices
+   * gets the new prices as locks, written through the ordinary sync, so the
+   * engine (KicksDB) never writes over them; a simple product the Hub does
+   * not price gets its own regular price. Left as they are, and said why: a
+   * product on sale, one with no price of the Hub's, one at that price
+   * already. "Annulla" puts each lock (or price) back while it is as the
+   * action left it.
+   */
+  | {
+      kind: "priceMatch";
+      items: { productId: number; price: number }[];
+      /** The list compared with the shop, by name: for the log's label. */
+      source?: string | null;
+    };
 
 export type OperationKind = OperationInput["kind"];
 
 /**
- * Every action the log files: the catalog's, on products (above), and the
- * homepage's own, on its sections and blocks (page-ops.ts).
+ * Every action the log files: the catalog's, on products (above), the
+ * homepage's own, on its sections and blocks (page-ops.ts), and the site's
+ * navigation menus' (menu-ops.ts).
  */
-export type ActionInput = OperationInput | PageActionInput;
+export type ActionInput = OperationInput | PageActionInput | MenuActionInput | TermActionInput;
 export type ActionKind = ActionInput["kind"];
 
 /** A term's margin, as the owner sets it: a percent on the market price. */
@@ -231,10 +266,16 @@ export interface OperationPreview {
   /** Optional (added in phase 4): a margin's own numbers; absent when the margin cannot be applied (a refusal leads the warnings). */
   margin?: MarginPreview;
   /**
-   * A homepage action's preview (it changes no product): what it does, in
-   * sentences — for a reader without the screens, the API or an assistant.
+   * An action done at once — the homepage's, a menu's — previewed (it changes
+   * no product): what it does, in sentences — for a reader without the
+   * screens, the API or an assistant.
    */
   page?: { lines: string[] };
+  /**
+   * A menu action's: the menu it was previewed on, by its fingerprint — a
+   * proposal confirmed over a menu changed since makes a new one.
+   */
+  menu?: { id: number; digest: string };
 }
 
 export type OperationStatus = "running" | "done" | "failed" | "undoing" | "undone";
@@ -255,6 +296,13 @@ export interface OperationView {
   status: OperationStatus;
   /** How it came: "app" for the Vetrina's own screens. */
   via: OperationVia;
+  /**
+   * Optional (added with the API's callers): who asked — "user:<name>" signed
+   * in on the screens, "token:<caller>" over the API; for a proposal's
+   * action, the person who confirmed it (src/lib/actors.ts). Null when
+   * nobody was signed in.
+   */
+  actor?: string | null;
   progress: { done: number; total: number };
   /** Products changed, and refused by the store. */
   changed: number;
@@ -270,6 +318,8 @@ export interface OperationView {
    */
   undoable: boolean;
   undoneAt: string | null;
+  /** Optional (added with the API's callers): who undid it, as `actor` says who. */
+  undoneBy?: string | null;
   /** Optional (added in phase 3): waiting for the action before it to finish (status "running", or "undoing" for its undo). */
   queued?: boolean;
   /**

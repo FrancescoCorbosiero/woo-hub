@@ -8,6 +8,7 @@ import {
   type SmartCollection,
 } from "@core/collections";
 import { env } from "@/lib/env";
+import { assertWriter, isWriter, NOT_WRITER } from "@/server/writer";
 import type { WooClient } from "@/server/woo/client";
 import { pageVerdict } from "@/server/woo/paginate";
 import { gmtToIso, parentsOf, toIndexRow, type IndexRow } from "./index-rows";
@@ -35,7 +36,9 @@ import { storeClient, storeReady } from "./store";
  * product's categories from two different readings is the one thing this
  * must never do. State lives on globalThis, like the scheduler's: the
  * instrumentation bundle and the server actions each get their own copy of
- * this module.
+ * this module. So the queue runs in one process only, the writer (HUB_ROLE,
+ * src/server/writer.ts): elsewhere a run is refused, a background request
+ * left to the writer's own checks.
  */
 
 const PER_PAGE = 100;
@@ -132,6 +135,7 @@ export function maxChanges(): number {
 
 /** Run `fn` after everything queued before it; its failure is remembered and passed on. */
 function exclusive<T>(kind: RunKind, fn: () => Promise<T>): Promise<T> {
+  if (!isWriter()) return Promise.reject(new Error(NOT_WRITER));
   const s = state();
   s.queued.push(kind);
   const run = s.chain.then(async () => {
@@ -171,6 +175,7 @@ function exclusive<T>(kind: RunKind, fn: () => Promise<T>): Promise<T> {
  * one of its runs.
  */
 export function queueProductWrite<T>(fn: () => Promise<T>): Promise<T> {
+  if (!isWriter()) return Promise.reject(new Error(NOT_WRITER));
   const s = state();
   const run = s.chain.then(fn);
   s.chain = run.then(
@@ -513,7 +518,7 @@ const background = (run: Promise<unknown>) => void run.catch(() => undefined);
 /** From the Hub: read every product again (the editor's previews need the index), then decide. */
 export function requestFullRead(): void {
   const s = state();
-  if (!storeReady() || s.running === "full" || s.queued.includes("full")) return;
+  if (!isWriter() || !storeReady() || s.running === "full" || s.queued.includes("full")) return;
   background(
     exclusive("full", async () => {
       const woo = await storeClient();
@@ -527,7 +532,7 @@ export function requestFullRead(): void {
 /** From the Hub, on opening the editor: catch up with the store if a check is not already due. */
 export function requestCheck(): void {
   const s = state();
-  if (!storeReady() || s.queued.length > 0) return;
+  if (!isWriter() || !storeReady() || s.queued.length > 0) return;
   background(
     exclusive("check", async () => {
       const woo = await storeClient();
@@ -545,7 +550,7 @@ export function requestCheck(): void {
  */
 export function requestApply(collectionId?: string): void {
   const s = state();
-  if (!storeReady()) return;
+  if (!isWriter() || !storeReady()) return;
   if (collectionId) s.confirm.add(collectionId);
   if (s.queued.includes("apply")) return;
   background(
@@ -596,6 +601,8 @@ export async function setProductTags(
   wanted: { id?: number; name: string }[],
   opts: RunOptions & { base?: readonly number[] } = {},
 ): Promise<TagEdit> {
+  // Before a tag is made on the store: its write and its decision go through the writer's queue.
+  assertWriter();
   const woo = opts.client ?? (await storeClient());
   const ids: number[] = [];
   const missing = wanted.filter((t) => !t.id);

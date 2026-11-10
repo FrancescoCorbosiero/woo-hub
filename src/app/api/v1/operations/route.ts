@@ -13,5 +13,5 @@ export const dynamic = "force-dynamic";
 const Query = z.object({ limit: z.coerce.number().int().min(1).max(100).default(20) });
 
 export function GET(req: NextRequest) {
-  return serve(req, async () => listOperations(Query.parse(Object.fromEntries(req.nextUrl.searchParams)).limit));
+  return serve(req, "read", async () => listOperations(Query.parse(Object.fromEntries(req.nextUrl.searchParams)).limit));
 }

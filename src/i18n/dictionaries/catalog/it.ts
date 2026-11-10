@@ -1,6 +1,8 @@
+import { termsIt } from "./terms.it";
 import { actIt } from "./act.it";
 import { homeIt } from "./home.it";
 import { marginsIt } from "./margins.it";
+import { menusIt } from "./menus.it";
 import { pickerIt } from "./picker.it";
 import { opsIt } from "./ops.it";
 import { originIt } from "./origin.it";
@@ -31,4 +33,6 @@ export const catalogIt = {
   sources: sourcesIt,
   sections: sectionsIt,
   picker: pickerIt,
+  menus: menusIt,
+  terms: termsIt,
 };

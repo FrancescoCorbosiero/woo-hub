@@ -1,5 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
-import { API_TOKEN } from "./e2e/helpers";
+import { API_TOKEN, API_TOKENS } from "./e2e/helpers";
 
 /**
  * End-to-end tests: the Vetrina on its demo shop (VETRINA_SOURCE=fixture),
@@ -53,8 +53,9 @@ export default defineConfig({
       VETRINA_SOURCE: "fixture",
       SCHEDULER: "off",
       PORT: String(PORT),
-      // The programmatic API, on for its own tests.
+      // The programmatic API, on for its own tests: the token from before, and an assistant's and a phone's.
       HUB_API_TOKEN: API_TOKEN,
+      HUB_API_TOKENS: API_TOKENS,
     },
   },
 });

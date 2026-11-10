@@ -1,6 +1,6 @@
 import "server-only";
 import { asc, eq, sql } from "drizzle-orm";
-import type { OrderSourceItem } from "@/lib/vetrina/order-sources";
+import type { OrderSourceItem, SourcePairs } from "@/lib/vetrina/order-sources";
 import { db } from "@/server/db/client";
 import { vetrinaOrderSources, type VetrinaOrderSourceRow } from "@/server/db/schema";
 
@@ -50,6 +50,16 @@ export async function updateSource(
   const [updated] = await db
     .update(vetrinaOrderSources)
     .set({ ...row, updatedAt: new Date() })
+    .where(eq(vetrinaOrderSources.id, id))
+    .returning();
+  return updated ?? null;
+}
+
+/** The items paired by hand, replaced; the source's date is left alone (its list did not change). */
+export async function setSourcePairs(id: string, pairs: SourcePairs): Promise<VetrinaOrderSourceRow | null> {
+  const [updated] = await db
+    .update(vetrinaOrderSources)
+    .set({ pairs: Object.keys(pairs).length > 0 ? pairs : null })
     .where(eq(vetrinaOrderSources.id, id))
     .returning();
   return updated ?? null;

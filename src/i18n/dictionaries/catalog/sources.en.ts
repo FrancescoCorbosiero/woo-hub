@@ -69,9 +69,102 @@ export const sourcesEn: typeof sourcesIt = {
     plain: "Apply",
   },
 
+  compare: {
+    open: "Compare with the shop",
+    openHint: "Prices that differ, products missing, pairings to check.",
+    subtitle: "Compared with the shop",
+    back: "Catalog",
+    summary: (matched: number, items: number) => `${n(matched)} of ${n(items)} products in the shop`,
+    threshold: (threshold: number) => `Prices that differ: by more than ${n(threshold)}%, not by the cents.`,
+    filter: "Show",
+    tabs: {
+      prices: "Prices differ",
+      missing: "Missing",
+      uncertain: "To check",
+      all: "All",
+    },
+    theirs: "Theirs",
+    ours: "Ours",
+    gap: (gap: number) => `${gap > 0 ? "+" : gap < 0 ? "−" : ""}${Math.abs(gap).toLocaleString("en-GB", { maximumFractionDigits: 1 })}%`,
+    onSale: "on sale",
+    notPublished: "not published",
+    paired: "paired by hand",
+    pairedNone: "marked as not in the shop",
+    inCatalog: "in the Hub's catalog",
+    noSku: "no code",
+    several: "several products possible",
+    notInShop: "not in the shop",
+    empty: {
+      prices: "No price is off by more than the threshold.",
+      pricesUnknown: "The ranking has no prices: ask the LLM for them (the instructions now include them) and replace the ranking with its new answer.",
+      missing: "The shop has every product of the ranking.",
+      uncertain: "No pairing to check.",
+    },
+    pricesIntro:
+      "The shop's price is its cheapest size's, as the site shows it. “Match” brings the cheapest size there and moves the others by the same amount: on the Hub's products as locked prices, which the sync keeps.",
+    missingIntro:
+      "“Import” makes them in the shop with Publish: sizes priced by the engine and the margins, photos queued. Those without a code are looked up on KicksDB first.",
+    uncertainIntro: "Several of the shop's products could be these: pick which, or mark them as not in the shop.",
+    allIntro: "The whole ranking, in its order. Tap an entry to change its pairing.",
+    selectAll: "Select all",
+    selectNone: "Deselect",
+    selected: (count: number) => (count === 1 ? "1 selected" : `${n(count)} selected`),
+    alignTitle: "Match the prices",
+    align: (count: number) => (count === 1 ? "Match 1 price" : `Match ${n(count)} prices`),
+    import: (count: number) => (count === 1 ? "Import 1 product" : `Import ${n(count)} products`),
+    useOrder: "Arrange the whole catalog like this",
+    lookup: "Look up on KicksDB",
+    lookingUp: "Looking up on KicksDB…",
+    lookupNone: "KicksDB has no product with such a name.",
+    lookupPick: "Which one is it?",
+    chosen: (sku: string) => `To import: ${sku}`,
+    pairAction: "Pair by hand",
+    more: (count: number) => `Show ${n(count)} more`,
+    failed: "Cannot compare the ranking.",
+    retry: "Retry",
+    later: "The products made join the comparison within a couple of minutes: the shop's copy updates itself.",
+    demo: "On the demo shop the comparison shows, but nothing is imported.",
+    pair: {
+      title: "Which product is it?",
+      subtitle: (name: string) => `“${name}”, in the ranking`,
+      candidates: "Similar names in the shop",
+      search: "Search the shop",
+      searchEmpty: "No product of the shop with this name.",
+      current: "Paired now",
+      none: "Not in the shop",
+      noneHint: "It goes among the missing: it can be imported.",
+      auto: "Automatic pairing",
+      autoHint: "By code and by name, as the Hub does on its own.",
+      done: (name: string) => `Paired with “${name}”`,
+      doneNone: "Marked as not in the shop",
+      doneAuto: "Automatic pairing back",
+    },
+    importSheet: {
+      title: (count: number) => (count === 1 ? "Import 1 product" : `Import ${n(count)} products`),
+      intro:
+        "They are made in the shop with Publish, as from its tab: sizes priced by the engine and the margins, photos queued. A code KicksDB does not confirm is not published; one already in the shop stays as it is.",
+      start: "Import",
+      progress: (done: number, total: number) => `Importing… ${n(done)} of ${n(total)}`,
+      created: "Made",
+      skipped: "Left as they are",
+      notFound: "Unknown to KicksDB",
+      unreachable: "KicksDB did not answer: try again",
+      failed: "Not made",
+      reasons: {
+        alreadyOnStore: "already in the shop",
+        feedDelisted: "out of the supplier's feed",
+        inProgress: "already being published",
+        hiddenNoPhoto: "already in the shop, hidden for its photo",
+      },
+      sizes: (count: number) => (count === 1 ? "1 size" : `${n(count)} sizes`),
+      stop: "Stop",
+      close: "Done",
+    },
+  },
+
   llmPrompt: `You are an assistant that works out the order of the products on an online shop's collection or category page.
 
-I give you the link of a page that lists the products of ONE collection or category: on Shopify an address with /collections/… (e.g. https://shop.com/collections/sneakers); on other shops a category's page (e.g. …/category/sneakers, …/c/sneakers). I need the order in which the shop shows the products on that page with its default sorting ("Featured", "Recommended"): do not reorder them yourself and do not pick another sorting.
+I give you the link of a page that lists the products of ONE collection or category (or a screenshot of that page: read it the same way): on Shopify an address with /collections/… (e.g. https://shop.com/collections/sneakers); on other shops a category's page (e.g. …/category/sneakers, …/c/sneakers). I need the order in which the shop shows the products on that page with its default sorting ("Featured", "Recommended"): do not reorder them yourself and do not pick another sorting.
 
 If the link is the homepage, a single product's page or a search, do not give me the JSON: answer with one sentence asking me for the collection's or the category's link. The homepage does not say in which order the shop puts its products.
 
@@ -84,7 +177,7 @@ With a collection's or a category's link answer ONLY with valid JSON, no text be
   "name": "<shop — collection, e.g. Kith — Nike Dunk>",
   "origin": "<the collection's or the category's link>",
   "items": [
-    { "sku": "<the maker's style code>", "name": "<the product's full name>" }
+    { "sku": "<the maker's style code>", "name": "<the product's full name>", "price": 129.99 }
   ]
 }
 
@@ -93,6 +186,7 @@ Rules:
 2. "sku" is the maker's style code (e.g. DD1391-100 for Nike, IE3437 for adidas, 1203A537-100 for ASICS, U9060ZGB for New Balance). Put it only when it appears on the page or in the product's link; otherwise leave the field out: never make it up.
 3. "name" is the name as written on the page: brand, model and colourway (e.g. "Nike Dunk Low Retro White Black Panda").
 4. Each product once, even when the page repeats it.
-5. No prices, sizes or other fields: only "sku" and "name".
-6. With more than 150 products, give me the first 150 and close the JSON; when I write "continue", give me a new JSON with the next 150, and so on to the last.`,
+5. "price" is the price the page shows for that product, as a number (e.g. 129.99): what it sells for now — when discounted, the discounted price; when "from €129", 129. When the page shows none, leave the field out.
+6. No sizes or other fields: only "sku", "name" and "price".
+7. With more than 150 products, give me the first 150 and close the JSON; when I write "continue", give me a new JSON with the next 150, and so on to the last.`,
 };

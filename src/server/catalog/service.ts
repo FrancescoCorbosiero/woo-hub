@@ -32,6 +32,8 @@ export interface CatalogGrowth {
   added: number; // brand-new, GET-verified SKUs inserted this run
   rejected: string[]; // new SKUs StockX has no product for (a real answer: "no")
   failed: SkuFailure[]; // new SKUs whose lookup errored (429/5xx/timeout) — retry
+  /** Each SKU added, as asked and as the catalog now holds it ("DD1391100" may be DD1391-100). */
+  joined: { requested: string; sku: string }[];
 }
 
 /**
@@ -148,14 +150,17 @@ export async function growCatalogFromSkus(
     .map(([, original]) => original);
 
   const verified: SourceProduct[] = [];
+  const joined: { requested: string; sku: string }[] = [];
   const rejected: string[] = [];
   const failed: SkuFailure[] = [];
 
   await forEachLimit(candidates, opts.concurrency ?? 6, async (sku) => {
     try {
       const product = await source.findBySku(sku, market);
-      if (product) verified.push(product);
-      else rejected.push(sku); // KicksDB answered: no such product
+      if (product) {
+        verified.push(product);
+        joined.push({ requested: sku, sku: skuKey(product.sku) });
+      } else rejected.push(sku); // KicksDB answered: no such product
     } catch (e) {
       failed.push({ sku, error: errorText(e) }); // KicksDB did not answer
     }
@@ -163,5 +168,5 @@ export async function growCatalogFromSkus(
 
   await store.upsert(market, verified);
 
-  return { total: await store.count(market), added: verified.length, rejected, failed };
+  return { total: await store.count(market), added: verified.length, rejected, failed, joined };
 }

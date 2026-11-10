@@ -138,11 +138,14 @@ describe("the sign-in, done by Authelia in front of the app", () => {
     expect(passed(await proxy(request(HUB, "/api/v1/catalog/order", { method: "POST", secret: SECRET })))).toBe(true);
 
     // Authelia let these through without a session, so a Remote-User on them
-    // came from the client (old Caddy versions pass it on): never trusted.
+    // came from the client (old Caddy versions pass it on): never trusted —
+    // above all on the API, where a Remote-User would pass for a person's yes
+    // (src/lib/actors.ts isPerson).
     const forged = { secret: SECRET, user: "operator", headers: { "remote-groups": "operators" } };
     for (const res of [
       await proxy(request(VETRINA, "/manifest.webmanifest", forged)),
       await proxy(request(HUB, "/api/cron/pull-store", { ...forged, method: "POST" })),
+      await proxy(request(HUB, "/api/v1/proposals/3376e826-1b2c-4d5e-8f90-123456789abc/confirm", { ...forged, method: "POST" })),
     ]) {
       expect(passed(res)).toBe(true);
       expect(forwardedHeaders(res)).not.toBeNull();

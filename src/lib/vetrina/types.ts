@@ -270,6 +270,8 @@ export type VetrinaErrorCode =
   /** The site's plugin answers, but is too old for what was asked (sections need 5.15.0). */
   | "plugin_outdated"
   | "unauthorized"
+  /** Not this caller's to do: a proposal's yes is a person's (src/lib/actors.ts). */
+  | "forbidden"
   | "stale"
   | "not_found"
   | "invalid"

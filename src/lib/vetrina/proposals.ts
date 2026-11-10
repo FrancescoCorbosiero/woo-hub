@@ -32,6 +32,10 @@ export interface ProposalView {
   status: ProposalStatus;
   /** How it came. */
   via: OperationVia;
+  /** Who proposed it: "token:<caller>" over the API (src/lib/actors.ts). */
+  actor: string | null;
+  /** Who decided it once confirmed — always a person: the yes, or the confirmation that found it changed or refused. */
+  confirmedBy: string | null;
   createdAt: string;
   expiresAt: string;
   /** Once confirmed: the action it started, in the log (null when the log could not file it). */

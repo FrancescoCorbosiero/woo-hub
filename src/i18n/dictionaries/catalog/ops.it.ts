@@ -27,6 +27,37 @@ function nameList(names: readonly string[], total = names.length): string {
   return `${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}`;
 }
 
+/** The store's taxonomies, as the sentences need them: Italian agrees with each one's gender. */
+type TermTx = "category" | "brand" | "tag";
+const T = {
+  category: {
+    one: "categoria", One: "Categoria", the: "la categoria", The: "La categoria", This: "Questa categoria",
+    New: "Nuova categoria", a1: "una categoria", a2: "una", a3: "un'altra categoria", it: "la", a: "a",
+    sub1: "sottocategoria", subs: "sottocategorie", e: (stem: string) => `${stem}a`,
+    // Its sub-terms, with the possessive and the verb agreeing: "la sua sottocategoria va", "le sue 3 sottocategorie vanno".
+    its: (count: number) => (count === 1 ? "la sua sottocategoria" : `le sue ${n(count)} sottocategorie`),
+    Its: (count: number) => (count === 1 ? "La sua sottocategoria" : `Le sue ${n(count)} sottocategorie`),
+    itself: "Una categoria non può andare sotto se stessa o sotto una sua sottocategoria.",
+  },
+  brand: {
+    one: "brand", One: "Brand", the: "il brand", The: "Il brand", This: "Questo brand",
+    New: "Nuovo brand", a1: "un brand", a2: "un", a3: "un altro brand", it: "lo", a: "o",
+    sub1: "linea", subs: "linee", e: (stem: string) => `${stem}o`,
+    // A brand's sub-brands are its lines, as the catalog calls them ("Linee del brand").
+    its: (count: number) => (count === 1 ? "la sua linea" : `le sue ${n(count)} linee`),
+    Its: (count: number) => (count === 1 ? "La sua linea" : `Le sue ${n(count)} linee`),
+    itself: "Un brand non può andare sotto se stesso o sotto una sua linea.",
+  },
+  tag: {
+    one: "tag", One: "Tag", the: "il tag", The: "Il tag", This: "Questo tag",
+    New: "Nuovo tag", a1: "un tag", a2: "un", a3: "un altro tag", it: "lo", a: "o",
+    sub1: "", subs: "", e: (stem: string) => `${stem}o`,
+    its: (_count: number) => "",
+    Its: (_count: number) => "",
+    itself: "",
+  },
+} as const;
+
 export const opsIt = {
   /** A price as the owner reads it: "102,99 €" (in English, "€102.99"). */
   money: (amount: number): string => new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(amount),
@@ -69,10 +100,31 @@ export const opsIt = {
     sectionSource: (section: string, shows: string) => `«${section}» ora mostra ${shows}`,
     sectionEdit: (section: string) => `«${section}» pubblicata`,
     blockEdit: (block: string) => `Testi di «${block}» salvati`,
+    menuItemAdd: (count: number, item: string, menu: string) => (count === 1 ? `Voce «${item}» aggiunta · ${menu}` : `${n(count)} voci aggiunte · ${menu}`),
+    menuItemMove: (item: string, menu: string) => `Voce «${item}» spostata · ${menu}`,
+    menuItemRemove: (item: string, menu: string) => `Voce «${item}» tolta · ${menu}`,
+    menuItemRename: (item: string, renamed: string | null, menu: string) =>
+      renamed == null ? `Voce «${item}» col suo nome originale · ${menu}` : `Voce «${item}» rinominata «${renamed}» · ${menu}`,
+    menuCreate: (menu: string, from: string | null) => (from ? `Menu «${menu}», copia di «${from}»` : `Nuovo menu «${menu}»`),
+    menuRename: (menu: string, from: string) => `Menu «${from}» rinominato «${menu}»`,
+    menuDelete: (menu: string) => `Menu «${menu}» eliminato`,
+    menuLocation: (menu: string | null, place: string) => (menu ? `«${menu}» in ${place}` : `Nessun menu in ${place}`),
+    priceMatch: (count: number, source: string | null) => (source ? `Prezzi allineati a «${source}» · ${products(count)}` : `Prezzi allineati · ${products(count)}`),
+    termCreate: (tx: TermTx, name: string, parent: string | null) => `${T[tx].New} «${name}»${parent ? ` sotto «${parent}»` : ""}`,
+    termRename: (tx: TermTx, from: string, to: string) => `${T[tx].One} «${from}» ${T[tx].e("rinominat")} «${to}»`,
+    termMove: (tx: TermTx, name: string, into: string | null) =>
+      `${T[tx].One} «${name}» ${T[tx].e("spostat")} ${into ? `sotto «${into}»` : "al primo livello"}`,
+    termMerge: (tx: TermTx, name: string, into: string, count: number) => `${T[tx].One} «${name}» ${T[tx].e("unit")} a «${into}» · ${products(count)}`,
+    termDelete: (tx: TermTx, name: string, count: number) => `${T[tx].One} «${name}» ${T[tx].e("eliminat")} · ${products(count)}`,
   },
 
   /** Why a preview leaves products as they are, agreeing with how many ("Già nascosto · 1", "Già nascosti · 3"). */
   untouched: {
+    // "Allinea i prezzi" (operations/price-match.ts).
+    priceOnSale: (count: number): string => (count === 1 ? "in saldo: prima togli il saldo" : "in saldo: prima togli i saldi"),
+    priceUnpriced: (_count: number): string => "nessuna taglia con un prezzo dell'Hub",
+    priceSame: (_count: number): string => "già a quel prezzo",
+    priceSizes: (_count: number): string => "taglie fuori dall'Hub: cambia il prezzo dal prodotto",
     gone: (count: number): string => (count === 1 ? "non è più nel negozio" : "non sono più nel negozio"),
     alreadyHidden: (count: number): string => (count === 1 ? "già nascosto" : "già nascosti"),
     alreadyVisible: (count: number): string => (count === 1 ? "già visibile" : "già visibili"),
@@ -133,6 +185,10 @@ export const opsIt = {
   },
 
   warning: {
+    priceLocks: (count: number) =>
+      `I prezzi ${count === 1 ? "di 1 prodotto diventano bloccati" : `di ${n(count)} prodotti diventano bloccati`}: KicksDB non li cambia più finché non li sblocchi dalla scheda del prodotto, o annulli.`,
+    priceBelowMarket: (count: number) =>
+      count === 1 ? "1 prodotto scende sotto il prezzo di mercato in almeno una taglia." : `${n(count)} prodotti scendono sotto il prezzo di mercato in almeno una taglia.`,
     /** The shop's positions are one number per product: a product moved here moves in its other categories and brands too. */
     orderElsewhere: (count: number, names: string[], total: number) =>
       `Nel negozio ogni prodotto ha una posizione sola: ${count === 1 ? "1 è" : `${n(count)} sono`} anche in ${nameList(names, total)}, e lì ${count === 1 ? "cambia" : "cambiano"} posto allo stesso modo.`,
@@ -289,6 +345,14 @@ export const opsIt = {
     noneInTerm: (term: string, source: string) => `Nessun prodotto di «${term}» è nella classifica «${source}».`,
     noneInShop: (source: string) => `Nessun prodotto della classifica «${source}» è nel negozio.`,
     inOrder: (source: string) => `È già disposto come «${source}».`,
+    /** The comparison (order-sources/compare.ts) and its import (import.ts). */
+    itemGone: "Questa voce non è nella classifica.",
+    productGone: "Questo prodotto non è più nel negozio.",
+    importDemo: "Sul negozio di prova non si pubblicano prodotti: qui il confronto si vede, l'importazione no.",
+    kicksdbOff: "KicksDB non è configurato: i prodotti che il catalogo dell'Hub non ha non si possono cercare.",
+    importEmpty: "Indica almeno un codice (SKU) da importare.",
+    lookupFailed: "KicksDB non ha risposto: riprova tra poco.",
+    pricesNone: (threshold: number) => `Nessun prezzo da allineare: nessun prodotto della classifica si scosta di più del ${n(threshold)}%.`,
   },
 
   /**
@@ -334,6 +398,141 @@ export const opsIt = {
   },
 
   /**
+   * The site's navigation menus (src/server/vetrina/operations/menu.ts): an
+   * action in sentences, what the owner should know, why one cannot run, and
+   * why its "Annulla" cannot.
+   */
+  menu: {
+    top: (position: number, last: boolean) => (position === 1 ? "in cima al menu" : last ? "in fondo al menu" : `al ${n(position)}° posto del menu`),
+    under: (parent: string, position: number, last: boolean) =>
+      position === 1 ? `sotto «${parent}», per prima` : last ? `sotto «${parent}», per ultima` : `sotto «${parent}», al ${n(position)}° posto`,
+    add: (names: readonly string[], menu: string, where: string) =>
+      names.length === 1
+        ? `«${names[0]}» entra nel menu «${menu}», ${where}.`
+        : `${n(names.length)} voci entrano nel menu «${menu}», ${where}: ${nameList(names.map((name) => `«${name}»`))}.`,
+    move: (title: string, where: string) => `«${title}» passa ${where}.`,
+    withItems: (count: number) => (count === 1 ? "Con lei si sposta la sua voce." : `Con lei si spostano le sue ${n(count)} voci.`),
+    remove: (title: string, menu: string) => `«${title}» esce dal menu «${menu}».`,
+    lifted: (names: readonly string[]) =>
+      names.length === 1
+        ? `La sua voce «${names[0]}» sale al suo posto.`
+        : `Le sue ${n(names.length)} voci salgono al suo posto: ${nameList(names.map((name) => `«${name}»`))}.`,
+    rename: (from: string, to: string) => `«${from}» si chiamerà «${to}».`,
+    ownName: (from: string, name: string) => `«${from}» torna a chiamarsi come ciò a cui porta: «${name}».`,
+    shownAt: (places: readonly string[]) =>
+      places.length === 0 ? "Il tema non mostra questo menu da nessuna parte: per ora non si vede sul sito." : `Sul sito si vede in: ${nameList(places)}.`,
+    already: (name: string, parent: string | null) => (parent ? `«${name}» è già nel menu, sotto «${parent}».` : `«${name}» è già nel menu.`),
+    invalid: (name: string) => `«${name}» porta a qualcosa che non c'è più: WordPress non la mostra sul sito.`,
+    /** Refusals. */
+    stale: "Il menu è cambiato nel frattempo: rileggilo e riprova.",
+    noMenu: "Questo menu non c'è più sul sito.",
+    noItem: "Questa voce non è più nel menu.",
+    noParent: "La voce sotto cui metterla non è nel menu.",
+    position: (max: number) => `Il posto va da 1 a ${n(max)}.`,
+    intoItself: "Una voce non può andare sotto se stessa o sotto le sue voci.",
+    samePlace: (title: string) => `«${title}» è già lì.`,
+    sameName: (title: string) => `«${title}» si chiama già così.`,
+    noCategory: (id: number) => `Nel negozio non c'è la categoria ${id}.`,
+    noBrand: (id: number) => `Nel negozio non c'è il brand ${id}.`,
+    noPage: (id: number) => `Sul sito non c'è la pagina pubblicata ${id}.`,
+    linkName: "Un link ha sempre un nome suo.",
+    writeFailed: "WordPress non ha accettato la modifica: il menu è rimasto com'era.",
+    halfWritten: "WordPress ha accettato solo una parte della modifica e rimetterla non è riuscito: controlla il menu su WordPress.",
+    makeFailed: "WordPress non ha accettato una delle voci: il menu non è stato creato.",
+    makeHalf: "WordPress non ha accettato una delle voci, e togliere il menu fatto a metà non è riuscito: controllalo in WordPress.",
+    placeNotChanged: "WordPress non ha cambiato il menu in quella posizione: controllalo in WordPress (Aspetto › Menu).",
+    /** Its way back. */
+    changedSince: (title: string) => `«${title}» è cambiata dopo questa azione: la modifica più recente resta.`,
+    gotChildren: (title: string) => `Sotto «${title}» sono state messe altre voci: resta com'è.`,
+    parentGone: (title: string) => `La voce sotto cui stava «${title}» non c'è più: non si può rimettere.`,
+    // A whole menu: made, copied, renamed, deleted, put in a place of the theme.
+    nameTaken: (name: string) => `C'è già un menu che si chiama «${name}»: scegli un altro nome.`,
+    create: (name: string) => `Nasce il menu «${name}», vuoto.`,
+    createCopy: (name: string, from: string, count: number) =>
+      count === 0
+        ? `Nasce il menu «${name}», copia di «${from}», che non ha voci.`
+        : `Nasce il menu «${name}», copia di «${from}»: ${count === 1 ? "1 voce" : `${n(count)} voci`}.`,
+    notShownYet: "Il sito non lo mostra finché non lo metti in una posizione del tema.",
+    copySkipped: (count: number) =>
+      count === 1
+        ? "1 voce porta a qualcosa che non c'è più: resta fuori dalla copia."
+        : `${n(count)} voci portano a qualcosa che non c'è più: restano fuori dalla copia.`,
+    sameMenuName: (name: string) => `Il menu si chiama già «${name}».`,
+    renameMenu: (from: string, to: string) => `Il menu «${from}» si chiamerà «${to}».`,
+    deleteShown: (name: string, places: readonly string[]) =>
+      `«${name}» è sul sito (in: ${nameList(places)}): prima metti un altro menu in quella posizione, o lasciala vuota.`,
+    deleteMenu: (name: string, count: number) =>
+      count === 0
+        ? `Il menu «${name}» viene eliminato.`
+        : `Il menu «${name}» viene eliminato, con ${count === 1 ? "la sua voce" : `le sue ${n(count)} voci`}.`,
+    noPlace: (place: string) => `Il tema non ha la posizione «${place}».`,
+    alreadyShown: (menu: string, place: string) => `In «${place}» c'è già «${menu}».`,
+    alreadyEmpty: (place: string) => `In «${place}» non c'è nessun menu.`,
+    placeShows: (place: string, menu: string, before: string | null) =>
+      before ? `In «${place}» il sito mostrerà «${menu}» al posto di «${before}».` : `In «${place}» il sito mostrerà «${menu}».`,
+    placeEmptied: (place: string, before: string) => `In «${place}» il sito non mostrerà più nessun menu: ora c'è «${before}».`,
+    emptyShown: (menu: string, place: string) => `«${menu}» non ha voci: in «${place}» non si vedrà niente.`,
+    shownNow: (name: string, places: readonly string[]) => `«${name}» ora è sul sito (in: ${nameList(places)}): resta.`,
+    menuChangedSince: (name: string) => `Il menu «${name}» è cambiato dopo questa azione: il cambio più recente resta.`,
+    menuGone: (name: string) => `Il menu «${name}» non c'è più.`,
+    placeChanged: (place: string) => `In «${place}» il menu è cambiato dopo questa azione: il cambio più recente resta.`,
+  },
+
+  /**
+   * The store's taxonomies (operations/terms.ts, term-moves.ts): a category,
+   * a brand or a tag made, renamed, moved, merged, deleted — what it does,
+   * why it cannot, and why its "Annulla" cannot.
+   */
+  term: {
+    create: (tx: TermTx, name: string, parent: string | null) =>
+      tx === "tag" ? `Nasce il tag «${name}».` : `Nasce ${T[tx].the} «${name}»${parent ? `, sotto «${parent}»` : ", al primo livello"}.`,
+    rename: (tx: TermTx, from: string, to: string) => `${T[tx].The} «${from}» si chiamerà «${to}». Il suo indirizzo sul sito resta lo stesso.`,
+    alias: (tx: TermTx) => `Publish ${T[tx].it} riconoscerà anche col vecchio nome: niente doppioni.`,
+    move: (tx: TermTx, name: string, into: string | null, children: number) =>
+      `${T[tx].The} «${name}» va ${into ? `sotto «${into}»` : "al primo livello"}${children > 0 ? `, con ${T[tx].its(children)}` : ""}.`,
+    marginMoves: "I suoi prodotti potrebbero prendere un altro ricarico dalla prossima sincronizzazione dei prezzi.",
+    merge: (tx: TermTx, name: string, into: string, count: number) =>
+      count === 0
+        ? `${T[tx].The} «${name}» non ha prodotti: viene ${T[tx].e("eliminat")}, e il suo nome porta a «${into}».`
+        : `${count === 1 ? "Il suo prodotto passa" : `I suoi ${n(count)} prodotti passano`} da «${name}» a «${into}», poi «${name}» viene ${T[tx].e("eliminat")}.`,
+    mergeChildren: (tx: TermTx, into: string, count: number) => `${T[tx].Its(count)} ${count === 1 ? "va" : "vanno"} sotto «${into}».`,
+    mergeAlias: (name: string, into: string) => `Publish metterà in «${into}» anche ciò che arriva col nome «${name}».`,
+    delete: (tx: TermTx, name: string, count: number) =>
+      count === 0
+        ? `${T[tx].The} «${name}» viene ${T[tx].e("eliminat")}: non ha prodotti.`
+        : `${T[tx].The} «${name}» viene ${T[tx].e("eliminat")}: ${count === 1 ? `il suo prodotto ${T[tx].it} perde` : `i suoi ${n(count)} prodotti ${T[tx].it} perdono`}, e restano nel negozio.`,
+    deleteChildren: (tx: TermTx, count: number) => `${T[tx].Its(count)} ${count === 1 ? "sale" : "salgono"} di un livello.`,
+    orphans: (count: number) =>
+      count === 1
+        ? "1 prodotto resta senza categoria: WooCommerce lo mette nella sua categoria predefinita."
+        : `${n(count)} prodotti restano senza categoria: WooCommerce li mette nella sua categoria predefinita.`,
+    inMenus: (name: string, menus: readonly string[]) =>
+      `«${name}» è nel menu ${nameList(menus.map((m) => `«${m}»`))}: la voce non porterà più a niente, toglila dal menu.`,
+    // Refusals.
+    notConfigured: "Il negozio non è collegato: chi gestisce il server deve impostare WOO_BASE_URL e le chiavi del negozio.",
+    stillHeld: (name: string, count: number) =>
+      `«${name}» resta: ${count === 1 ? "1 prodotto ce l'ha ancora" : `${n(count)} prodotti ce l'hanno ancora`}, il negozio non li ha cambiati.`,
+    gone: (tx: TermTx) => `${T[tx].This} non c'è più.`,
+    parentGone: (tx: TermTx) => `${T[tx].The} sotto cui metterl${T[tx].a} non c'è.`,
+    nameTaken: (tx: TermTx, name: string, parent: string | null) =>
+      `C'è già ${T[tx].a1} «${name}»${parent ? ` sotto «${parent}»` : tx === "tag" ? "" : " al primo livello"}: scegli un altro nome.`,
+    sameName: (name: string) => `Si chiama già «${name}».`,
+    sameParent: (name: string) => `«${name}» è già lì.`,
+    intoItself: (tx: TermTx): string => T[tx].itself,
+    mergeSelf: (tx: TermTx) => `Scegli ${T[tx].a3} in cui unirl${T[tx].a}.`,
+    mergeIntoBelow: (name: string) => `«${name}» sta sotto quella da unire: scegline una fuori dal suo ramo.`,
+    margin: (name: string) => `«${name}» ha un suo ricarico: riportalo a quello standard, poi riprova.`,
+    homepage: (name: string, sections: readonly string[]) =>
+      `«${name}» è nella homepage (${nameList(sections.map((s) => `«${s}»`))}): cambia prima la sezione.`,
+    // "Annulla".
+    changedSince: (name: string) => `C'è stata un'altra modifica a «${name}» dopo questa azione: la più recente resta.`,
+    hasProducts: (name: string) => `«${name}» ha già dei prodotti: resta.`,
+    hasChildren: (name: string) => `Sotto «${name}» c'è già dell'altro: resta.`,
+    takenNow: (tx: TermTx, name: string) => `C'è di nuovo ${T[tx].a1} «${name}»: non si può rifare.`,
+    parentGoneNow: (name: string) => `Il ramo sotto cui stava «${name}» non c'è più: non si può rimettere.`,
+  },
+
+  /**
    * Proposals (src/server/vetrina/operations/proposals.ts): an action's
    * preview in sentences — what an assistant shows the owner before asking
    * his yes — and what "confirm" says when it cannot run.
@@ -346,6 +545,7 @@ export const opsIt = {
     sampled: (read: number) => `I numeri sono una stima sui primi ${products(read)} letti dal negozio: l'azione conta esatto.`,
     prices: (up: number, down: number) => `Prezzi che salgono: ${n(up)}; che scendono: ${n(down)}.`,
     notFound: "Questa proposta non c'è.",
+    personOnly: "Una proposta la conferma una persona: chi è entrato nell'Hub, o con una chiave che può confermare.",
     expired: (minutes: number) => `La proposta è scaduta (vale ${minutes} minuti): chiedine una nuova.`,
     confirming: "La sto già eseguendo.",
     changed: "Il negozio è cambiato da quando l'hai vista: ecco la nuova anteprima, da confermare di nuovo.",

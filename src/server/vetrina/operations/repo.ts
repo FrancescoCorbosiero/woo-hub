@@ -2,6 +2,8 @@ import "server-only";
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql, type SQL } from "drizzle-orm";
 import type { ScopedPricingRule } from "@core/config";
 import { OPERATION_UNDO_DAYS, type OperationInput, type OperationKind, type OperationVia } from "@/lib/vetrina/catalog-ops";
+import type { MenuActionInput, OperationMenuRecord } from "@/lib/vetrina/menu-ops";
+import type { OperationTermRecord, TermActionInput } from "@/lib/vetrina/term-ops";
 import type { OperationPageRecord, PageActionInput } from "@/lib/vetrina/page-ops";
 import { db } from "@/server/db/client";
 import { rowsOf } from "@/server/db/rows";
@@ -44,9 +46,56 @@ export async function insertOperation(row: {
   termKey: string | null;
   total: number;
   via: OperationVia;
+  /** Who asked (src/lib/actors.ts actorId), null when nobody is signed in. */
+  actor: string | null;
 }): Promise<VetrinaOperationRow> {
   const [inserted] = await db.insert(vetrinaOperations).values(row).returning();
   return inserted;
+}
+
+/**
+ * A menu action, filed once written: done at once (menu.ts), so its row
+ * starts done — with its way back.
+ */
+export async function insertMenuOperation(row: {
+  input: MenuActionInput;
+  label: string;
+  labelParams: OperationLabelParams;
+  via: OperationVia;
+  actor: string | null;
+  menu: OperationMenuRecord;
+}): Promise<VetrinaOperationRow> {
+  const [inserted] = await db
+    .insert(vetrinaOperations)
+    .values({ ...row, kind: row.input.kind, termKey: null, status: "done", done: 1, total: 1, changed: 1, finishedAt: new Date() })
+    .returning();
+  return inserted;
+}
+
+/**
+ * A taxonomy action done at once (terms.ts), filed once written: its row
+ * starts done — with its way back. Filed under its term when it is a
+ * category or a brand, so the term's screen lists it.
+ */
+export async function insertTermOperation(row: {
+  input: TermActionInput;
+  label: string;
+  labelParams: OperationLabelParams;
+  via: OperationVia;
+  actor: string | null;
+  term: OperationTermRecord;
+}): Promise<VetrinaOperationRow> {
+  const filed = row.term.taxonomy === "tag" ? null : (`${row.term.taxonomy}:${row.term.term.id}` as const);
+  const [inserted] = await db
+    .insert(vetrinaOperations)
+    .values({ ...row, kind: row.input.kind, termKey: filed, status: "done", done: 1, total: 1, changed: 1, finishedAt: new Date() })
+    .returning();
+  return inserted;
+}
+
+/** A merge's or a deletion's way back, filed as it runs (term-moves.ts): the term as it was, and what became of it. */
+export async function setTermRecord(id: string, term: OperationTermRecord): Promise<void> {
+  await db.update(vetrinaOperations).set({ term }).where(eq(vetrinaOperations.id, id));
 }
 
 /**
@@ -58,6 +107,7 @@ export async function insertPageOperation(row: {
   label: string;
   labelParams: OperationLabelParams;
   via: OperationVia;
+  actor: string | null;
   page: OperationPageRecord | null;
 }): Promise<VetrinaOperationRow> {
   const [inserted] = await db
@@ -188,7 +238,7 @@ export async function hiddenSinceBy(op: VetrinaOperationRow, ids: readonly numbe
 export type OperationUpdate = Partial<
   Pick<
     VetrinaOperationRow,
-    "status" | "done" | "total" | "changed" | "failed" | "error" | "finishedAt" | "undoneAt" | "undo"
+    "status" | "done" | "total" | "changed" | "failed" | "error" | "finishedAt" | "undoneAt" | "undoneBy" | "undo"
   >
 > & { section?: OperationSectionRecord | null };
 
@@ -435,7 +485,7 @@ export async function markInterrupted(messages: { run: string; undo: string }): 
     .returning({ id: vetrinaOperations.id });
   const undos = await db
     .update(vetrinaOperations)
-    .set({ status: "failed", error: messages.undo })
+    .set({ status: "failed", error: messages.undo, undoneBy: null })
     .where(eq(vetrinaOperations.status, "undoing"))
     .returning({ id: vetrinaOperations.id });
   return runs.length + undos.length;

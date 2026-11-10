@@ -9,7 +9,7 @@ import type { OperationInput, OperationView } from "@/lib/vetrina/catalog-ops";
  * WooCommerce does: the product and its sizes, a restore through the API
  * bringing back the product alone. Opt-in, like the other DB suites:
  *
- *   RUN_DB_TESTS=1 DATABASE_URL=postgres://…@localhost:…/… REDIS_URL=… npm test
+ *   DATABASE_URL=postgres://…@localhost:…/hub_test npm run test:db
  *
  * It empties vetrina_operations, store_index and the snapshot, and its own
  * rows of the catalog, the feed and the photo queue.

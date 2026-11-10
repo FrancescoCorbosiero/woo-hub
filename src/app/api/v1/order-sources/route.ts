@@ -7,18 +7,19 @@ export const dynamic = "force-dynamic";
 
 /** GET /api/v1/order-sources — every order source, with how many of its products the shop has. See docs/order-sources.md. */
 export function GET(req: NextRequest) {
-  return serve(req, () => listSources());
+  return serve(req, "read", () => listSources());
 }
 
 /**
  * POST /api/v1/order-sources — upload a ranking: the agreed format as JSON
  * (its "name" names it), { name, origin, content } with any text the Vetrina
  * reads, or the text itself (text/plain, text/csv) with ?name=. A source of
- * that name is replaced (200), else made (201). See docs/order-sources.md.
+ * that name is replaced (200), else made (201). Needs propose: a ranking is
+ * what a proposal of its order uses. See docs/order-sources.md.
  */
 export async function POST(req: NextRequest) {
   let created = false;
-  const res = await serve(req, async () => {
+  const res = await serve(req, "propose", async () => {
     const out = await upload(req);
     created = out.created;
     return out;

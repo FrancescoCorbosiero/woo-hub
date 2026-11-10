@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { Actor } from "@/lib/actors";
 import type { RailSummary } from "@/lib/vetrina/types";
 
 /**
@@ -21,7 +22,17 @@ vi.mock("@/server/collections/runner", async (importOriginal) => {
   return { ...real, requestCheck: () => undefined };
 });
 
+/** The owner, signed in on the screens; a program's token; a token a person keeps to say yes; an admin script. */
+const OWNER: Actor = { kind: "user", name: "owner" };
+const ASSISTANT: Actor = { kind: "token", name: "assistant", scopes: ["read", "propose"] };
+const PHONE: Actor = { kind: "token", name: "phone", scopes: ["read", "confirm", "undo"] };
+const SCRIPT: Actor = { kind: "token", name: "script", scopes: ["read", "propose", "admin"] };
+
+/** "Prodotti in tendenza" in the demo shop. */
+const TRENDING = 101;
+
 const load = async () => ({
+  ...(await import("@/server/api/catalog-order")),
   ...(await import("@/server/db/client")),
   ...(await import("@/server/db/schema")),
   ...(await import("@/server/collections/runner")),
@@ -72,11 +83,11 @@ describe.skipIf(!enabled)("proposals on the demo shop", () => {
     expect(new Date(proposal.expiresAt).getTime() - Date.now()).toBeGreaterThan(14 * 60_000);
     expect((await rails())[0].switchedOff).toBe(false);
 
-    const operation = await confirmProposal(proposal.id);
+    const operation = await confirmProposal(proposal.id, OWNER);
     expect(operation).toMatchObject({ kind: "sectionSwitch", status: "done", via: "assistant", undoable: true });
     expect((await rails())[0].switchedOff).toBe(true);
     // Confirmed again — a retry, a double tap: the same action, not a second one.
-    expect((await confirmProposal(proposal.id))?.id).toBe(operation!.id);
+    expect((await confirmProposal(proposal.id, OWNER))?.id).toBe(operation!.id);
     expect(await loadProposal(proposal.id)).toMatchObject({ status: "confirmed", operationId: operation!.id });
   });
 
@@ -88,7 +99,7 @@ describe.skipIf(!enabled)("proposals on the demo shop", () => {
     expect(proposal.summary).toContain("Cambia 1 prodotto.");
     expect(p.visibility).toBe("visible");
 
-    const started = await confirmProposal(proposal.id);
+    const started = await confirmProposal(proposal.id, OWNER);
     await idle();
     expect(await loadOperation(started!.id)).toMatchObject({ status: "done", via: "api", changed: 1 });
     expect(p.visibility).toBe("hidden");
@@ -103,7 +114,7 @@ describe.skipIf(!enabled)("proposals on the demo shop", () => {
     await startPageOperation({ kind: "sectionMove", key: a.key, position: 3 });
     const before = (await rails()).map((r) => r.key);
 
-    const refused = await refusal(confirmProposal(proposal.id));
+    const refused = await refusal(confirmProposal(proposal.id, OWNER));
     expect(refused.code).toBe("stale");
     const fresh = (refused.data as { proposal: { id: string; status: string; summary: string[] } }).proposal;
     expect(fresh).toMatchObject({ status: "open" });
@@ -111,9 +122,9 @@ describe.skipIf(!enabled)("proposals on the demo shop", () => {
     expect((await rails()).map((r) => r.key)).toEqual(before);
     expect(await loadProposal(proposal.id)).toMatchObject({ status: "changed", replacedBy: fresh.id });
     // Asked again, the old one points to the new one.
-    expect((await refusal(confirmProposal(proposal.id))).data).toMatchObject({ proposal: { id: fresh.id } });
+    expect((await refusal(confirmProposal(proposal.id, OWNER))).data).toMatchObject({ proposal: { id: fresh.id } });
 
-    await confirmProposal(fresh.id);
+    await confirmProposal(fresh.id, OWNER);
     expect((await rails())[0].attrsHash).toBe(c.attrsHash);
   });
 
@@ -123,9 +134,9 @@ describe.skipIf(!enabled)("proposals on the demo shop", () => {
     const proposal = await propose({ kind: "sectionSwitch", key: first.key, on: false }, "assistant");
     await startPageOperation({ kind: "sectionSwitch", key: first.key, on: false });
 
-    expect((await refusal(confirmProposal(proposal.id))).message).toBe(`«${first.title}» è già spenta.`);
+    expect((await refusal(confirmProposal(proposal.id, OWNER))).message).toBe(`«${first.title}» è già spenta.`);
     expect(await loadProposal(proposal.id)).toMatchObject({ status: "refused" });
-    expect((await refusal(confirmProposal(proposal.id))).message).toBe(`Non si può più fare come chiesto: «${first.title}» è già spenta.`);
+    expect((await refusal(confirmProposal(proposal.id, OWNER))).message).toBe(`Non si può più fare come chiesto: «${first.title}» è già spenta.`);
   });
 
   it("lets a proposal expire", async () => {
@@ -134,7 +145,7 @@ describe.skipIf(!enabled)("proposals on the demo shop", () => {
     const proposal = await propose({ kind: "sectionSwitch", key: first.key, on: false }, "assistant");
     await db.update(vetrinaProposals).set({ expiresAt: new Date(Date.now() - 1000) });
     expect(await loadProposal(proposal.id)).toMatchObject({ status: "expired" });
-    expect((await refusal(confirmProposal(proposal.id))).message).toBe("La proposta è scaduta (vale 15 minuti): chiedine una nuova.");
+    expect((await refusal(confirmProposal(proposal.id, OWNER))).message).toBe("La proposta è scaduta (vale 15 minuti): chiedine una nuova.");
     expect((await rails())[0].switchedOff).toBe(false);
   });
 
@@ -146,5 +157,87 @@ describe.skipIf(!enabled)("proposals on the demo shop", () => {
     );
     expect((await refusal(propose({ kind: "nothingLikeThis" }, "assistant"))).message).toBe("Azione non valida.");
     expect(await db.select().from(vetrinaProposals)).toHaveLength(0);
+  });
+
+  it("takes no yes from the program that proposed: a person confirms, and the log says who did what", async () => {
+    const { propose, confirmProposal, loadProposal, undoOperation, listOperations } = await load();
+    const [first] = await rails();
+    const proposal = await propose({ kind: "sectionSwitch", key: first.key, on: false }, "assistant", ASSISTANT);
+    expect(proposal).toMatchObject({ status: "open", actor: "token:assistant", confirmedBy: null });
+
+    // The assistant's own token, or none at all: refused before anything is read or written.
+    const refused = await refusal(confirmProposal(proposal.id, ASSISTANT));
+    expect(refused).toMatchObject({ code: "forbidden", message: expect.stringContaining("la conferma una persona") });
+    expect((await refusal(confirmProposal(proposal.id, null as unknown as Actor))).code).toBe("forbidden");
+    expect((await rails())[0].switchedOff).toBe(false);
+    expect(await loadProposal(proposal.id)).toMatchObject({ status: "open", confirmedBy: null });
+    expect(await listOperations()).toHaveLength(0);
+
+    // A token a person keeps says yes: the action is theirs in the log, and so is the decision.
+    const operation = await confirmProposal(proposal.id, PHONE);
+    expect(operation).toMatchObject({ status: "done", via: "assistant", actor: "token:phone" });
+    expect(await loadProposal(proposal.id)).toMatchObject({ status: "confirmed", actor: "token:assistant", confirmedBy: "token:phone" });
+
+    // The owner undoes it from the screens: filed too.
+    expect(await undoOperation(operation!.id, OWNER)).toMatchObject({ status: "undone", undoneBy: "user:owner" });
+    expect((await rails())[0].switchedOff).toBe(false);
+  });
+
+  it("files who confirmed a proposal the shop changed under, and keeps its proposer on the new one", async () => {
+    const { propose, confirmProposal, loadProposal, startPageOperation } = await load();
+    const [a, , c] = await rails();
+    const proposal = await propose({ kind: "sectionMove", key: c.key, position: 1 }, "assistant", ASSISTANT);
+    await startPageOperation({ kind: "sectionMove", key: a.key, position: 3 });
+
+    const fresh = ((await refusal(confirmProposal(proposal.id, OWNER))).data as { proposal: { id: string; actor: string | null } }).proposal;
+    expect(fresh.actor).toBe("token:assistant");
+    expect(await loadProposal(proposal.id)).toMatchObject({ status: "changed", confirmedBy: "user:owner" });
+    expect(await loadProposal(fresh.id)).toMatchObject({ status: "open", confirmedBy: null });
+  });
+
+  it("turns the API's one-call order into a proposal, unless its caller may act in one call", async () => {
+    const { order, readOrder, listOperations, idle, loadOperation } = await load();
+    const ids = (await readOrder({ taxonomy: "category", id: TRENDING, offset: 0, limit: 200 })).products.map((p) => p.id);
+    const last = ids[ids.length - 1];
+    const asked = { taxonomy: "category" as const, id: TRENDING, ids: [last], position: "top" as const, dryRun: false };
+
+    // A caller that may only propose: the same action, kept for a person's yes — nothing runs.
+    const proposed = await order(asked, ASSISTANT);
+    expect(proposed).toMatchObject({ dryRun: false, proposal: { kind: "order", status: "open", via: "api", actor: "token:assistant" } });
+    expect(await listOperations()).toHaveLength(0);
+    expect((await readOrder({ taxonomy: "category", id: TRENDING, offset: 0, limit: 200 })).products.map((p) => p.id)).toEqual(ids);
+
+    // An admin caller: started at once, filed as its own.
+    const started = await order(asked, SCRIPT);
+    expect(started).toMatchObject({ dryRun: false, operation: { kind: "order", via: "api", actor: "token:script" } });
+    await idle();
+    if (!("operation" in started)) throw new Error("expected the action started");
+    expect(await loadOperation(started.operation.id)).toMatchObject({ status: "done", actor: "token:script" });
+  });
+
+  it("from a process that is not the writer: the writer's running actions left alone, none started, a yes kept open", async () => {
+    const { env } = await import("@/lib/env");
+    const { db, vetrinaOperations, demoShop, listOperations, startOperation, propose, confirmProposal, loadProposal } = await load();
+    const p = demoShop().products.find((x) => x.visibility === "visible")!;
+    const hide = { kind: "hide" as const, target: { kind: "ids" as const, ids: [p.id] } };
+    // An action the writer is running, as the log has it (the demo shop's log started before it).
+    await (await import("./standing")).logSince();
+    const [running] = await db.insert(vetrinaOperations).values({ kind: "hide", input: hide, label: "1 prodotto nascosto", total: 1 }).returning();
+
+    env.HUB_ROLE = "web";
+    try {
+      // Reading the log here never marks it cut off by a restart: it is not this process's.
+      expect((await listOperations()).find((o) => o.id === running.id)?.status).toBe("running");
+      // Refused before anything is filed: no row waits for a runner that is not here.
+      expect((await refusal(startOperation(hide))).code).toBe("not_configured");
+      expect(await db.select().from(vetrinaOperations)).toHaveLength(1);
+      // A proposal writes nothing, so it is made; its yes waits for the writer, and the proposal stays open.
+      const proposal = await propose(hide, "api", ASSISTANT);
+      expect((await refusal(confirmProposal(proposal.id, OWNER))).code).toBe("not_configured");
+      expect(await loadProposal(proposal.id)).toMatchObject({ status: "open", confirmedBy: null });
+      expect(p.visibility).toBe("visible");
+    } finally {
+      env.HUB_ROLE = undefined;
+    }
   });
 });

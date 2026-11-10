@@ -252,6 +252,24 @@ rule forbidding `src/server/**` from importing `src/server/actions/**` or
 `src/components/**`; `RUN_DB_TESTS=1` in the CI e2e job; unit tests for
 `src/server/api/v1.ts`. Decide the WordPress auth path.
 
+*Landed (2026-11-09):* callers and scopes in `serve()` (`HUB_API_TOKENS`,
+`src/lib/actors.ts`; `HUB_API_TOKEN` kept as the caller `legacy`, every
+scope; each route names its scope, 403 otherwise); `actor` and `undone_by`
+on `vetrina_operations`, `actor` and `confirmed_by` on `vetrina_proposals`
+(migration 0028), written by propose, confirm, start and undo, from the
+API's caller or the screens' `Remote-User`; confirm refused without a person
+(`isPerson`: signed in, or a `confirm`-scoped token), in the route and in
+`confirmProposal` itself; the two shortcuts proposing unless `admin`; undo
+scoped; `HUB_ROLE` (`src/server/writer.ts`) guarding the scheduler, the
+operations runner (its `recover()` too), the collections runner and
+`apply-job.ts`; the ESLint boundary, with the two upward imports marked
+where they stand and `drawer-data.ts` moved under `src/server/catalog/`
+ahead of weeks 3–6; the 17 DB suites in the CI e2e job (`npm run test:db`);
+`v1.test.ts`. *Still open from week 1:* the per-principal rate limit and
+open-proposal cap, and the sweep reopening proposals stuck in `confirming`.
+A person confirms today with a `confirm`-scoped token; the Vetrina sheet to
+confirm from the phone is not built (§7).
+
 **Weeks 2–3: the Vetrina half live for a program.**
 `src/app/api/mcp/route.ts` (Streamable HTTP, in the Next process,
 exempted in `src/proxy.ts` beside `/api/v1/`): one `propose_<kind>` tool
@@ -285,6 +303,26 @@ homepage, add it to the main menu" as three proposals a person confirms,
 each in Attività with `via: assistant` and the confirming actor recorded,
 each undoable.
 
+*Landed (2026-11-09), ahead of the order above:* menus over `wp/v2` with
+the Application Password ([menus.md](menus.md)). `src/server/wordpress/client.ts`
+over `adapters/http.ts` (menus, items, theme places, pages, `/batch/v1`); a
+`MenuSource` port with WordPress's implementation and a demo fixture
+keeping WordPress's rules; a pure planner (`src/lib/menus/plan.ts`) that
+renumbers the whole menu as WordPress's editor does and writes only what
+changes; `menuItemAdd`, `menuItemMove`, `menuItemRemove` and a fourth,
+`menuItemRename`, in the registry (scope `menu`), proposable over the API,
+with undo by id and neighbour; whole menus too (`menuCreate` with a copy,
+`menuRename`, `menuDelete`, `menuLocation` for the theme's places); `GET
+/menus`, `/menus/{id}`, `/menu-locations`, `/pages`; the Vetrina's Menu tab. **One change from the plan:** there is no
+`modified_gmt` to compare-and-swap on — WordPress's menu items carry no
+modified date — so the compare is a fingerprint of the menu's structure
+(`digest`), sent back as `expected` and kept in the proposal's preview, and
+the write follows its assessment within one request; a write WordPress
+takes only part of is put back. Built from WordPress 6.5's controllers and
+tested on the fixture; **not yet run against a live WordPress**.
+For the acceptance sentence, creating a category is still missing as an
+action (`categorize` takes an existing one).
+
 **Weeks 8–12: durability.**
 Replace the runner's `globalThis` chain with a leased `jobs` table
 (`FOR UPDATE SKIP LOCKED` + `locked_until` + worker identity, the pattern
@@ -304,8 +342,11 @@ interrupts a running sale, and extraction becomes a free choice.
 - **Long streams behind Cloudflare.** The 100-second ceiling that shaped
   `apply-job.ts` applies to an MCP endpoint too: keep tool answers short
   and have the caller poll `/operations/{id}`.
-- **WordPress menu REST quirks** (locations, auto-add) are unknown until a
-  fixture is built from a real site.
+- **WordPress menu REST quirks.** Read from WordPress 6.5's source and
+  mirrored in the fixture (no modified date, delete needs `force`, a bare
+  delete orphans the children, a title equal to the object's name stored
+  empty, `menu_order` never renumbered by WordPress, theme places keyed by
+  slug); `auto_add` is left alone. Still to confirm on a live site.
 
 ### Decided (2026-11-09)
 
@@ -317,5 +358,5 @@ interrupts a running sale, and extraction becomes a free choice.
   `menu-items`), pages and media; one more secret in `src/lib/env.ts`
   (`WP_APP_USER`, `WP_APP_PASSWORD`), separate from the Woo keys, which
   cannot reach `wp/v2`. New `wc-gh/v1` routes remain the fallback for
-  anything the core API does not cover. `hub-and-plugin.md:121` is to be
-  amended when the first menu kind lands.
+  anything the core API does not cover. `hub-and-plugin.md:121` is
+  amended: menus are the Hub's.

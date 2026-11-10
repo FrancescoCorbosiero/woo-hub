@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * And of the whole-store sync's instalments, which count those sizes with the
  * prices of their product. Opt-in, like the other DB suites:
  *
- *   RUN_DB_TESTS=1 DATABASE_URL=postgres://…@localhost:…/… REDIS_URL=… npm test
+ *   DATABASE_URL=postgres://…@localhost:…/hub_test npm run test:db
  */
 const url = process.env.DATABASE_URL ?? "";
 const enabled = process.env.RUN_DB_TESTS === "1" && /@(localhost|127\.0\.0\.1)[:/]/.test(url);

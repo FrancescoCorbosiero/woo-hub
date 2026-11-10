@@ -28,6 +28,8 @@ import { PositionsPanel } from "./PositionsPanel";
 import { ProductList } from "./ProductList";
 import { SortActions } from "./SortActions";
 import { TermActionsPanel } from "./TermActionsPanel";
+import { AddToMenuSheet, useTermMenus } from "../../menus/TermMenus";
+import { useTermManage, type TermManageMode } from "./TermManage";
 
 /**
  * A category's or a brand's screen. At the top, its control panel: the
@@ -79,6 +81,16 @@ function Term({
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [reorderOpen, setReorderOpen] = React.useState(false);
   const [newRule, setNewRule] = React.useState<NewCategoryRequest | null>(null);
+  const [addingToMenu, setAddingToMenu] = React.useState(false);
+  // The site's menus, when connected: "Aggiungi a un menu del sito" in the "⋯".
+  const termMenus = useTermMenus(term);
+  const menuRef = { taxonomy: term.taxonomy, id: term.id, name: term.name };
+  const tm = t.vetrinaCatalog.terms;
+  const manage = useTermManage(term);
+  const manageWith = (mode: TermManageMode) => () => {
+    setMenuOpen(false);
+    manage.open(mode);
+  };
   // Bumped when a rule moved products: the list reads its rows again.
   const [version, setVersion] = React.useState(0);
 
@@ -153,7 +165,7 @@ function Term({
       {/* While searching, the results come first: with the keyboard up, the panel would hide them. */}
       {!searching && (
         <>
-          <ControlPanel term={term} onRule={() => setRuleOpen(true)} />
+          <ControlPanel term={term} onRule={() => setRuleOpen(true)} onAddToMenu={() => setAddingToMenu(true)} />
           <TermActionsPanel term={term} onChanged={refreshAll} />
           {term.count > 0 && (
             <PositionsPanel
@@ -233,6 +245,16 @@ function Term({
             </ActionsButton>
           )}
           <ActionsButton onClick={saveAsRule}>{v.menu.saveRule}</ActionsButton>
+          {termMenus.data && (
+            <ActionsButton
+              onClick={() => {
+                setMenuOpen(false);
+                setAddingToMenu(true);
+              }}
+            >
+              {t.vetrinaCatalog.menus.term.addToMenu}
+            </ActionsButton>
+          )}
           <ActionsButton
             onClick={() => {
               setMenuOpen(false);
@@ -240,6 +262,16 @@ function Term({
             }}
           >
             {v.menu.activity}
+          </ActionsButton>
+        </ActionsGroup>
+        {/* The term itself: its name, a sub-term, its place in the tree, merging, deleting (TermManage.tsx). */}
+        <ActionsGroup>
+          <ActionsButton onClick={manageWith("rename")}>{tm.menu.rename}</ActionsButton>
+          <ActionsButton onClick={manageWith("child")}>{tm.menu.newChild[term.taxonomy]}</ActionsButton>
+          <ActionsButton onClick={manageWith("move")}>{tm.menu.move}</ActionsButton>
+          <ActionsButton onClick={manageWith("merge")}>{tm.menu.merge}</ActionsButton>
+          <ActionsButton colors={{ textIos: "text-red-600 dark:text-red-500", textMaterial: "text-red-600 dark:text-red-400" }} onClick={manageWith("delete")}>
+            {tm.menu.delete[term.taxonomy]}
           </ActionsButton>
         </ActionsGroup>
         <ActionsGroup>
@@ -250,6 +282,8 @@ function Term({
       </Actions>
 
       <NewCategorySheet request={newRule} onClose={() => setNewRule(null)} />
+      <AddToMenuSheet term={menuRef} open={addingToMenu} onClose={() => setAddingToMenu(false)} />
+      {manage.sheets}
       <ReorderSheet term={reorderOpen ? orderTerm : null} onClose={() => setReorderOpen(false)} />
       {sourceSheets.sheets}
     </Page>

@@ -116,9 +116,10 @@ Letters follow `docs/02-FEATURES.md` there. **Hub ✓** = in the Hub today;
 | Sorter (`menu_order`) | Hub ✓ | "Ordina" / "Riordina" on a category's or brand's screen, and `/api/v1/catalog/order` ([api.md](api.md)) |
 | Inline editor | Split | Price, stock and tags in the Hub (drawer, Vetrina); the full product form stays WordPress's own editor |
 | Taxonomy rules | Hub ✓ | Taxonomies tab |
+| Taxonomy CRUD (categories, brands, tags) | Hub ✓ | Made, renamed, moved, merged, deleted from the Vetrina and the API, with undo; renames leave aliases Publish follows ([taxonomy.md](taxonomy.md)) |
 | Smart taxonomy | Hub ✓ | Automatic categories, better than the plan: persisted rules, held changes, a log |
 | Tax query, counts | Hub → | Over `store_index`, when a screen needs it |
-| Navigation menus | Plugin | WordPress's menu editor already does it |
+| Navigation menus | Hub ✓ | The Vetrina's Menu tab and the API, over `wp/v2` with an Application Password — no plugin route ([menus.md](menus.md)): items, whole menus, the theme's places |
 | Round-trip export/import | Hub ✓ | The hidden `/preview` file flow |
 
 ### G–I. Media, email, tools

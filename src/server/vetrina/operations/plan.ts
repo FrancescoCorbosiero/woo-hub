@@ -234,8 +234,17 @@ export function visibilityAfter(kind: "hide" | "show", current: string, was?: st
 }
 
 /** A product's whole list of tags or categories after adding or removing one; null when it changes nothing. */
-export function listAfter(current: readonly number[], change: { add: number } | { remove: number }): number[] | null {
+export function listAfter(
+  current: readonly number[],
+  change: { add: number } | { remove: number } | { replace: number; with: number },
+): number[] | null {
   if ("add" in change) return current.includes(change.add) ? null : [...current, change.add];
+  // A term merged into another: the one out, the other in (once, if it was there already).
+  if ("replace" in change) {
+    if (!current.includes(change.replace)) return null;
+    const rest = current.filter((id) => id !== change.replace);
+    return rest.includes(change.with) ? rest : [...rest, change.with];
+  }
   return current.includes(change.remove) ? current.filter((id) => id !== change.remove) : null;
 }
 
@@ -474,8 +483,18 @@ export function labelParams(input: OperationInput, names: LabelNames): Operation
       };
     case "sourceOrder":
       return { ...base, term: names.term ?? null, source: names.source ?? "" };
+    // A merge's and a deletion's labels are made with their preview (term-removal.ts): here for the type's sake.
+    case "termMerge":
+    case "termDelete":
+      return { ...base, taxonomy: input.taxonomy, term: names.term ?? null };
+    case "priceMatch":
+      return { ...base, source: input.source ?? "" };
   }
 }
+
+/** A taxonomy action's taxonomy, as its label keeps it. */
+const taxonomyOf = (p: OperationLabelParams): "category" | "brand" | "tag" =>
+  p.taxonomy === "brand" || p.taxonomy === "tag" ? p.taxonomy : "category";
 
 /** An action in the owner's words: "Saldo −20% · Saldi outlet", "12 prodotti nascosti", "Tag «saldi» a 8 prodotti". */
 export function labelText(p: OperationLabelParams, w: Words = words()): string {
@@ -507,6 +526,18 @@ export function labelText(p: OperationLabelParams, w: Words = words()): string {
       return w.label.sourceOrder(p.count, p.source ?? "", p.term || w.source.wholeCatalog);
     case "delete":
       return w.label.delete(p.count);
+    case "priceMatch":
+      return w.label.priceMatch(p.count, p.source || null);
+    case "termCreate":
+      return w.label.termCreate(taxonomyOf(p), p.term ?? "", p.into ?? null);
+    case "termRename":
+      return w.label.termRename(taxonomyOf(p), p.from ?? "", p.term ?? "");
+    case "termMove":
+      return w.label.termMove(taxonomyOf(p), p.term ?? "", p.into ?? null);
+    case "termMerge":
+      return w.label.termMerge(taxonomyOf(p), p.term ?? "", p.into ?? "", p.count);
+    case "termDelete":
+      return w.label.termDelete(taxonomyOf(p), p.term ?? "", p.count);
     case "sectionSwitch":
       return w.label.sectionSwitch(p.section ?? "", p.on ?? false);
     case "sectionMove":
@@ -523,6 +554,22 @@ export function labelText(p: OperationLabelParams, w: Words = words()): string {
       return w.label.sectionEdit(p.section ?? "");
     case "blockEdit":
       return w.label.blockEdit(p.block ?? "");
+    case "menuItemAdd":
+      return w.label.menuItemAdd(p.count, p.item ?? "", p.menu ?? "");
+    case "menuItemMove":
+      return w.label.menuItemMove(p.item ?? "", p.menu ?? "");
+    case "menuItemRemove":
+      return w.label.menuItemRemove(p.item ?? "", p.menu ?? "");
+    case "menuItemRename":
+      return w.label.menuItemRename(p.item ?? "", p.renamed ?? null, p.menu ?? "");
+    case "menuCreate":
+      return w.label.menuCreate(p.menu ?? "", p.from ?? null);
+    case "menuRename":
+      return w.label.menuRename(p.menu ?? "", p.from ?? "");
+    case "menuDelete":
+      return w.label.menuDelete(p.menu ?? "");
+    case "menuLocation":
+      return w.label.menuLocation(p.menu ?? null, p.place ?? "");
   }
 }
 

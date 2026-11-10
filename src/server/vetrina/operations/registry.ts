@@ -1,8 +1,12 @@
 import "server-only";
 import { z } from "zod";
 import { OPERATION_UNDO_DAYS, type ActionInput, type ActionKind, type OperationTarget } from "@/lib/vetrina/catalog-ops";
+import { isMenuActionKind } from "@/lib/vetrina/menu-ops";
+import { isTermActionKind } from "@/lib/vetrina/term-ops";
 import { isPageActionKind } from "@/lib/vetrina/page-ops";
 import { OperationInputSchema, parseOperationInput } from "./input";
+import { MenuActionInputSchema, parseMenuActionInput } from "./menu-input";
+import { parseTermActionInput, TermActionInputSchema } from "./term-input";
 import { PageActionInputSchema, parsePageActionInput } from "./page-input";
 import { words } from "./words";
 
@@ -18,10 +22,10 @@ import { words } from "./words";
  * (labels, previews, refusals) stays in his language.
  */
 
-export type ActionScope = "catalog" | "homepage";
+export type ActionScope = "catalog" | "homepage" | "menu" | "taxonomy";
 
 export interface ActionSpec<K extends ActionKind = ActionKind> {
-  /** The catalog's actions change products; the homepage's change its sections and blocks. */
+  /** The catalog's actions change products; the homepage's its sections and blocks; a menu's the site's navigation menus; the taxonomy's the store's categories, brands and tags. */
   scope: ActionScope;
   title: string;
   /** What it does, and what to know before asking it. */
@@ -34,6 +38,8 @@ export interface ActionSpec<K extends ActionKind = ActionKind> {
 
 const UNDO_PRODUCTS = `Within ${OPERATION_UNDO_DAYS} days: each value it wrote goes back to what it was, where the shop still shows the value the action wrote (a value changed since stays).`;
 const UNDO_SECTION = `Within ${OPERATION_UNDO_DAYS} days, while the section is as the action left it (found by its fingerprint wherever it is now): the way back is written over the page as it is. Refused when the section changed since — the newer change stands.`;
+
+const UNDO_MENU_ITEM = "while it is as the action left it (found by its id; the items around it may have changed). Refused when it changed since — the newer change stands.";
 
 const SECTION = "category:saldi-sneakers-outlet#0";
 const ONE: OperationTarget = { kind: "ids", ids: [4810] };
@@ -217,6 +223,134 @@ export const ACTIONS: { [K in ActionKind]: ActionSpec<K> } = {
     undo: `Within ${OPERATION_UNDO_DAYS} days, while the block is as the action left it: its texts go back.`,
     example: { kind: "blockEdit", path: "3", blockName: "golden-hive/faq", fields: { title: "Domande frequenti" } },
   },
+  menuItemAdd: {
+    scope: "menu",
+    title: "Add items to a navigation menu",
+    description:
+      "Add items, in order, to one of the site's navigation menus (GET /api/v1/menus): product categories and brands by id (GET /api/v1/catalog/terms), pages by id, " +
+      "or links (`url`, `label`). `place`: under an item (`parent`) or at the top level, at a 1-based `position` there, else after the last. " +
+      "An item shows its category's, brand's or page's name, and follows it when renamed, unless given a `label`. The menu is renumbered as WordPress's own editor numbers it.",
+    undo: `Within ${OPERATION_UNDO_DAYS} days: the items it added are taken away, each ${UNDO_MENU_ITEM} An item given items of its own since stays.`,
+    example: { kind: "menuItemAdd", menuId: 2, items: [{ kind: "category", id: 12 }, { kind: "brand", id: 7, label: "Nike" }], place: { parent: 31, position: 1 } },
+  },
+  menuItemMove: {
+    scope: "menu",
+    title: "Move a navigation menu item",
+    description:
+      "Move an item of a navigation menu, with every item under it, to another place: under another item (`place.parent`) or at the top level, " +
+      "at a 1-based `place.position` among the items there once it has left its own place (so 3 puts it third), else after the last. Not under itself or its own items.",
+    undo: `Within ${OPERATION_UNDO_DAYS} days, ${UNDO_MENU_ITEM} It goes back under the same item, after the same neighbour.`,
+    example: { kind: "menuItemMove", menuId: 2, itemId: 45, place: { parent: 0, position: 2 } },
+  },
+  menuItemRemove: {
+    scope: "menu",
+    title: "Take an item out of a navigation menu",
+    description:
+      "Take an item out of a navigation menu; the items under it take its place, in their order, as WordPress's menu editor does. " +
+      "The category, brand or page it led to stays in the shop.",
+    undo: `Within ${OPERATION_UNDO_DAYS} days: the item comes back where it was, after the same neighbour, with its label and settings, and its items go back under it — those still where it left them. Refused when the item it was under is gone.`,
+    example: { kind: "menuItemRemove", menuId: 2, itemId: 45 },
+  },
+  menuItemRename: {
+    scope: "menu",
+    title: "Rename a navigation menu item",
+    description:
+      "Give a navigation menu item a `label` of its own, or `null` to show its category's, brand's or page's own name again (and follow it when renamed). A link always keeps a label.",
+    undo: `Within ${OPERATION_UNDO_DAYS} days, while it has the label the action gave it: its label goes back.`,
+    example: { kind: "menuItemRename", menuId: 2, itemId: 45, label: "Saldi" },
+  },
+  menuCreate: {
+    scope: "menu",
+    title: "Make a navigation menu",
+    description:
+      "Make a new navigation menu, empty or starting with a copy of another menu's items (`copyOf`; items leading to something gone are left out). " +
+      "It is in no place of the theme — the site does not show it — until put in one (menuLocation): a copy is the safe way to rework a menu before showing it. " +
+      "Two menus never share a name.",
+    undo: `Within ${OPERATION_UNDO_DAYS} days, while it is as the action made it and the theme shows it nowhere: it is deleted.`,
+    example: { kind: "menuCreate", name: "Menu Black Friday", copyOf: 2 },
+  },
+  menuRename: {
+    scope: "menu",
+    title: "Rename a navigation menu",
+    description: "Give a navigation menu another name (WordPress's own: the theme shows its items, not its name). Two menus never share a name.",
+    undo: `Within ${OPERATION_UNDO_DAYS} days, while it has the name the action gave it: its name goes back.`,
+    example: { kind: "menuRename", menuId: 2, name: "Menu principale" },
+  },
+  menuDelete: {
+    scope: "menu",
+    title: "Delete a navigation menu",
+    description:
+      "Delete a navigation menu with its items. Refused while a place of the theme shows it: put another menu there first, or empty the place (menuLocation). " +
+      "The categories, brands and pages it led to stay.",
+    undo: `Within ${OPERATION_UNDO_DAYS} days: the menu is made again with its items as they were (new ids), in no place, as it was. Refused when another menu has its name by then.`,
+    example: { kind: "menuDelete", menuId: 5 },
+  },
+  menuLocation: {
+    scope: "menu",
+    title: "Choose the menu a place of the theme shows",
+    description:
+      "Put a navigation menu in a place of the theme (`location`, its slug as GET /api/v1/menu-locations lists it: the header's, the footer's…), " +
+      "instead of the menu there; `menuId: null` shows none there. The site shows it at once.",
+    undo: `Within ${OPERATION_UNDO_DAYS} days, while the place shows what the action put there: the menu it showed before goes back, if it still exists.`,
+    example: { kind: "menuLocation", location: "primary", menuId: 5 },
+  },
+  priceMatch: {
+    scope: "catalog",
+    title: "Match products' prices to another site's",
+    description:
+      "Bring each product to a price (`items`: product id and the price its cheapest size should have — the other site's): every size moves by the same amount, keeping their spread. " +
+      "A product the Hub prices (KicksDB, the supplier's feed) gets the new prices as locks, written through the ordinary sync, so the engine never writes over them; " +
+      "a simple product the Hub does not price gets its own regular price. Left as they are, with why: a product on sale, one with no price of the Hub's, one at that price already, " +
+      "one with sizes the Hub does not price. Compare a list first: GET /api/v1/order-sources/{id}/compare gives the products whose price differs beyond a threshold, ready for this action.",
+    undo: `Within ${OPERATION_UNDO_DAYS} days: each size's lock (or a simple product's price) goes back to what it was, while it is as the action left it; the sync writes the prices again.`,
+    example: { kind: "priceMatch", items: [{ productId: 4810, price: 139 }], source: "Concorrente" },
+  },
+  termCreate: {
+    scope: "taxonomy",
+    title: "Make a category, a brand or a tag",
+    description:
+      "Make a product category, a brand or a tag in the store, at the top level or under a `parent` (categories and brands). " +
+      "Under one parent two terms never share a name (WordPress ignores case).",
+    undo: `Within ${OPERATION_UNDO_DAYS} days, while it is as made and nothing holds it (no product, no sub-term): it is deleted.`,
+    example: { kind: "termCreate", taxonomy: "category", name: "Sneakers in saldo", parent: 12 },
+  },
+  termRename: {
+    scope: "taxonomy",
+    title: "Rename a category, a brand or a tag",
+    description:
+      "Give a store term another name. Its slug — its address on the site — stays, and so does every link to it (homepage sections, menus). " +
+      "A category's or brand's old name is kept as an alias, so Publish files products named the old way into it instead of making a new term.",
+    undo: `Within ${OPERATION_UNDO_DAYS} days, while it has the name the action gave it: its name goes back, and the alias goes.`,
+    example: { kind: "termRename", taxonomy: "brand", termId: 7, name: "Nike" },
+  },
+  termMove: {
+    scope: "taxonomy",
+    title: "Move a category or a brand under another",
+    description:
+      "Put a category or a brand, with its sub-terms, under another term of the same taxonomy (`parent`), or at the top level (0). Not under itself or a term below it. " +
+      "A margin set on a term covers the terms below it: the preview says when its products may take another margin from the next price sync.",
+    undo: `Within ${OPERATION_UNDO_DAYS} days, while it is where the action put it: it goes back under its old parent.`,
+    example: { kind: "termMove", taxonomy: "category", termId: 31, parent: 12 },
+  },
+  termMerge: {
+    scope: "taxonomy",
+    title: "Merge a category, a brand or a tag into another",
+    description:
+      "Every product holding the term holds `into` instead, product by product, in the background (follow it at /operations/{id}); its sub-terms go under `into`; " +
+      "then the term is deleted, its name kept as an alias of `into` for Publish. Refused for an automatic category (its rule decides its products), " +
+      "a term with a margin of its own, a term the homepage shows, and a merge into itself or a term below it.",
+    undo: `Within ${OPERATION_UNDO_DAYS} days: the term is made again (same name, slug, parent, description; a new id), its sub-terms go back under it, and each product holds it again instead of \`into\` — a product changed since stays as it is.`,
+    example: { kind: "termMerge", taxonomy: "category", termId: 45, into: 12 },
+  },
+  termDelete: {
+    scope: "taxonomy",
+    title: "Delete a category, a brand or a tag",
+    description:
+      "Every product holding the term lets go of it, product by product, in the background (a product left with no category goes to the shop's default one, as WooCommerce does); " +
+      "then the term is deleted, its sub-terms moving up to its parent. The products stay in the shop. Refused for an automatic category, a term with a margin of its own and a term the homepage shows.",
+    undo: `Within ${OPERATION_UNDO_DAYS} days: the term is made again (same name, slug, parent, description; a new id), its sub-terms go back under it, and each product holds it again — a product changed since stays as it is.`,
+    example: { kind: "termDelete", taxonomy: "tag", termId: 88 },
+  },
 };
 
 export const ACTION_KINDS = Object.keys(ACTIONS) as ActionKind[];
@@ -224,7 +358,12 @@ export const ACTION_KINDS = Object.keys(ACTIONS) as ActionKind[];
 /** Each kind's own schema, out of the two unions the server checks with. */
 function schemasByKind(): Map<string, z.ZodType> {
   const out = new Map<string, z.ZodType>();
-  for (const option of [...OperationInputSchema.options, ...PageActionInputSchema.options]) {
+  for (const option of [
+    ...OperationInputSchema.options,
+    ...PageActionInputSchema.options,
+    ...MenuActionInputSchema.options,
+    ...TermActionInputSchema.options,
+  ]) {
     const kind = (option as z.ZodObject<{ kind: z.ZodLiteral<string> }>).shape.kind.value;
     out.set(kind, option);
   }
@@ -265,9 +404,12 @@ export function describeActions(): ActionDescription[] {
   return described;
 }
 
-/** Any action's input, checked — the catalog's or the homepage's, by its kind; else what is wrong, said plainly. */
+/** Any action's input, checked — the catalog's, the homepage's or a menu's, by its kind; else what is wrong, said plainly. */
 export function parseAction(input: unknown): { ok: true; data: ActionInput } | { ok: false; error: string } {
   const kind = typeof input === "object" && input != null ? (input as { kind?: unknown }).kind : undefined;
   if (typeof kind !== "string" || !(kind in ACTIONS)) return { ok: false, error: words().input.operation };
-  return isPageActionKind(kind) ? parsePageActionInput(input) : parseOperationInput(input);
+  if (isPageActionKind(kind)) return parsePageActionInput(input);
+  if (isMenuActionKind(kind)) return parseMenuActionInput(input);
+  if (isTermActionKind(kind)) return parseTermActionInput(input);
+  return parseOperationInput(input);
 }

@@ -1,24 +1,36 @@
 import "server-only";
 import { z } from "zod";
+import { may, type Actor } from "@/lib/actors";
 import type { CatalogTaxonomy } from "@/lib/vetrina/catalog";
 import type { OperationInput, OperationPreview, OperationView } from "@/lib/vetrina/catalog-ops";
+import type { ProposalView } from "@/lib/vetrina/proposals";
+import { decodeEntities } from "@/server/collections/index-rows";
 import { readIndexFacts } from "@/server/collections/repo";
 import { storeClient } from "@/server/collections/store";
 import { matchingIds, readCatalogTrees, readOverview } from "@/server/vetrina/catalog";
 import { parseOperationInput } from "@/server/vetrina/operations/input";
+import { propose } from "@/server/vetrina/operations/proposals";
 import * as operations from "@/server/vetrina/operations/service";
 import { VetrinaError } from "@/server/vetrina/source";
 
 /**
  * The catalog's order over the API (/api/v1/catalog/*): the terms, a term's
- * products in the shop's order, and "Ordina" — previewed (dryRun) or
- * started, as the Vetrina's sheets do. The order itself, its plan and its
- * undo are the catalog action's (src/server/vetrina/operations/order.ts):
- * the API adds nothing of its own but SKUs as a way to name products.
+ * products in the shop's order, and "Ordina" — previewed (dryRun), started
+ * as the Vetrina's sheets do (an admin caller), or proposed for a person to
+ * confirm (any other). The order itself, its plan and its undo are the
+ * catalog action's (src/server/vetrina/operations/order.ts): the API adds
+ * nothing of its own but SKUs as a way to name products.
  */
 
 const Taxonomy = z.enum(["category", "brand"]);
 const Id = z.coerce.number().int().positive();
+
+/** Every tag: id, name, slug (tags are flat: parent 0, path its name), and its products, counted live by the store. */
+export async function listTags() {
+  const tags = await (await storeClient()).listTags();
+  // WooCommerce's term list carries each term's product count; the demo shop's does not (null).
+  return tags.map((t) => ({ id: t.id, name: decodeEntities(t.name), slug: t.slug, parent: 0, path: decodeEntities(t.name), count: (t as { count?: number }).count ?? null }));
+}
 
 /** Every category or brand, with its parent and its products (sub-terms' included). */
 export async function listTerms(taxonomy: CatalogTaxonomy) {
@@ -97,10 +109,16 @@ async function idsOfSkus(skus: readonly string[]): Promise<number[]> {
   return skus.map((s) => bySku.get(s.toUpperCase())!);
 }
 
-/** "Ordina" over the API: the preview with dryRun, else the action started (follow it at /api/v1/operations/{id}). */
+/**
+ * "Ordina" over the API: the preview with dryRun; else, for a caller that
+ * may act in one call (admin), the action started (follow it at
+ * /api/v1/operations/{id}); for any other, the action proposed — the same
+ * preview kept, for a person to confirm (/api/v1/proposals/{id}/confirm).
+ */
 export async function order(
   body: z.infer<typeof OrderBody>,
-): Promise<{ dryRun: true; preview: OperationPreview } | { dryRun: false; operation: OperationView }> {
+  by: Actor,
+): Promise<{ dryRun: true; preview: OperationPreview } | { dryRun: false; operation: OperationView } | { dryRun: false; proposal: ProposalView }> {
   const ids = [...new Set([...(body.ids ?? []), ...(await idsOfSkus(body.skus ?? []))])];
   const parsed = parseOperationInput({
     kind: "order",
@@ -110,5 +128,6 @@ export async function order(
   } satisfies OperationInput);
   if (!parsed.ok) throw new VetrinaError("invalid", parsed.error, 400);
   if (body.dryRun) return { dryRun: true, preview: await operations.previewOperation(parsed.data) };
-  return { dryRun: false, operation: await operations.startOperation(parsed.data, "api") };
+  if (may(by, "admin")) return { dryRun: false, operation: await operations.startOperation(parsed.data, "api", by) };
+  return { dryRun: false, proposal: await propose(parsed.data, "api", by) };
 }

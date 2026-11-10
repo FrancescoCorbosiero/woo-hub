@@ -1,4 +1,5 @@
 import "server-only";
+import { actorOf, type Actor } from "@/lib/actors";
 import {
   OPERATION_UNDO_DAYS,
   type HomepageSectionOption,
@@ -12,17 +13,22 @@ import {
   type TermMarginState,
 } from "@/lib/vetrina/catalog-ops";
 import type { CatalogTaxonomy } from "@/lib/vetrina/catalog";
+import { isMenuActionKind, type MenuActionInput } from "@/lib/vetrina/menu-ops";
+import { isTermActionKind, type TermActionInput } from "@/lib/vetrina/term-ops";
 import { isPageActionKind, type PageActionInput, type PageActionKind } from "@/lib/vetrina/page-ops";
 import type { VetrinaOperationRow } from "@/server/db/schema";
 import { readCatalogTrees, readTermProducts } from "@/server/vetrina/catalog";
 import { readRail } from "@/server/vetrina/service";
 import { VetrinaError } from "@/server/vetrina/source";
+import { isWriter, NOT_WRITER } from "@/server/writer";
 import { termKeyOf } from "./context";
 import { checkMarginUndo, loadTermMargin as readTermMargin } from "./margin";
 import { labelText, standingSales, undoable } from "./plan";
 import { assess } from "./preview";
 import * as repo from "./repo";
 import { isQueued, queueRun, queueSweep, queueUndo, recover } from "./runner";
+import { startMenuAction, undoMenuAction, type MenuResult } from "./menu";
+import { startTermAction, undoTermAction, type TermResult } from "./terms";
 import { startPageAction, undoPageAction, type PageResult } from "./page";
 import { homepageSections } from "./sections";
 import { sectionVerdict } from "./writes";
@@ -42,9 +48,24 @@ export { shopToday };
 
 const iso = (date: Date | null) => (date ? date.toISOString() : null);
 
+/**
+ * The catalog's actions run only in the process that writes (HUB_ROLE,
+ * src/server/writer.ts): refused here, before anything is filed — a row
+ * filed where no runner takes it would wait for nothing.
+ */
+function mustWrite(): void {
+  if (!isWriter()) throw new VetrinaError("not_configured", NOT_WRITER, 503);
+}
+
 export function operationView(row: VetrinaOperationRow, now = Date.now(), sectionKey?: string | null): OperationView {
-  // A homepage action with no way back on file (a fixed list pointed elsewhere) has no "Annulla".
-  const wayBack = !isPageActionKind(row.kind) || row.page != null;
+  // A homepage or menu action with no way back on file (a fixed list pointed elsewhere) has no "Annulla".
+  const wayBack = isPageActionKind(row.kind)
+    ? row.page != null
+    : isMenuActionKind(row.kind)
+      ? row.menu != null
+      : isTermActionKind(row.kind)
+        ? row.term != null
+        : true;
   return {
     id: row.id,
     kind: row.kind,
@@ -52,6 +73,7 @@ export function operationView(row: VetrinaOperationRow, now = Date.now(), sectio
     label: row.labelParams ? labelText(row.labelParams) : row.label,
     status: row.status,
     via: row.via,
+    actor: row.actor,
     progress: { done: row.done, total: row.total },
     changed: row.changed,
     failed: row.failed,
@@ -61,6 +83,7 @@ export function operationView(row: VetrinaOperationRow, now = Date.now(), sectio
     finishedAt: iso(row.finishedAt),
     undoable: wayBack && undoable(row, now, OPERATION_UNDO_DAYS),
     undoneAt: iso(row.undoneAt),
+    undoneBy: row.undoneBy,
     queued: (row.status === "running" || row.status === "undoing") && isQueued(row.id),
     undo: row.undo ?? null,
     ...(sectionKey !== undefined ? { sectionKey } : {}),
@@ -74,9 +97,11 @@ export async function previewOperation(input: OperationInput): Promise<Operation
 
 /**
  * File the action and queue it; it runs in the background. The answer is its
- * row, to follow. `via`: how it came (the Vetrina's screens unless said).
+ * row, to follow. `via`: how it came (the Vetrina's screens unless said);
+ * `by`: who asked (src/lib/actors.ts), null when nobody is signed in.
  */
-export async function startOperation(input: OperationInput, via: OperationVia = "app"): Promise<OperationView> {
+export async function startOperation(input: OperationInput, via: OperationVia = "app", by: Actor | null = null): Promise<OperationView> {
+  mustWrite();
   await recover();
   // In demo mode the log of this demo shop starts no later than its first action.
   await logSince();
@@ -100,6 +125,7 @@ export async function startOperation(input: OperationInput, via: OperationVia = 
     termKey: assessment.termKey,
     total: assessment.total,
     via,
+    actor: actorOf(by),
   });
   queueRun(row.id);
   return operationView(row);
@@ -112,9 +138,36 @@ export async function startOperation(input: OperationInput, via: OperationVia = 
 export async function startPageOperation<K extends PageActionKind>(
   input: Extract<PageActionInput, { kind: K }>,
   via: OperationVia = "app",
+  by: Actor | null = null,
 ): Promise<{ operation: OperationView | null; result: PageResult<K> }> {
-  const { row, sectionKey, result } = await startPageAction(input, via);
+  const { row, sectionKey, result } = await startPageAction(input, via, actorOf(by));
   return { operation: row ? operationView(row, Date.now(), sectionKey) : null, result };
+}
+
+/**
+ * A menu action, done at once (menu.ts): the menu as it is after, and the
+ * log's view of it — null when the log could not file it.
+ */
+/**
+ * A taxonomy action done at once (terms.ts): the term as it is after, and the
+ * log's view of it — null when the log could not file it.
+ */
+export async function startTermOperation(
+  input: TermActionInput,
+  via: OperationVia = "app",
+  by: Actor | null = null,
+): Promise<{ operation: OperationView | null; result: TermResult }> {
+  const { row, result } = await startTermAction(input, via, actorOf(by));
+  return { operation: row ? operationView(row) : null, result };
+}
+
+export async function startMenuOperation(
+  input: MenuActionInput,
+  via: OperationVia = "app",
+  by: Actor | null = null,
+): Promise<{ operation: OperationView | null; result: MenuResult }> {
+  const { row, result } = await startMenuAction(input, via, actorOf(by));
+  return { operation: row ? operationView(row) : null, result };
 }
 
 async function found(id: string): Promise<VetrinaOperationRow> {
@@ -137,9 +190,10 @@ export async function listOperations(limit = 20): Promise<OperationView[]> {
 /**
  * "Annulla": queue the undo. Refused while the action is still under way,
  * once undone, past its time — and, for a place on the homepage, when the
- * section was changed since (its pins are someone's newer word).
+ * section was changed since (its pins are someone's newer word). `by`: who
+ * undoes it, filed on the row.
  */
-export async function undoOperation(id: string): Promise<OperationView> {
+export async function undoOperation(id: string, by: Actor | null = null): Promise<OperationView> {
   await recover();
   const row = await found(id);
   const w = words();
@@ -150,9 +204,15 @@ export async function undoOperation(id: string): Promise<OperationView> {
   if (!undoable(row, Date.now(), OPERATION_UNDO_DAYS)) throw new VetrinaError("invalid", w.error.tooOld(OPERATION_UNDO_DAYS), 400);
   // A homepage action is one write: its way back is written now, not queued.
   if (isPageActionKind(row.kind)) {
-    const undone = await undoPageAction(row);
+    const undone = await undoPageAction(row, actorOf(by));
     return operationView(undone.row, Date.now(), undone.sectionKey);
   }
+  // A menu action's way back is written at once too.
+  if (isMenuActionKind(row.kind)) return operationView((await undoMenuAction(row, actorOf(by))).row);
+  // So is a taxonomy action's done at once (a merge's and a deletion's are queued, below).
+  if (isTermActionKind(row.kind)) return operationView((await undoTermAction(row, actorOf(by))).row);
+  // A catalog action's undo is queued like the action itself: in the writer only.
+  mustWrite();
   if (row.section) {
     // A section deleted since has nothing to put back: the undo still takes back the categories the pin added.
     const rail = await readRail(row.section.key).then(
@@ -168,7 +228,7 @@ export async function undoOperation(id: string): Promise<OperationView> {
   }
   // A margin's rule set again since (here or on the Margins tab) is the newer word.
   if (row.kind === "margin") await checkMarginUndo(row);
-  const moved = await repo.moveStatus(id, ["done", "failed"], { status: "undoing", error: null });
+  const moved = await repo.moveStatus(id, ["done", "failed"], { status: "undoing", error: null, undoneBy: actorOf(by) });
   if (!moved) throw new VetrinaError("invalid", w.error.undoing, 409);
   queueUndo(id, { status: row.status, done: row.done, total: row.total });
   return operationView(await found(id));
@@ -219,6 +279,7 @@ export async function loadTermActions(taxonomy: CatalogTaxonomy, id: number): Pr
 
 /** "Nascondi i nuovi arrivati": a hidden term's newcomers hidden now, rather than at the next check. */
 export async function hideTermNewcomers(): Promise<void> {
+  mustWrite();
   await recover();
   await queueSweep();
 }

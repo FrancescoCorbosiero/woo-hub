@@ -6,7 +6,7 @@ import type { WooRestProduct } from "./client";
  * need a THROWAWAY Postgres with the migrations applied, and they empty the
  * media_jobs table and the store snapshot. Run with
  *
- *   RUN_DB_TESTS=1 DATABASE_URL=postgres://…@localhost:…/… REDIS_URL=… npm test
+ *   DATABASE_URL=postgres://…@localhost:…/hub_test npm run test:db
  *
  * Imports are dynamic because the db client validates the environment on load.
  */

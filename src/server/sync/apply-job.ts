@@ -1,6 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import type { ApplyOutcome } from "@/server/woo/apply";
+import { assertWriter } from "@/server/writer";
 
 /**
  * The Sync tab's live apply, run in the background.
@@ -15,6 +16,7 @@ import type { ApplyOutcome } from "@/server/woo/apply";
  * One at a time: a second apply would be planned against the snapshot the
  * first is still writing. Kept in the process, like the scheduler's state: a
  * restart loses the job, and the history (apply_audit) says what it wrote.
+ * So it starts only in the writer process (HUB_ROLE, src/server/writer.ts).
  */
 
 export interface ApplyJob {
@@ -70,8 +72,10 @@ export function getApplyJob(id: string): ApplyJob | null {
 /**
  * Start `run` in the background and answer at once with its job. Null while
  * another apply is running: the caller says so rather than start a second.
+ * Refused (thrown) outside the writer process.
  */
 export function startApplyJob(run: (progress: ApplyProgress) => Promise<ApplyOutcome>): ApplyJob | null {
+  assertWriter();
   prune(Date.now());
   if (runningApplyJob()) return null;
   const job: ApplyJob = {

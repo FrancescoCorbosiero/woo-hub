@@ -17,6 +17,12 @@ function nameList(names: readonly string[], total = names.length): string {
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
+type TermTx = "category" | "brand" | "tag";
+const T = { category: "category", brand: "brand", tag: "tag" } as const;
+const Cap = { category: "Category", brand: "Brand", tag: "Tag" } as const;
+const Sub = { category: "sub-category", brand: "line", tag: "" } as const;
+const Subs = { category: "sub-categories", brand: "lines", tag: "" } as const;
+
 export const opsEn: typeof opsIt = {
   money: (amount: number): string => new Intl.NumberFormat("en-GB", { style: "currency", currency: "EUR" }).format(amount),
   products,
@@ -49,9 +55,28 @@ export const opsEn: typeof opsIt = {
     sectionSource: (section: string, shows: string) => `“${section}” now shows ${shows}`,
     sectionEdit: (section: string) => `“${section}” published`,
     blockEdit: (block: string) => `Texts of “${block}” saved`,
+    menuItemAdd: (count: number, item: string, menu: string) => (count === 1 ? `Item “${item}” added · ${menu}` : `${n(count)} items added · ${menu}`),
+    menuItemMove: (item: string, menu: string) => `Item “${item}” moved · ${menu}`,
+    menuItemRemove: (item: string, menu: string) => `Item “${item}” removed · ${menu}`,
+    menuItemRename: (item: string, renamed: string | null, menu: string) =>
+      renamed == null ? `Item “${item}” back to its own name · ${menu}` : `Item “${item}” renamed “${renamed}” · ${menu}`,
+    menuCreate: (menu: string, from: string | null) => (from ? `Menu “${menu}”, a copy of “${from}”` : `New menu “${menu}”`),
+    menuRename: (menu: string, from: string) => `Menu “${from}” renamed “${menu}”`,
+    menuDelete: (menu: string) => `Menu “${menu}” deleted`,
+    menuLocation: (menu: string | null, place: string) => (menu ? `“${menu}” in ${place}` : `No menu in ${place}`),
+    priceMatch: (count: number, source: string | null) => (source ? `Prices matched to “${source}” · ${products(count)}` : `Prices matched · ${products(count)}`),
+    termCreate: (tx: TermTx, name: string, parent: string | null) => `New ${T[tx]} “${name}”${parent ? ` under “${parent}”` : ""}`,
+    termRename: (tx: TermTx, from: string, to: string) => `${Cap[tx]} “${from}” renamed “${to}”`,
+    termMove: (tx: TermTx, name: string, into: string | null) => `${Cap[tx]} “${name}” moved ${into ? `under “${into}”` : "to the top level"}`,
+    termMerge: (tx: TermTx, name: string, into: string, count: number) => `${Cap[tx]} “${name}” merged into “${into}” · ${products(count)}`,
+    termDelete: (tx: TermTx, name: string, count: number) => `${Cap[tx]} “${name}” deleted · ${products(count)}`,
   },
 
   untouched: {
+    priceOnSale: (count: number): string => (count === 1 ? "on sale: end the sale first" : "on sale: end the sales first"),
+    priceUnpriced: (_count: number): string => "no size with a Hub price",
+    priceSame: (_count: number): string => "at that price already",
+    priceSizes: (_count: number): string => "sizes outside the Hub: change the price from the product",
     gone: (_count: number) => "no longer in the shop",
     alreadyHidden: (_count: number) => "already hidden",
     alreadyVisible: (_count: number) => "already visible",
@@ -103,6 +128,10 @@ export const opsEn: typeof opsIt = {
   },
 
   warning: {
+    priceLocks: (count: number) =>
+      `The prices of ${count === 1 ? "1 product become" : `${n(count)} products become`} locked: KicksDB no longer changes them until you unlock them from the product's sheet, or undo.`,
+    priceBelowMarket: (count: number) =>
+      count === 1 ? "1 product goes below the market price in at least one size." : `${n(count)} products go below the market price in at least one size.`,
     orderElsewhere: (count: number, names: string[], total: number) =>
       `In the shop each product has one position: ${count === 1 ? "1 is" : `${n(count)} are`} also in ${nameList(names, total)}, and ${count === 1 ? "moves" : "move"} there the same way.`,
     orderRoom: (count: number) =>
@@ -228,6 +257,13 @@ export const opsEn: typeof opsIt = {
     noneInTerm: (term: string, source: string) => `None of the products of “${term}” is in the ranking “${source}”.`,
     noneInShop: (source: string) => `None of the products of the ranking “${source}” is in the shop.`,
     inOrder: (source: string) => `It is already arranged like “${source}”.`,
+    itemGone: "This entry is not in the ranking.",
+    productGone: "This product is no longer in the shop.",
+    importDemo: "The demo shop publishes no products: the comparison shows here, the import does not.",
+    kicksdbOff: "KicksDB is not configured: products the Hub's catalog lacks cannot be looked up.",
+    importEmpty: "Name at least one code (SKU) to import.",
+    lookupFailed: "KicksDB did not answer: try again shortly.",
+    pricesNone: (threshold: number) => `No price to match: no product of the ranking is more than ${n(threshold)}% off.`,
   },
 
   page: {
@@ -265,6 +301,124 @@ export const opsEn: typeof opsIt = {
     notUndoable: "This section showed a fixed list or tags: it cannot be put back from here.",
   },
 
+  menu: {
+    top: (position: number, last: boolean) => (position === 1 ? "at the top of the menu" : last ? "at the bottom of the menu" : `at place ${n(position)} of the menu`),
+    under: (parent: string, position: number, last: boolean) =>
+      position === 1 ? `under “${parent}”, first` : last ? `under “${parent}”, last` : `under “${parent}”, at place ${n(position)}`,
+    add: (names: readonly string[], menu: string, where: string) =>
+      names.length === 1
+        ? `“${names[0]}” joins the menu “${menu}”, ${where}.`
+        : `${n(names.length)} items join the menu “${menu}”, ${where}: ${nameList(names.map((name) => `“${name}”`))}.`,
+    move: (title: string, where: string) => `“${title}” moves ${where}.`,
+    withItems: (count: number) => (count === 1 ? "Its item moves with it." : `Its ${n(count)} items move with it.`),
+    remove: (title: string, menu: string) => `“${title}” leaves the menu “${menu}”.`,
+    lifted: (names: readonly string[]) =>
+      names.length === 1
+        ? `Its item “${names[0]}” takes its place.`
+        : `Its ${n(names.length)} items take its place: ${nameList(names.map((name) => `“${name}”`))}.`,
+    rename: (from: string, to: string) => `“${from}” will be called “${to}”.`,
+    ownName: (from: string, name: string) => `“${from}” goes back to the name of what it leads to: “${name}”.`,
+    shownAt: (places: readonly string[]) =>
+      places.length === 0 ? "The theme shows this menu nowhere: for now it is not on the site." : `On the site it shows in: ${nameList(places)}.`,
+    already: (name: string, parent: string | null) => (parent ? `“${name}” is already in the menu, under “${parent}”.` : `“${name}” is already in the menu.`),
+    invalid: (name: string) => `“${name}” leads to something that is gone: WordPress leaves it off the site.`,
+    stale: "The menu changed in the meantime: read it again and retry.",
+    noMenu: "This menu is no longer on the site.",
+    noItem: "This item is no longer in the menu.",
+    noParent: "The item to put it under is not in the menu.",
+    position: (max: number) => `The place goes from 1 to ${n(max)}.`,
+    intoItself: "An item cannot go under itself or under its own items.",
+    samePlace: (title: string) => `“${title}” is already there.`,
+    sameName: (title: string) => `“${title}” is already called that.`,
+    noCategory: (id: number) => `The shop has no category ${id}.`,
+    noBrand: (id: number) => `The shop has no brand ${id}.`,
+    noPage: (id: number) => `The site has no published page ${id}.`,
+    linkName: "A link always has a name of its own.",
+    writeFailed: "WordPress did not take the change: the menu is as it was.",
+    halfWritten: "WordPress took only part of the change and putting it back failed: check the menu in WordPress.",
+    makeFailed: "WordPress did not take one of the items: the menu was not made.",
+    makeHalf: "WordPress did not take one of the items, and taking the half-made menu away failed: check it in WordPress.",
+    placeNotChanged: "WordPress did not change the menu in that place: check it in WordPress (Appearance › Menus).",
+    changedSince: (title: string) => `“${title}” changed after this action: the newer change stands.`,
+    gotChildren: (title: string) => `Other items were put under “${title}” since: it stays as it is.`,
+    parentGone: (title: string) => `The item “${title}” was under is gone: it cannot be put back.`,
+    nameTaken: (name: string) => `There is already a menu called “${name}”: choose another name.`,
+    create: (name: string) => `The menu “${name}” is made, empty.`,
+    createCopy: (name: string, from: string, count: number) =>
+      count === 0
+        ? `The menu “${name}” is made, a copy of “${from}”, which has no items.`
+        : `The menu “${name}” is made, a copy of “${from}”: ${count === 1 ? "1 item" : `${n(count)} items`}.`,
+    notShownYet: "The site does not show it until you put it in a place of the theme.",
+    copySkipped: (count: number) =>
+      count === 1 ? "1 item leads to something gone: it is left out of the copy." : `${n(count)} items lead to something gone: they are left out of the copy.`,
+    sameMenuName: (name: string) => `The menu is already called “${name}”.`,
+    renameMenu: (from: string, to: string) => `The menu “${from}” will be called “${to}”.`,
+    deleteShown: (name: string, places: readonly string[]) =>
+      `“${name}” is on the site (in: ${nameList(places)}): first put another menu in that place, or leave it empty.`,
+    deleteMenu: (name: string, count: number) =>
+      count === 0 ? `The menu “${name}” is deleted.` : `The menu “${name}” is deleted, with ${count === 1 ? "its item" : `its ${n(count)} items`}.`,
+    noPlace: (place: string) => `The theme has no place “${place}”.`,
+    alreadyShown: (menu: string, place: string) => `“${place}” shows “${menu}” already.`,
+    alreadyEmpty: (place: string) => `“${place}” shows no menu.`,
+    placeShows: (place: string, menu: string, before: string | null) =>
+      before ? `In “${place}” the site will show “${menu}” instead of “${before}”.` : `In “${place}” the site will show “${menu}”.`,
+    placeEmptied: (place: string, before: string) => `In “${place}” the site will show no menu: it shows “${before}” now.`,
+    emptyShown: (menu: string, place: string) => `“${menu}” has no items: nothing will show in “${place}”.`,
+    shownNow: (name: string, places: readonly string[]) => `“${name}” is on the site now (in: ${nameList(places)}): it stays.`,
+    menuChangedSince: (name: string) => `The menu “${name}” changed after this action: the newer change stands.`,
+    menuGone: (name: string) => `The menu “${name}” is gone.`,
+    placeChanged: (place: string) => `The menu in “${place}” changed after this action: the newer change stands.`,
+  },
+
+  term: {
+    create: (tx: TermTx, name: string, parent: string | null) =>
+      tx === "tag" ? `The tag “${name}” is made.` : `The ${T[tx]} “${name}” is made, ${parent ? `under “${parent}”` : "at the top level"}.`,
+    rename: (tx: TermTx, from: string, to: string) => `The ${T[tx]} “${from}” will be called “${to}”. Its address on the site stays the same.`,
+    alias: (_tx: TermTx) => "Publish will know it by its old name too: no duplicates.",
+    move: (tx: TermTx, name: string, into: string | null, children: number) =>
+      `The ${T[tx]} “${name}” goes ${into ? `under “${into}”` : "to the top level"}${children > 0 ? `, with ${children === 1 ? `its ${Sub[tx]}` : `its ${n(children)} ${Subs[tx]}`}` : ""}.`,
+    marginMoves: "Its products may take another margin from the next price sync.",
+    merge: (tx: TermTx, name: string, into: string, count: number) =>
+      count === 0
+        ? `The ${T[tx]} “${name}” has no products: it is deleted, and its name leads to “${into}”.`
+        : `${count === 1 ? "Its product moves" : `Its ${n(count)} products move`} from “${name}” to “${into}”, then “${name}” is deleted.`,
+    mergeChildren: (tx: TermTx, into: string, count: number) =>
+      count === 1 ? `Its ${Sub[tx]} goes under “${into}”.` : `Its ${n(count)} ${Subs[tx]} go under “${into}”.`,
+    mergeAlias: (name: string, into: string) => `Publish will file under “${into}” what comes named “${name}” too.`,
+    delete: (tx: TermTx, name: string, count: number) =>
+      count === 0
+        ? `The ${T[tx]} “${name}” is deleted: it has no products.`
+        : `The ${T[tx]} “${name}” is deleted: ${count === 1 ? "its product loses it" : `its ${n(count)} products lose it`}, and stay in the shop.`,
+    deleteChildren: (tx: TermTx, count: number) =>
+      count === 1 ? `Its ${Sub[tx]} moves up a level.` : `Its ${n(count)} ${Subs[tx]} move up a level.`,
+    orphans: (count: number) =>
+      count === 1
+        ? "1 product is left without a category: WooCommerce puts it in its default category."
+        : `${n(count)} products are left without a category: WooCommerce puts them in its default category.`,
+    inMenus: (name: string, menus: readonly string[]) =>
+      `“${name}” is in the menu ${nameList(menus.map((m) => `“${m}”`))}: the item will lead nowhere, take it out of the menu.`,
+    notConfigured: "The shop is not connected: whoever runs the server has to set WOO_BASE_URL and the shop's keys.",
+    stillHeld: (name: string, count: number) =>
+      `“${name}” stays: ${count === 1 ? "1 product still has it" : `${n(count)} products still have it`}, the shop did not change them.`,
+    gone: (tx: TermTx) => `This ${T[tx]} is gone.`,
+    parentGone: (tx: TermTx) => `The ${T[tx]} to put it under is not there.`,
+    nameTaken: (tx: TermTx, name: string, parent: string | null) =>
+      `There is already a ${T[tx]} “${name}”${parent ? ` under “${parent}”` : tx === "tag" ? "" : " at the top level"}: choose another name.`,
+    sameName: (name: string) => `It is already called “${name}”.`,
+    sameParent: (name: string) => `“${name}” is already there.`,
+    intoItself: (tx: TermTx) => `A ${T[tx]} cannot go under itself or under one of its ${Subs[tx]}.`,
+    mergeSelf: (tx: TermTx) => `Choose another ${T[tx]} to merge it into.`,
+    mergeIntoBelow: (name: string) => `“${name}” is under the one to merge: choose one outside its branch.`,
+    margin: (name: string) => `“${name}” has a margin of its own: set it back to the standard one, then try again.`,
+    homepage: (name: string, sections: readonly string[]) =>
+      `“${name}” is on the homepage (${nameList(sections.map((x) => `“${x}”`))}): change the section first.`,
+    changedSince: (name: string) => `“${name}” was changed again after this action: the newer change stands.`,
+    hasProducts: (name: string) => `“${name}” has products already: it stays.`,
+    hasChildren: (name: string) => `There is something under “${name}” already: it stays.`,
+    takenNow: (tx: TermTx, name: string) => `There is a ${T[tx]} “${name}” again: it cannot be made again.`,
+    parentGoneNow: (name: string) => `The branch “${name}” was under is gone: it cannot be put back.`,
+  },
+
   proposal: {
     changes: (count: number) => (count === 0 ? "No product changes." : `It changes ${products(count)}.`),
     untouched: (parts: readonly string[]) => `Left as they are: ${nameList(parts)}.`,
@@ -273,6 +427,7 @@ export const opsEn: typeof opsIt = {
     sampled: (read: number) => `The numbers are an estimate from the first ${products(read)} read from the shop: the action counts exactly.`,
     prices: (up: number, down: number) => `Prices going up: ${n(up)}; going down: ${n(down)}.`,
     notFound: "No such proposal.",
+    personOnly: "A proposal is confirmed by a person: someone signed in to the Hub, or with a token that may confirm.",
     expired: (minutes: number) => `The proposal has expired (it lasts ${minutes} minutes): ask for a new one.`,
     confirming: "It is being done already.",
     changed: "The shop changed since you saw it: here is the new preview, to confirm again.",

@@ -1,4 +1,5 @@
 import "server-only";
+// eslint-disable-next-line no-restricted-imports -- predates the boundary rule; actions/preview.ts moves to src/server/sync in weeks 3-6 (docs/middleware-readiness.md §6)
 import { advanceStoreSync, startStoreSync, type PreviewResult } from "@/server/actions/preview";
 import { applySync, type ApplyChange, type ApplyOutcome } from "@/server/woo/apply";
 import { skuKey } from "@/lib/skus";

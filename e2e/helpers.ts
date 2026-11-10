@@ -1,21 +1,26 @@
 import { expect, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 
-/** The programmatic API's token on the test server (playwright.config.ts gives it to the app). */
+/** The programmatic API's token on the test server (playwright.config.ts gives it to the app): the one from before, every scope. */
 export const API_TOKEN = process.env.E2E_API_TOKEN ?? "e2e-api-token-0123456789abcdef";
+/** The test server's other callers (HUB_API_TOKENS): an assistant, which reads and proposes; a person's phone, which says yes and undoes. */
+export const ASSISTANT_TOKEN = "e2e-assistant-token-0123456789abcdef";
+export const PHONE_TOKEN = "e2e-phone-token-0123456789abcdef";
+export const API_TOKENS = `assistant:${ASSISTANT_TOKEN}:read+propose,phone:${PHONE_TOKEN}:read+confirm+undo`;
 
 /**
- * A call to the Hub's API (/api/v1) with the token: its `data` once the
- * answer is the status expected, else the test fails on the answer itself.
+ * A call to the Hub's API (/api/v1) with a token (API_TOKEN unless said):
+ * its `data` once the answer is the status expected, else the test fails on
+ * the answer itself.
  */
 export async function api<T = unknown>(
   request: APIRequestContext,
-  method: "GET" | "POST",
+  method: "GET" | "POST" | "DELETE",
   path: string,
-  { body, status = method === "GET" ? 200 : 202 }: { body?: unknown; status?: number } = {},
+  { body, status = method === "GET" ? 200 : 202, token = API_TOKEN }: { body?: unknown; status?: number; token?: string } = {},
 ): Promise<T> {
   const res = await request.fetch(`/api/v1${path}`, {
     method,
-    headers: { authorization: `Bearer ${API_TOKEN}` },
+    headers: { authorization: `Bearer ${token}` },
     ...(body !== undefined ? { data: body } : {}),
   });
   const json = (await res.json()) as { ok: boolean; data?: T; error?: string };

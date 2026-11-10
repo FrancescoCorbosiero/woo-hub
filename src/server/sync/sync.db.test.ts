@@ -5,7 +5,7 @@ import { describe, it, expect } from "vitest";
  * Opt-in: they need a THROWAWAY Postgres with the migrations applied, and they
  * delete feed rows. Run with
  *
- *   RUN_DB_TESTS=1 DATABASE_URL=postgres://…@localhost:…/… REDIS_URL=… npm test
+ *   DATABASE_URL=postgres://…@localhost:…/hub_test npm run test:db
  *
  * Imports are dynamic because the db client validates the environment on load.
  */

@@ -307,7 +307,24 @@ removing them, a lost phone, a locked account. See
 up there.
 
 Run a single app container per shop: the syncs run inside it, so a second
-copy would run every sync twice.
+copy would run every sync twice ([one writer per shop](#one-writer-per-shop)).
+
+### One writer per shop
+
+The app container is the shop's one writer: the scheduler, the Vetrina's
+actions, the automatic categories and the Sync tab's live apply keep their
+queues in its process. A second process running them would write the same
+products from a second queue, and on starting would mark the first one's
+running actions as cut off by a restart.
+
+`HUB_ROLE` says which process that is: `writer`, the default, for the app
+container; `web` for any other process you point at the same database (a
+second app container serving the screens, a one-off script). A `web`
+process serves the screens and the API — reads, previews, proposals, a
+homepage write — but refuses to start an action, the scheduler, the
+automatic categories or the live apply, and never marks the writer's running
+actions as cut off (`src/server/writer.ts`). Leave it unset on the one app
+container.
 
 ### Update Caddy
 

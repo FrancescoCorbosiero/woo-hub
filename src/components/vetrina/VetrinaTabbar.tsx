@@ -8,15 +8,16 @@ import { Tabbar, TabbarLink, ToolbarPane } from "konsta/react";
 import { useI18n } from "@/i18n/provider";
 import { useSelectionBarShown } from "./catalog/act/bottom-bar";
 import { House } from "./catalog/term/glyphs";
+import { MenuGlyph } from "./menus/parts";
 
 /**
- * The Vetrina's two tabs, Homepage and Catalogo: Konsta's floating glass tab
- * bar, above the home indicator. It steps aside in the section editor, which
+ * The Vetrina's tabs, Homepage, Catalogo and Menu (the site's navigation
+ * menus): Konsta's floating glass tab bar, above the home indicator. It steps aside in the section editor, which
  * has its own publish bar down there, and while a catalog list is selecting:
  * the selection's action bar takes its place.
  */
 
-export type VetrinaTab = "home" | "catalog";
+export type VetrinaTab = "home" | "catalog" | "menu";
 
 /**
  * The tab an address belongs to, or null where the bar is not shown (the
@@ -25,6 +26,7 @@ export type VetrinaTab = "home" | "catalog";
 export function tabOf(pathname: string): VetrinaTab | null {
   if (pathname === "/vetrina" || pathname === "/") return "home";
   if (pathname === "/vetrina/catalogo" || pathname.startsWith("/vetrina/catalogo/")) return "catalog";
+  if (pathname === "/vetrina/menu" || pathname.startsWith("/vetrina/menu/")) return "menu";
   return null;
 }
 
@@ -36,7 +38,7 @@ export function tabOf(pathname: string): VetrinaTab | null {
  */
 export const TABBAR_SPACE = "calc(80px + env(safe-area-inset-bottom))";
 
-const HREF: Record<VetrinaTab, string> = { home: "/vetrina", catalog: "/vetrina/catalogo" };
+const HREF: Record<VetrinaTab, string> = { home: "/vetrina", catalog: "/vetrina/catalogo", menu: "/vetrina/menu" };
 
 /** At the tab's first screen, nothing searched or chosen in the address. */
 function atStart(tab: VetrinaTab): boolean {
@@ -125,6 +127,7 @@ export function VetrinaTabbar({ active }: { active: VetrinaTab | null }) {
             <ToolbarPane className="pointer-events-auto">
               {link("home", tabs.homepage, <House className={iconSize} />)}
               {link("catalog", tabs.catalog, <CatalogIcon className={iconSize} />)}
+              {link("menu", tabs.menu, <MenuGlyph className={iconSize} />)}
             </ToolbarPane>
           </Tabbar>
         </motion.nav>

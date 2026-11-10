@@ -4,7 +4,16 @@ import { z } from "zod";
 import { defaultLocale, type Locale } from "@/i18n/config";
 import { getDictionary } from "@/i18n/dictionary";
 import { getLocale } from "@/i18n/server";
-import { MAX_SOURCE_NAME, type OrderSourceCheck, type OrderSourceSummary } from "@/lib/vetrina/order-sources";
+import {
+  MAX_SOURCE_NAME,
+  type OrderSourceCheck,
+  type OrderSourceSummary,
+  type SourceComparison,
+  type SourceImport,
+  type SourceLookup,
+} from "@/lib/vetrina/order-sources";
+import { compareSource, pairItem } from "@/server/vetrina/order-sources/compare";
+import { importSkus, lookupItems, MAX_IMPORT, MAX_LOOKUP } from "@/server/vetrina/order-sources/import";
 import type { VetrinaErrorCode } from "@/lib/vetrina/types";
 import * as sources from "@/server/vetrina/order-sources/service";
 import { currentLanguage, inLanguage, words } from "@/server/vetrina/operations/words";
@@ -12,7 +21,8 @@ import { attemptPlain, type VetrinaResult } from "@/server/vetrina/service";
 
 /**
  * Order sources ("fonti d'ordine") from the Vetrina: listed, checked before
- * saving, saved, deleted (server/vetrina/order-sources). Using one on a
+ * saving, saved, deleted, compared with the shop — an item paired by hand,
+ * looked up on KicksDB, imported (server/vetrina/order-sources). Using one on a
  * category, a brand or the whole catalog is a catalog action, "sourceOrder"
  * (server/actions/vetrina-operations.ts). Every one answers { ok, data } or
  * { ok: false, code, error }, in the owner's language.
@@ -102,5 +112,56 @@ export async function deleteOrderSource(input: { id: string }): Promise<VetrinaR
       await sources.deleteSource(parsed.data.id);
       return null;
     });
+  });
+}
+
+/** A source against the shop, item by item: prices beyond the threshold, the missing, the uncertain. */
+export async function compareOrderSource(input: { id: string; threshold?: number }): Promise<VetrinaResult<SourceComparison>> {
+  return answer(async () => {
+    const parsed = z.object({ id: z.uuid(), threshold: z.number().min(0).max(100).optional() }).safeParse(input);
+    if (!parsed.success) return invalid(words().source.gone);
+    return attempt(() => compareSource(parsed.data.id, { threshold: parsed.data.threshold }));
+  });
+}
+
+/** An item paired by hand — a product of the shop, "none", or "auto" (the matcher again): the comparison as it reads now. */
+export async function pairOrderSourceItem(input: {
+  id: string;
+  position: number;
+  pair: number | "none" | "auto";
+}): Promise<VetrinaResult<SourceComparison>> {
+  return answer(async () => {
+    const parsed = z
+      .object({
+        id: z.uuid(),
+        position: z.number().int().positive(),
+        pair: z.union([z.number().int().positive(), z.enum(["none", "auto"])]),
+      })
+      .safeParse(input);
+    if (!parsed.success) return invalid(words().input.invalid);
+    const { id, position, pair } = parsed.data;
+    return attempt(() => pairItem(id, position, pair === "none" ? null : pair === "auto" ? undefined : pair));
+  });
+}
+
+/** KicksDB's products for some items of a source (by place): closest first. */
+export async function lookupOrderSourceItems(input: { id: string; positions: number[] }): Promise<VetrinaResult<SourceLookup[]>> {
+  return answer(async () => {
+    const parsed = z
+      .object({ id: z.uuid(), positions: z.array(z.number().int().positive()).min(1).max(MAX_LOOKUP) })
+      .safeParse(input);
+    if (!parsed.success) return invalid(words().input.invalid);
+    return attempt(() => lookupItems(parsed.data.id, parsed.data.positions));
+  });
+}
+
+/** A slice of the comparison's "Importa": these SKUs published (POST /api/order-sources/import calls it). */
+export async function importSourceSkus(input: unknown): Promise<VetrinaResult<SourceImport>> {
+  return answer(async () => {
+    const parsed = z
+      .object({ skus: z.array(z.string().trim().min(1).max(64)).min(1).max(MAX_IMPORT), dryRun: z.boolean().default(false) })
+      .safeParse(input);
+    if (!parsed.success) return invalid(words().source.importEmpty);
+    return attempt(() => importSkus(parsed.data.skus, { dryRun: parsed.data.dryRun }));
   });
 }
