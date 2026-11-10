@@ -241,4 +241,19 @@ describe.skipIf(!enabled)("the scheduler's store syncs, KicksDB prices included 
     expect(store.products.get(FEED_ID)!.map((v) => v.regular_price)).toEqual(["160.00", "160.00"]);
     expect(written(KICKS_IDS, "100.00")).toBe(1);
   });
+
+  it("records a run by hand apart from the daily runs: never the day's slot", { timeout: 60_000 }, async () => {
+    const { db, eq, schedulerRuns, getSchedulerStatus, syncNow, lastManualRun } = await load();
+    expect(syncNow()).toEqual({ started: true, steps: ["gs", "feedSync", "kicksdb", "storeSync"] });
+    await vi.waitFor(() => expect(getSchedulerStatus().current).toBeNull(), { timeout: 30_000 });
+    const rows = await db.select().from(schedulerRuns).where(eq(schedulerRuns.trigger, "manual"));
+    expect(rows).toHaveLength(1);
+    // The feed's product is in step already; the KicksDB ones go on, two changes a run.
+    const last = await lastManualRun();
+    expect(last?.summary.feedSync).toMatchObject({ ok: true, sync: { written: 0 } });
+    expect(last?.summary.storeSync).toMatchObject({ ok: true, sync: { written: 2 }, deferred: 2 });
+    expect(written(KICKS_IDS, "100.00")).toBe(2);
+    // The next daily run is still tomorrow's: a run by hand serves no slot.
+    expect(getSchedulerStatus().nextRunAt).toBe(Date.UTC(2026, 9, 31, 3, 30));
+  });
 });

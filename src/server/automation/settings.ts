@@ -2,6 +2,7 @@ import "server-only";
 import type { AutomationConfig } from "@core/config";
 import { env } from "@/lib/env";
 import {
+  checkAutomation,
   fromLegacyEnv,
   legacyEnvSet,
   resolveAutomation,
@@ -135,6 +136,32 @@ export async function saveAutomation(settings: AutomationConfig): Promise<Automa
   const { updateActiveConfig } = await import("@/server/config/repo");
   await updateActiveConfig((current) => ({ ...current, automation: settings }));
   return loadAutomation();
+}
+
+/**
+ * Change some of the settings, the others as they are now: read, changed and
+ * written under the config's lock, so a save from the Hub at the same moment
+ * is not lost — the Vetrina's switch changes one setting, not the whole set
+ * it read a minute ago. Answers what is now in force, or the fields the
+ * result would get wrong.
+ */
+export async function patchAutomation(
+  patch: Partial<AutomationConfig>,
+): Promise<{ ok: true; state: AutomationState } | { ok: false; invalid: AutomationField[] }> {
+  const { updateActiveConfig } = await import("@/server/config/repo");
+  // Set inside the locked change: a holder, which the compiler does not narrow away.
+  const refused: { invalid: AutomationField[] | null } = { invalid: null };
+  await updateActiveConfig((current) => {
+    const now = resolveAutomation(current.automation, fromLegacyEnv(env)).settings;
+    const checked = checkAutomation({ ...now, ...patch });
+    if (!checked.ok) {
+      refused.invalid = checked.invalid;
+      return null;
+    }
+    return { ...current, automation: checked.settings };
+  });
+  if (refused.invalid) return { ok: false, invalid: refused.invalid };
+  return { ok: true, state: await loadAutomation() };
 }
 
 /** Call `listener` whenever the settings this process reads change. Once per process: keep it registered for good. */

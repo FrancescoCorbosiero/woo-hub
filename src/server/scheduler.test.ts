@@ -24,9 +24,13 @@ vi.mock("@/server/automation/settings", () => ({
   watchAutomation: () => {},
 }));
 
-vi.mock("@/lib/env", () => ({
-  env: { SCHEDULER: "on", GS_FEED_URL: "https://gs.example.com/api/assortment-flat/", GS_FEED_TOKEN: "t" },
+const env = vi.hoisted(() => ({
+  SCHEDULER: "on",
+  GS_FEED_URL: "https://gs.example.com/api/assortment-flat/" as string | undefined,
+  GS_FEED_TOKEN: "t" as string | undefined,
+  HUB_ROLE: undefined as "writer" | "web" | undefined,
 }));
+vi.mock("@/lib/env", () => ({ env }));
 
 // No database: every query throws, and the scheduler carries on without its history.
 vi.mock("@/server/db/client", () => ({
@@ -66,6 +70,11 @@ vi.mock("@/server/config/repo", () => ({ getActiveConfig: async () => ({ source:
 vi.mock("@/server/retention", () => ({
   pruneRunLogs: async () => ({ syncRuns: 0, ingestionRuns: 0, applyRuns: 0, vetrinaOperations: 0, vetrinaProposals: 0 }),
 }));
+// The store sync's own inputs: the feed's products on the store, and the plan-and-write.
+vi.mock("@/server/feeds/repo", () => ({ GS_FEED: "goldensneakers", knownFeedSkus: async () => new Set(["FEED-1"]) }));
+vi.mock("@/server/store-json/repo", () => ({ listStoreSkuSpellings: async () => ["FEED-1", "KICKS-1"] }));
+const priceSync = vi.hoisted(() => ({ run: vi.fn() }));
+vi.mock("@/server/sync/price-sync", () => ({ runPriceSync: priceSync.run }));
 
 /** Save new settings, as the Feeds tab does: the listener hears the change. */
 function change(patch: Partial<AutomationConfig>): void {
@@ -96,6 +105,9 @@ describe("the scheduler, when the Automatic sync settings change", () => {
     delete g.__storeHubScheduler;
     delete g.__storeHubSchedulerTimers;
     settings.listener = null;
+    env.HUB_ROLE = undefined;
+    env.GS_FEED_URL = "https://gs.example.com/api/assortment-flat/";
+    priceSync.run.mockReset();
     for (const fn of Object.values(steps)) fn.mockClear();
     steps.wooConfigured.mockReturnValue(false);
     vi.spyOn(console, "log").mockImplementation(() => {});
@@ -185,5 +197,98 @@ describe("the scheduler, when the Automatic sync settings change", () => {
     const next = status().feedsNextAt;
     change({ maxChanges: 50, storeMaxChanges: 5000, dailyStoreSync: true });
     expect(status()).toMatchObject({ autoSyncMax: 50, autoSyncStoreMax: 5000, autoSync: "all", feedsNextAt: next });
+  });
+});
+
+/** A plan-and-write that wrote `updated` changes, kept `kept` prices changed on the store and added `added` sizes. */
+const wrote = (updated: number, kept = 0, added = 0) => ({
+  outcome: { updated, variations: updated, failedTotal: 0, failed: [], keptStoreEdits: kept, sizes: { added } },
+  capped: null,
+  sizesHeld: null,
+  deferred: null,
+});
+
+describe("Sincronizza ora: the automatic sync, now, by hand", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    const g = globalThis as Record<string, unknown>;
+    delete g.__storeHubScheduler;
+    delete g.__storeHubSchedulerTimers;
+    settings.listener = null;
+    env.HUB_ROLE = undefined;
+    env.GS_FEED_URL = "https://gs.example.com/api/assortment-flat/";
+    priceSync.run.mockReset();
+    for (const fn of Object.values(steps)) fn.mockClear();
+    steps.wooConfigured.mockReturnValue(true);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"], now: NOW });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("writes the feed's changes even with the automatic store sync off, and says what it did", async () => {
+    const heartbeat = vi.spyOn(globalThis, "fetch");
+    const status = await start({ storeSync: false, feedsHeartbeatUrl: "https://hc-ping.com/feeds" });
+    expect(status()).toMatchObject({ autoSync: "off", feedsEveryMinutes: 0 });
+    priceSync.run.mockResolvedValue(wrote(12, 2, 1));
+
+    const { syncNow } = await import("./scheduler");
+    expect(syncNow()).toEqual({ started: true, steps: ["gs", "feedSync"] });
+    // One at a time: a second press is told one is going, and follows it.
+    expect(status().current).toMatchObject({ kind: "manual", steps: ["gs", "feedSync"] });
+    expect(syncNow()).toEqual({ started: false, reason: "running" });
+
+    await vi.waitFor(() => expect(status().current).toBeNull());
+    expect(status().lastManual).toMatchObject({
+      error: null,
+      summary: {
+        gs: { ok: true, feed: { added: 0, updated: 0, deactivated: 0 } },
+        feedSync: { ok: true, sync: { written: 12, added: 1, kept: 2, failed: 0, held: 0 } },
+      },
+    });
+    // The feed's products, under the feed's limit; the monitors hear only the scheduled runs.
+    expect(priceSync.run).toHaveBeenCalledWith(expect.objectContaining({ skus: ["FEED-1"], maxChanges: 500 }));
+    expect(heartbeat).not.toHaveBeenCalled();
+  });
+
+  it("writes nothing past the safety limit, and says how many changes it found", async () => {
+    const status = await start({ maxChanges: 300 });
+    priceSync.run.mockResolvedValue({ outcome: null, capped: 900, sizesHeld: null, deferred: null });
+    const { syncNow } = await import("./scheduler");
+    expect(syncNow().started).toBe(true);
+    await vi.waitFor(() => expect(status().current).toBeNull());
+    expect(status().lastManual?.summary.feedSync).toMatchObject({ ok: false, capped: { planned: 900, limit: 300 } });
+    expect(status().lastManual?.error).toMatch(/900 changes planned/);
+  });
+
+  it("does the rest of the store too when the KicksDB prices are included, leaving the feed's products to the feed's pass", async () => {
+    const kicksdb = await import("@/server/adapters/kicksdb");
+    vi.spyOn(kicksdb, "kicksdbConfigured").mockReturnValue(true);
+    // The boot's catch-up writes the store too, now: nothing to write there.
+    priceSync.run.mockResolvedValue(wrote(0));
+    const status = await start({ dailyStoreSync: true, storeMaxChanges: 40 });
+    priceSync.run.mockReset();
+    priceSync.run.mockResolvedValueOnce(wrote(3)).mockResolvedValueOnce(wrote(7));
+    const { syncNow } = await import("./scheduler");
+    expect(syncNow()).toEqual({ started: true, steps: ["gs", "feedSync", "kicksdb", "storeSync"] });
+    await vi.waitFor(() => expect(status().current).toBeNull());
+    expect(priceSync.run).toHaveBeenNthCalledWith(1, expect.objectContaining({ skus: ["FEED-1"], instalments: false }));
+    expect(priceSync.run).toHaveBeenNthCalledWith(2, expect.objectContaining({ skus: ["KICKS-1"], maxChanges: 40, instalments: true }));
+    expect(status().lastManual?.summary.storeSync).toMatchObject({ ok: true, sync: { written: 7 } });
+  });
+
+  it("is refused where there is nothing to sync, and in a process that is not the writer", async () => {
+    env.GS_FEED_URL = undefined;
+    const { syncNow } = await import("./scheduler");
+    settings.current = { ...DEFAULT_AUTOMATION };
+    expect(syncNow()).toEqual({ started: false, reason: "nothing" });
+    env.GS_FEED_URL = "https://gs.example.com/api/assortment-flat/";
+    env.HUB_ROLE = "web";
+    expect(syncNow()).toEqual({ started: false, reason: "not-writer" });
   });
 });

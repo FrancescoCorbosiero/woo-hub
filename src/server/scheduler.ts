@@ -1,4 +1,4 @@
-import { and, desc, eq, isNotNull, lt, max, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, lt, max, notInArray } from "drizzle-orm";
 import type { AutomationConfig } from "@core/config";
 import { DEFAULT_AUTOMATION } from "@/lib/automation";
 import { env } from "@/lib/env";
@@ -16,7 +16,7 @@ import { runKicksdbRefresh } from "@/server/actions/feeds";
 import { kicksdbConfigured } from "@/server/adapters/kicksdb";
 import { automationNow, loadAutomation, onAutomationChange } from "@/server/automation/settings";
 import { db } from "@/server/db/client";
-import { schedulerRuns, type SchedulerRunRow } from "@/server/db/schema";
+import { schedulerRuns, type SchedulerRunRow, type SchedulerStepSummary } from "@/server/db/schema";
 import { isWriter } from "@/server/writer";
 
 /**
@@ -102,8 +102,22 @@ const MEDIA_CONCURRENCY = 2;
 const DAILY_STEPS = ["pull", "gs", "kicksdb", "storeSync", "collections", "repair", "backfill", "recategorize"] as const;
 const FEED_STEPS = ["gs", "feedSync"] as const;
 type StepName = (typeof DAILY_STEPS)[number] | (typeof FEED_STEPS)[number];
-/** `deferred`: changes the whole-store sync left for its next run. */
-type StepOutcome = { ok: boolean; count?: number; note?: string; deferred?: number };
+/** A step of a scheduled run, as the status names the one going. */
+export type SchedulerStep = StepName;
+/** What a step did (db/schema.ts): `deferred`, changes the whole-store sync left for its next run. */
+type StepOutcome = SchedulerStepSummary;
+/** The runs nobody scheduled for a slot of the day: the feed cycles, and those started by hand. */
+const NOT_DAILY: SchedulerRunRow["trigger"][] = ["interval", "manual"];
+
+/** A step that failed with numbers to report: a feed cycle past its limit, writes the store refused. */
+class StepFailure extends Error {
+  constructor(
+    message: string,
+    readonly detail: Partial<StepOutcome>,
+  ) {
+    super(message);
+  }
+}
 
 const LABEL: Record<StepName, string> = {
   pull: "store pull",
@@ -127,8 +141,9 @@ const COUNTER = {
 } as const satisfies Partial<Record<StepName, keyof SchedulerStatus>>;
 
 interface Job {
-  kind: "daily" | "feeds";
-  /** The scheduled time this run is for (a catch-up or a retry keeps its slot's). */
+  /** "manual": started by hand ("Sincronizza ora"), now, whatever the settings say about the timers. */
+  kind: "daily" | "feeds" | "manual";
+  /** The scheduled time this run is for (a catch-up or a retry keeps its slot's; a manual run, when it started). */
   slot: Date;
   trigger: SchedulerRunRow["trigger"];
   steps: readonly StepName[];
@@ -167,6 +182,10 @@ export interface SchedulerStatus {
   collectionsLastAt: number | null; // the last check that ran
   collectionsLastMoved: number | null; // products it moved
   collectionsError: string | null;
+  /** The run going now — which kind, its steps, the one it is on — for a screen that follows it; null when idle. */
+  current: { kind: Job["kind"]; steps: SchedulerStep[]; step: SchedulerStep | null; startedAt: number } | null;
+  /** The last run started by hand ("Sincronizza ora"): when it ended, what each step did, what failed. */
+  lastManual: { at: number; summary: Record<string, StepOutcome>; error: string | null } | null;
 }
 
 // Instrumentation and the server-action bundle each get their own copy of
@@ -240,6 +259,8 @@ function store(): SchedulerState {
     collectionsLastAt: null,
     collectionsLastMoved: null,
     collectionsError: null,
+    current: null,
+    lastManual: null,
   });
 }
 
@@ -299,11 +320,16 @@ async function refreshCatalog(): Promise<{ refreshed: number; error: string | nu
  * which keeps the ones changed since — the snapshot is up to a day old between
  * two daily pulls (see live-check.ts). Both land on the Sync tab's list of
  * prices changed on WordPress, for a person to decide.
+ *
+ * Started by hand ("Sincronizza ora"), it writes whatever the store sync's
+ * switch says — a person asked for it, now — under the same limits; and the
+ * whole store's pass leaves the feed's products to the feed's, which runs
+ * first in the same run.
  */
-async function syncStore(scope: "store" | "feed"): Promise<StepOutcome | null> {
+async function syncStore(scope: "store" | "feed", manual = false): Promise<StepOutcome | null> {
   const s = store();
   const writes = s.autoSync;
-  if (writes === "off" || (scope === "store" && writes !== "all")) return null;
+  if (!manual && (writes === "off" || (scope === "store" && writes !== "all"))) return null;
   const { wooConfigured } = await import("@/server/woo/client");
   if (!wooConfigured()) return null;
 
@@ -313,14 +339,14 @@ async function syncStore(scope: "store" | "feed"): Promise<StepOutcome | null> {
   const { getLatestPullRun, pullInFlight } = await import("@/server/woo/pull");
   if (pullInFlight(await getLatestPullRun())) {
     console.log("[scheduler] store sync waits: a store pull is running");
-    return { ok: true, count: 0, note: "a store pull was running: the next cycle writes" };
+    return { ok: true, count: 0, note: "a store pull was running: the next cycle writes", pullRunning: true };
   }
 
   // The feed's products are the feed cycle's, under its own limit. While there
   // is a cycle, the whole-store run leaves them to it: a broken feed it refused
   // must not reach the store through the daily run's instalments instead.
   let skus: string[] | undefined;
-  if (scope === "feed" || s.feedsEveryMinutes > 0) {
+  if (scope === "feed" || s.feedsEveryMinutes > 0 || (manual && feedConnected())) {
     const { GS_FEED, knownFeedSkus } = await import("@/server/feeds/repo");
     const { listStoreSkuSpellings } = await import("@/server/store-json/repo");
     const { skuKey } = await import("@/lib/skus");
@@ -353,20 +379,29 @@ async function syncStore(scope: "store" | "feed"): Promise<StepOutcome | null> {
     addSizes: scope === "store" ? "all" : "feed",
   });
   if (capped != null) {
-    throw new Error(
+    throw new StepFailure(
       `${capped} changes planned, more than the ${limit} a feed cycle may write (the safety limit of Automatic sync): ` +
         "nothing written. Review and apply them in the Sync tab.",
+      { capped: { planned: capped, limit } },
     );
   }
   const held = sizesHeld != null ? `${sizesHeld} missing size(s) wait for the Sync tab (more than ${limit} changes at once)` : null;
   if (held) console.log(`[scheduler] store sync: ${held}`);
   const waiting = deferred != null ? `${deferred} more wait for the next run (${limit} a run)` : null;
-  if (!outcome) return { ok: true, count: 0, ...(held ? { note: held } : {}) };
+  const counts = (o: NonNullable<typeof outcome> | null) => ({
+    written: o?.updated ?? 0,
+    added: o?.sizes.added ?? 0,
+    kept: o?.keptStoreEdits ?? 0,
+    failed: o?.failedTotal ?? 0,
+    held: sizesHeld ?? 0,
+  });
+  if (!outcome) return { ok: true, count: 0, sync: counts(null), ...(held ? { note: held } : {}) };
   if (outcome.failedTotal > 0) {
-    throw new Error(
+    throw new StepFailure(
       `${outcome.updated} of ${outcome.variations} changes written, ${outcome.failedTotal} failed: ` +
         (outcome.failed[0]?.error ?? "no reason given") +
         (waiting ? ` (${waiting})` : ""),
+      { sync: counts(outcome), ...(deferred != null ? { deferred } : {}) },
     );
   }
   const kept = outcome.keptStoreEdits;
@@ -387,6 +422,7 @@ async function syncStore(scope: "store" | "feed"): Promise<StepOutcome | null> {
   return {
     ok: true,
     count: outcome.updated + added,
+    sync: counts(outcome),
     ...(deferred != null ? { deferred } : {}),
     ...(notes.length > 0 ? { note: notes.join(", ") } : {}),
   };
@@ -397,7 +433,7 @@ async function syncStore(scope: "store" | "feed"): Promise<StepOutcome | null> {
  * apply to this shop (its source is not configured, or the store sync is
  * off), or throws.
  */
-const RUN_STEP: Record<StepName, () => Promise<StepOutcome | null>> = {
+const RUN_STEP: Record<StepName, (job: Job) => Promise<StepOutcome | null>> = {
   async pull() {
     const { wooConfigured } = await import("@/server/woo/client");
     if (!wooConfigured()) return null;
@@ -422,7 +458,8 @@ const RUN_STEP: Record<StepName, () => Promise<StepOutcome | null>> = {
     const report = await syncGoldenSneakersFromApi();
     const note = `${report.added} added, ${report.updated} updated, ${report.deactivated} deactivated`;
     console.log(`[scheduler] GS sync done: ${report.skus} SKUs (${note})`);
-    return { ok: true, count: report.skus, note };
+    const feed = { added: report.added, updated: report.updated, deactivated: report.deactivated };
+    return { ok: true, count: report.skus, note, feed };
   },
 
   // The re-pricing pass exists only where KicksDB does; a supplier-feed-only
@@ -434,8 +471,8 @@ const RUN_STEP: Record<StepName, () => Promise<StepOutcome | null>> = {
     return { ok: true, count: refreshed };
   },
 
-  storeSync: () => syncStore("store"),
-  feedSync: () => syncStore("feed"),
+  storeSync: (job) => syncStore("store", job.kind === "manual"),
+  feedSync: (job) => syncStore("feed", job.kind === "manual"),
 
   // The automatic categories against a FULL read of the store: what the
   // frequent check cannot see — a product binned, a change that left the
@@ -529,14 +566,14 @@ const history = {
     }
   },
 
-  /** Feed cycles older than a week: dozens a day, read only for the last one. */
+  /** Feed cycles and runs by hand older than a week: dozens a day, read only for the last one. */
   async prune(): Promise<void> {
     try {
       await db
         .delete(schedulerRuns)
         .where(
           and(
-            eq(schedulerRuns.trigger, "interval"),
+            inArray(schedulerRuns.trigger, NOT_DAILY),
             lt(schedulerRuns.startedAt, new Date(Date.now() - FEED_HISTORY_DAYS * 24 * 60 * 60 * 1000)),
           ),
         );
@@ -547,9 +584,10 @@ const history = {
 };
 
 /**
- * At boot: close the runs a stopped server left open, show the last daily run
- * and the last feed cycle on /feeds again, and return the latest slot a daily
- * run completed successfully.
+ * At boot: close the runs a stopped server left open, show the last daily run,
+ * the last feed cycle and the last run by hand again, and return the latest
+ * slot a daily run completed successfully — a run by hand is no daily run,
+ * whatever it did.
  */
 async function loadHistory(s: SchedulerState): Promise<Date | null> {
   await db
@@ -560,7 +598,7 @@ async function loadHistory(s: SchedulerState): Promise<Date | null> {
   const [last] = await db
     .select()
     .from(schedulerRuns)
-    .where(and(isNotNull(schedulerRuns.finishedAt), ne(schedulerRuns.trigger, "interval")))
+    .where(and(isNotNull(schedulerRuns.finishedAt), notInArray(schedulerRuns.trigger, NOT_DAILY)))
     .orderBy(desc(schedulerRuns.startedAt))
     .limit(1);
   if (last) {
@@ -587,11 +625,36 @@ async function loadHistory(s: SchedulerState): Promise<Date | null> {
     if (written?.ok) s.feedsLastWritten = written.count ?? null;
   }
 
+  s.lastManual = await lastManualRun();
+
   const [served] = await db
     .select({ slot: max(schedulerRuns.slotAt) })
     .from(schedulerRuns)
-    .where(and(eq(schedulerRuns.status, "ok"), ne(schedulerRuns.trigger, "interval")));
+    .where(and(eq(schedulerRuns.status, "ok"), notInArray(schedulerRuns.trigger, NOT_DAILY)));
   return served?.slot ? new Date(served.slot) : null;
+}
+
+/** The last run of any kind that ended — when, which, and its failure if it failed; null: none yet. */
+export async function lastFinishedRun(): Promise<{ at: number; trigger: SchedulerRunRow["trigger"]; error: string | null } | null> {
+  const [row] = await db
+    .select({ startedAt: schedulerRuns.startedAt, finishedAt: schedulerRuns.finishedAt, trigger: schedulerRuns.trigger, error: schedulerRuns.error })
+    .from(schedulerRuns)
+    .where(isNotNull(schedulerRuns.finishedAt))
+    .orderBy(desc(schedulerRuns.startedAt))
+    .limit(1);
+  return row ? { at: (row.finishedAt ?? row.startedAt).getTime(), trigger: row.trigger, error: row.error } : null;
+}
+
+/** The last run started by hand that ended, as the status shows it; null: none in the last week. */
+export async function lastManualRun(): Promise<SchedulerStatus["lastManual"]> {
+  const [row] = await db
+    .select()
+    .from(schedulerRuns)
+    .where(and(isNotNull(schedulerRuns.finishedAt), eq(schedulerRuns.trigger, "manual")))
+    .orderBy(desc(schedulerRuns.startedAt))
+    .limit(1);
+  if (!row) return null;
+  return { at: (row.finishedAt ?? row.startedAt).getTime(), summary: row.summary ?? {}, error: row.error };
 }
 
 /** The run logs every cycle adds to, cut back once a day (see retention.ts). Never throws. */
@@ -632,6 +695,8 @@ async function run(job: Job): Promise<StepName[] | null> {
       console.log("[scheduler] feed cycle skipped: another run is still going");
       return null;
     }
+    // By hand: the person is told one is going (syncNow), and follows that one.
+    if (job.kind === "manual") return null;
     // The daily run waits for a feed cycle rather than lose its slot.
     const deadline = Date.now() + WAIT_FOR_IDLE_MS;
     while (s.running && Date.now() < deadline) await sleep(5_000);
@@ -641,25 +706,31 @@ async function run(job: Job): Promise<StepName[] | null> {
       return [...job.steps];
     }
   }
+  // Set before the first await: whoever asks next sees this run going.
   s.running = true;
+  s.current = { kind: job.kind, steps: [...job.steps], step: job.steps[0] ?? null, startedAt: Date.now() };
   const id = await history.open(job);
   const summary: Record<string, StepOutcome> = {};
   const failed: StepName[] = [];
   try {
     for (const step of job.steps) {
+      if (s.current) s.current = { ...s.current, step };
       try {
-        const outcome = await RUN_STEP[step]();
+        const outcome = await RUN_STEP[step](job);
         if (outcome) summary[step] = outcome;
       } catch (e) {
-        summary[step] = { ok: false, note: messageOf(e) };
+        summary[step] = { ok: false, note: messageOf(e), ...(e instanceof StepFailure ? e.detail : {}) };
         failed.push(step);
         console.error(`[scheduler] ${LABEL[step]} failed: ${messageOf(e)}`);
       }
     }
   } finally {
     s.running = false;
+    s.current = null;
     const error = failed.length > 0 ? failed.map((step) => `${LABEL[step]}: ${summary[step].note}`).join(" · ") : null;
-    if (job.kind === "feeds") {
+    if (job.kind === "manual") {
+      s.lastManual = { at: Date.now(), summary, error };
+    } else if (job.kind === "feeds") {
       s.feedsLastAt = Date.now();
       s.feedsError = error;
       const written = summary.feedSync;
@@ -680,8 +751,9 @@ async function run(job: Job): Promise<StepName[] | null> {
     }
     await history.close(id, summary, error);
   }
-  // Every step has now succeeded (a retry runs only the failed ones).
-  if (failed.length === 0) {
+  // Every step has now succeeded (a retry runs only the failed ones). A run by
+  // hand is no sign the schedule works: the monitors hear only the scheduled ones.
+  if (failed.length === 0 && job.kind !== "manual") {
     const settings = automationNow();
     await heartbeat(job.kind === "feeds" ? settings.feedsHeartbeatUrl : settings.heartbeatUrl);
   }
@@ -1048,4 +1120,50 @@ async function begin(s: SchedulerState): Promise<void> {
   if (s.ordersEveryMinutes > 0) armLoop("orders", CATCH_UP_DELAY_MS);
   setTimeout(() => void workMedia(), CATCH_UP_DELAY_MS).unref();
   if (s.collectionsEveryMinutes > 0) armLoop("collections", CATCH_UP_DELAY_MS);
+}
+
+/** What "Sincronizza ora" answers at once; the run itself goes on in the background (getSchedulerStatus().current). */
+export type SyncNowAnswer =
+  | { started: true; steps: SchedulerStep[] }
+  | { started: false; reason: "running" | "not-writer" | "nothing" };
+
+/**
+ * The steps of a run by hand: the supplier feed and its products' prices and
+ * stock, when a feed is connected; and with the KicksDB prices included in the
+ * settings (dailyStoreSync), the re-pricing and the rest of the store too.
+ * No store pull — the slowest step, and not needed: each product is read live
+ * before its write — and no housekeeping: those are the daily run's.
+ */
+function manualSteps(settings: AutomationConfig): StepName[] {
+  const steps: StepName[] = [];
+  if (feedConnected()) steps.push("gs", "feedSync");
+  if (settings.dailyStoreSync && kicksdbConfigured()) steps.push("kicksdb", "storeSync");
+  return steps;
+}
+
+/**
+ * "Sincronizza ora": what the automatic sync does, now, started by a person —
+ * so it writes even with the automatic store sync switched off, under the same
+ * safety limits, and every write lands in the Sync tab's history as always.
+ * Answers at once; the run goes on in the background, and its step and its
+ * outcome are in the status (current, lastManual). Refused while another run
+ * is going (the person follows that one), in a process that is not the
+ * writer, and when this shop has nothing to sync.
+ */
+export function syncNow(): SyncNowAnswer {
+  if (!isWriter()) return { started: false, reason: "not-writer" };
+  const s = store();
+  if (s.running) return { started: false, reason: "running" };
+  const settings = automationNow();
+  // The limits and the cycle as the settings say now (the listener keeps them so; a process
+  // where the scheduler never started has only this).
+  applySettings(s, settings);
+  const steps = manualSteps(settings);
+  if (steps.length === 0) return { started: false, reason: "nothing" };
+  // run() marks itself running before its first await: a second press meets "running".
+  void run({ kind: "manual", slot: new Date(), trigger: "manual", steps, attempt: 0 }).catch((e) =>
+    console.error(`[scheduler] sync by hand crashed: ${messageOf(e)}`),
+  );
+  console.log(`[scheduler] sync started by hand: ${steps.map((step) => LABEL[step]).join(", ")}`);
+  return { started: true, steps };
 }
