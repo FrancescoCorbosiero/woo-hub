@@ -166,8 +166,10 @@ Publish filter/sort/paginate in SQL.
   (`src/server/sync/ledger.ts`). A store price that differs from the Hub's
   last word was changed by someone else, in wp-admin or by another plugin, and
   no sync writes over it, the automatic ones included: the plan holds that
-  size (a feed product's stock still syncs) and the tab lists it under
-  "Prices changed on WordPress", with both prices. A person decides: **Keep**
+  size (a feed product's stock still syncs) and it is listed under "Prices
+  changed on WordPress", with both prices — in the Vetrina (Negozio › Prezzi
+  cambiati), where the owner decides; the Sync tab says how many wait and
+  links there. A person decides: **Keep**
   locks the store's price under its size, so from then on the Hub writes that
   one; **Use the Hub's price** hands the size back to the rules and writes the
   product's prices at once. The catalog drawer and the Vetrina's product sheet
@@ -314,7 +316,8 @@ cadences:
   sync waits for a cycle to finish. While a store pull is running (from the
   Sync tab, say) the cycle syncs the feed but leaves the store for the next one.
 - **The orders pull**, every 15 minutes by default (Advanced; `0` = by hand
-  only): the latest orders reach the Orders tab without a click.
+  only): the latest orders reach the Vetrina's orders (Negozio › Ordini)
+  without a click.
 - **The photo queue**, whenever something is due (looked at every minute,
   two products at a time): the photos of the products the Publisher created
   hidden (see Publish above). It pauses while a store pull runs, because a
@@ -367,8 +370,8 @@ It is narrower than the tab on purpose:
   ones the snapshot already shows; and since the snapshot is up to a day old
   between two pulls, each product is read again right before its write, which
   keeps the ones changed since — and refreshes the product's copy in the
-  snapshot from the store's answer. Both wait in the Sync tab's list of prices
-  changed on WordPress.
+  snapshot from the store's answer. Both wait in the list of prices changed on
+  WordPress (Vetrina › Negozio › Prezzi cambiati).
 - Every automatic write appears in the Sync tab's history.
 
 Other edits made directly in WooCommerce are seen at the next store pull,
@@ -557,6 +560,35 @@ goes. Its price actions never write a
 regular price: a sale is the sale price only, and a margin is a store-term
 rule in this list, applied by the engine. The design, the decisions and the
 price contract with the engine: [docs/vetrina-catalog.md](docs/vetrina-catalog.md).
+
+**The Vetrina's Negozio tab.** The store kept in step with the supplier, and
+what waits for the owner, on the phone (`/vetrina/negozio`,
+`src/components/vetrina/shop`):
+- **Sincronizza ora** — the automatic sync, now, started by a person
+  (`syncNow` in `src/server/scheduler.ts`): the supplier's feed and its
+  products' prices and stock, and with the KicksDB prices included, the
+  re-pricing and the rest of the store. It writes even with the automatic
+  update switched off, under the same safety limits, and lands in the Sync
+  tab's history like any write. The button follows the run step by step, then
+  says what it did in plain words — prices and stock written, sizes added,
+  prices changed on WordPress left for the owner, a list past its safety limit
+  refused, what waits for next time, a step that failed. Recorded as a run
+  "by hand", it never counts as the day's sync.
+- **Da fare** — the orders to fulfil, the prices changed on WordPress, the new
+  products to publish, each with its count and its screen:
+  - *Ordini*: to fulfil, shipped, or all, searchable; an order's sheet takes
+    it on, ships it with its tracking, cancels or reopens it, keeps an internal
+    note, calls or writes the customer. The Hub's former Orders tab (`/orders`
+    leads here now), with the same reminder to bring WooCommerce in line;
+  - *Prezzi cambiati*: keep WordPress's price (locked on its size) or put the
+    Hub's back, one size or all at once;
+  - *Nuovi prodotti*: publish all, or a few chosen — Publish's run
+    (`src/lib/publish-run.ts`, shared with the Publish tab), through its own
+    route under `/vetrina`; dry runs, force reimport and the rest stay on the
+    Publish tab.
+- **Aggiornamento automatico** — the everyday settings of Automatic sync: on
+  or off, every N minutes, the KicksDB prices too, the full update's times.
+  The rest of them are on the Feeds tab.
 
 **Rolling back** past the store-term rules: an older engine ignores their
 scope keys and would apply them to every product, supplier prices included.

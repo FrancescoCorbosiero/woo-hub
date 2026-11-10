@@ -155,9 +155,9 @@ Hub has them, or has their place reserved.
 |---|---|
 | Hub → store: products, prices, stock, categories | WooCommerce REST (as today) |
 | Hub → storefront: homepage sections | The plugin's REST endpoints (`wc-gh/v1`, as today) |
-| Hub → email: an order shipped | The Orders tab writes carrier, tracking code and URL into the order's meta (`_rp_em_tracking_*`, the plugin's own keys) and moves its status; the plugin's transactional email fires on that status. Today the operator copies them by hand |
+| Hub → email: an order shipped | The Vetrina's orders (Negozio › Ordini) write carrier, tracking code and URL into the order's meta (`_rp_em_tracking_*`, the plugin's own keys) and move its status; the plugin's transactional email fires on that status. Today the operator copies them by hand |
 | Store → Hub: something changed | WooCommerce webhooks (`product.updated`, `order.created`) to one Hub route, signature-checked, past Authelia; the 5- and 15-minute polls stay as the safety net |
-| A person in WordPress → a Hub-owned price | Kept, listed under "Prices changed on WordPress", decided in the Hub or the Vetrina |
+| A person in WordPress → a Hub-owned price | Kept, listed under "Prices changed on WordPress", decided in the Vetrina (Negozio › Prezzi cambiati, or the product's sheet) |
 
 ## 6. What comes next in the Hub
 

@@ -14,9 +14,27 @@ import { ErrorState } from "../ErrorState";
 import { Refresh } from "../icons";
 import { SEGMENTED_COLORS } from "../segmented";
 import { TextField } from "../menus/parts";
+import { SearchField } from "../catalog/term/browse";
 import { ShopConfirm, ShopSubNavbar, ShopThumb, useEuro, type ConfirmAsk } from "./parts";
 
 type Filter = "open" | "shipped" | "all";
+
+/** An order matches a search by its number, its customer, its city, its tracking, or what it holds. */
+function matches(order: OrderView, needle: string): boolean {
+  if (!needle) return true;
+  return [
+    order.number,
+    order.customerName,
+    order.customerEmail,
+    order.shipping.city,
+    order.trackingCode,
+    ...order.items.map((item) => item.sku),
+    ...order.items.map((item) => item.name),
+  ]
+    .join(" ")
+    .toLowerCase()
+    .includes(needle);
+}
 
 const IN: Record<Filter, (o: OrderView) => boolean> = {
   open: (o) => o.status === "new" || o.status === "processing",
@@ -47,6 +65,7 @@ export function OrdersScreen({ result }: { result: VetrinaResult<OrdersState> })
   const eur = useEuro();
   const [state, setState] = React.useState<OrdersState | null>(result.ok ? result.data : null);
   const [filter, setFilter] = React.useState<Filter>("open");
+  const [query, setQuery] = React.useState("");
   const [openId, setOpenId] = React.useState<number | null>(null);
   const [pulling, setPulling] = React.useState(false);
   const day = new Intl.DateTimeFormat(locale === "en" ? "en-GB" : "it-IT", { day: "numeric", month: "short" });
@@ -69,7 +88,8 @@ export function OrdersScreen({ result }: { result: VetrinaResult<OrdersState> })
   }
 
   const orders = state?.orders ?? [];
-  const shown = orders.filter(IN[filter]);
+  const needle = query.trim().toLowerCase();
+  const shown = orders.filter((order) => IN[filter](order) && matches(order, needle));
   const open = orders.find((x) => x.id === openId) ?? null;
 
   return (
@@ -95,6 +115,7 @@ export function OrdersScreen({ result }: { result: VetrinaResult<OrdersState> })
           <p className="px-5 pb-1 pt-3 text-[15px] leading-snug opacity-60">
             {state.wooConfigured ? (state.lastPulledAt ? w.intro : w.neverPulled) : o.notConfigured}
           </p>
+          {orders.length > 0 && <SearchField value={query} onChange={setQuery} placeholder={o.searchPlaceholder} />}
           <div className="px-4 pt-2">
             <Segmented strong rounded colors={SEGMENTED_COLORS}>
               {(["open", "shipped", "all"] as const).map((f) => (
@@ -107,7 +128,7 @@ export function OrdersScreen({ result }: { result: VetrinaResult<OrdersState> })
           </div>
           {shown.length === 0 ? (
             <Block strong inset className="text-center text-[15px] leading-snug">
-              {w.empty[filter]}
+              {needle ? o.empty : w.empty[filter]}
             </Block>
           ) : (
             <List strong inset dividers aria-label={w.title}>
@@ -290,6 +311,19 @@ function OrderContent({ order, onClose, onChanged }: { order: OrderView; onClose
           <p className="text-[13px] font-semibold uppercase tracking-wide opacity-60">{o.address}</p>
           <p className="whitespace-pre-line">{address}</p>
           <div className="flex gap-2 pt-1">
+            <Button
+              rounded
+              tonal
+              className="!h-10 flex-1"
+              onClick={() =>
+                void navigator.clipboard
+                  .writeText(address)
+                  .then(() => toast.success(o.copied))
+                  .catch(() => undefined)
+              }
+            >
+              {o.copyAddress}
+            </Button>
             {(order.customerPhone || order.shipping.phone) && (
               <Button rounded tonal component="a" href={`tel:${order.customerPhone || order.shipping.phone}`} className="!h-10 flex-1">
                 {w.call}
