@@ -106,6 +106,12 @@ function changeView(row: Awaited<ReturnType<typeof repo.listChanges>>[number]): 
   };
 }
 
+/** The later of two moments, either of which may be unknown. */
+function latestOf(a: Date | null, b: number | null): Date | null {
+  if (b == null) return a;
+  return a == null || b > a.getTime() ? new Date(b) : a;
+}
+
 export async function loadStatus(): Promise<CollectionsStatus> {
   const [rows, info, changes] = await Promise.all([
     repo.listCollectionRows(),
@@ -119,7 +125,9 @@ export async function loadStatus(): Promise<CollectionsStatus> {
     configured: storeReady(),
     demo: demoMode(),
     collections: rows.map(view),
-    index: { products: info.products, lastSeen: info.lastSeen?.toISOString() ?? null },
+    // The last read: this process's own, else the last one that brought a
+    // change in (a read that changed nothing writes nothing to say it ran).
+    index: { products: info.products, lastSeen: latestOf(info.lastSeen, runner.lastReadAt)?.toISOString() ?? null },
     runner: {
       running: runner.running,
       progress: runner.progress,

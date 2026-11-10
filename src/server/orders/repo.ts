@@ -2,6 +2,7 @@ import "server-only";
 import { desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import { orderWorkflow, storeOrders, type OrderWorkflowRow } from "@/server/db/schema";
+import { changedBy, rowsToWrite } from "@/server/db/upsert";
 import { chunkArray } from "@/lib/chunk";
 import {
   isOrderStatus,
@@ -42,9 +43,18 @@ export interface OrderView {
   statusChangedAt: string | null;
 }
 
-/** Upsert pulled orders into the snapshot. Chunked like every bulk writer. */
-export async function upsertOrders(orders: OrderModel[]): Promise<void> {
-  if (orders.length === 0) return;
+/**
+ * Upsert pulled orders into the snapshot. Chunked like every bulk writer.
+ *
+ * Only the orders that changed are written: the pull runs every quarter of an
+ * hour over the same hundred recent orders, and almost all of them are as the
+ * last pull left them. Rewritten anyway, each was a new row version with its
+ * whole REST payload, every pull. `pulled_at` is therefore when a pull last
+ * changed the order; when the last pull ran is lastPulledAt's to say.
+ * Returns the orders written.
+ */
+export async function upsertOrders(orders: OrderModel[]): Promise<number> {
+  if (orders.length === 0) return 0;
   const now = new Date();
   const values = orders.map((o) => ({
     id: o.id,
@@ -64,39 +74,65 @@ export async function upsertOrders(orders: OrderModel[]): Promise<void> {
     modifiedAt: o.modifiedAt ? new Date(o.modifiedAt) : null,
     pulledAt: now,
   }));
-  for (const chunk of chunkArray(values, 200)) {
-    await db
+  const content = {
+    number: sql`excluded.number`,
+    wooStatus: sql`excluded.woo_status`,
+    currency: sql`excluded.currency`,
+    total: sql`excluded.total`,
+    customerName: sql`excluded.customer_name`,
+    customerEmail: sql`excluded.customer_email`,
+    customerPhone: sql`excluded.customer_phone`,
+    customerNote: sql`excluded.customer_note`,
+    paymentMethod: sql`excluded.payment_method`,
+    shipping: sql`excluded.shipping`,
+    items: sql`excluded.items`,
+    raw: sql`excluded.raw`,
+    createdAt: sql`excluded.created_at`,
+    modifiedAt: sql`excluded.modified_at`,
+  };
+  let written = 0;
+  for (const part of chunkArray(values, 200)) {
+    const chunk = await rowsToWrite(storeOrders, [storeOrders.id], part, content);
+    if (chunk.length === 0) continue;
+    const rows = await db
       .insert(storeOrders)
       .values(chunk)
       .onConflictDoUpdate({
         target: storeOrders.id,
-        set: {
-          number: sql`excluded.number`,
-          wooStatus: sql`excluded.woo_status`,
-          currency: sql`excluded.currency`,
-          total: sql`excluded.total`,
-          customerName: sql`excluded.customer_name`,
-          customerEmail: sql`excluded.customer_email`,
-          customerPhone: sql`excluded.customer_phone`,
-          customerNote: sql`excluded.customer_note`,
-          paymentMethod: sql`excluded.payment_method`,
-          shipping: sql`excluded.shipping`,
-          items: sql`excluded.items`,
-          raw: sql`excluded.raw`,
-          createdAt: sql`excluded.created_at`,
-          modifiedAt: sql`excluded.modified_at`,
-          pulledAt: sql`excluded.pulled_at`,
-        },
-      });
+        set: { ...content, pulledAt: sql`excluded.pulled_at` },
+        setWhere: changedBy(storeOrders, content),
+      })
+      .returning({ id: storeOrders.id });
+    written += rows.length;
   }
+  return written;
 }
 
-/** When the snapshot was last refreshed (max pulled_at), or null when empty. */
+/*
+ * When this process last pulled the orders. A pull that finds every order as
+ * it was writes nothing, so the table alone cannot say it ran. On globalThis:
+ * the scheduler (instrumentation bundle) and the Orders tab (server actions)
+ * each get their own copy of this module.
+ */
+const pulls = globalThis as { __storeHubOrdersPulledAt?: number };
+
+/** A pull went through (whatever it wrote): what the Orders tab says as "last pulled". */
+export function notePulled(at: Date = new Date()): void {
+  pulls.__storeHubOrdersPulledAt = Math.max(pulls.__storeHubOrdersPulledAt ?? 0, at.getTime());
+}
+
+/**
+ * When the orders were last pulled: this process's last pull, else the last
+ * one that changed an order (max pulled_at). Null when neither is known.
+ */
 export async function lastPulledAt(): Promise<string | null> {
   const rows = await db
     .select({ at: sql<Date | null>`max(${storeOrders.pulledAt})` })
     .from(storeOrders);
-  return rows[0]?.at ? new Date(rows[0].at).toISOString() : null;
+  const stored = rows[0]?.at ? new Date(rows[0].at).getTime() : null;
+  const here = pulls.__storeHubOrdersPulledAt ?? null;
+  const at = stored == null ? here : here == null ? stored : Math.max(stored, here);
+  return at == null ? null : new Date(at).toISOString();
 }
 
 function toView(

@@ -3,6 +3,8 @@ import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import type { HoldReason, IndexedProduct, SmartCollection } from "@core/collections";
 import { db } from "@/server/db/client";
 import { rowsOf } from "@/server/db/rows";
+import { changedBy, rowsToWrite } from "@/server/db/upsert";
+import { chunkArray } from "@/lib/chunk";
 import {
   collectionChanges,
   smartCollections,
@@ -104,11 +106,40 @@ const UPSERT_CHUNK = 500;
 /**
  * Write rows into the index. A row only replaces one the store modified
  * EARLIER: a full read that started minutes ago must not put back what a
- * product looked like before the edit a later read already brought in.
+ * product looked like before the edit a later read already brought in. And
+ * only one it CHANGES: the check every few minutes reads again what changed
+ * near its starting point, and the daily read every product, and almost all
+ * of them are as the index already has them — rewritten anyway, each was a
+ * new row version, three index entries and its WAL, all day long. `seen_at`
+ * moves with the rows written; what a read saw unchanged it knows by id (see
+ * deleteUnseen). Returns how many rows were written.
  */
-export async function upsertIndexRows(rows: IndexRow[], seenAt = new Date()): Promise<void> {
-  for (let i = 0; i < rows.length; i += UPSERT_CHUNK) {
-    const values = rows.slice(i, i + UPSERT_CHUNK).map((r) => ({
+export async function upsertIndexRows(rows: IndexRow[], seenAt = new Date()): Promise<number> {
+  const content = {
+    sku: sql`excluded.sku`,
+    name: sql`excluded.name`,
+    type: sql`excluded.type`,
+    status: sql`excluded.status`,
+    permalink: sql`excluded.permalink`,
+    categories: sql`excluded.categories`,
+    tags: sql`excluded.tags`,
+    brands: sql`excluded.brands`,
+    attributes: sql`excluded.attributes`,
+    price: sql`excluded.price`,
+    onSale: sql`excluded.on_sale`,
+    stockStatus: sql`excluded.stock_status`,
+    image: sql`excluded.image`,
+    visibility: sql`excluded.visibility`,
+    menuOrder: sql`excluded.menu_order`,
+    totalSales: sql`excluded.total_sales`,
+    dateCreated: sql`excluded.date_created`,
+    dateModified: sql`excluded.date_modified`,
+  };
+  // Never put back what a product looked like before an edit the index already holds.
+  const newer = sql`(${storeIndex.dateModified} is null or excluded.date_modified is null or excluded.date_modified >= ${storeIndex.dateModified})`;
+  let written = 0;
+  for (const part of chunkArray(rows, UPSERT_CHUNK)) {
+    const proposed = part.map((r) => ({
       productId: r.id,
       sku: r.sku,
       name: r.name,
@@ -130,45 +161,24 @@ export async function upsertIndexRows(rows: IndexRow[], seenAt = new Date()): Pr
       dateModified: r.dateModified ? new Date(r.dateModified) : null,
       seenAt,
     }));
-    await db
+    const values = await rowsToWrite(storeIndex, [storeIndex.productId], proposed, content, newer);
+    if (values.length === 0) continue;
+    const saved = await db
       .insert(storeIndex)
       .values(values)
       .onConflictDoUpdate({
         target: storeIndex.productId,
-        set: {
-          sku: sql`excluded.sku`,
-          name: sql`excluded.name`,
-          type: sql`excluded.type`,
-          status: sql`excluded.status`,
-          permalink: sql`excluded.permalink`,
-          categories: sql`excluded.categories`,
-          tags: sql`excluded.tags`,
-          brands: sql`excluded.brands`,
-          attributes: sql`excluded.attributes`,
-          price: sql`excluded.price`,
-          onSale: sql`excluded.on_sale`,
-          stockStatus: sql`excluded.stock_status`,
-          image: sql`excluded.image`,
-          visibility: sql`excluded.visibility`,
-          menuOrder: sql`excluded.menu_order`,
-          totalSales: sql`excluded.total_sales`,
-          dateCreated: sql`excluded.date_created`,
-          dateModified: sql`excluded.date_modified`,
-          seenAt: sql`excluded.seen_at`,
-        },
-        setWhere: sql`${storeIndex.dateModified} is null or excluded.date_modified is null or excluded.date_modified >= ${storeIndex.dateModified}`,
-      });
+        set: { ...content, seenAt: sql`excluded.seen_at` },
+        setWhere: sql`${newer} and ${changedBy(storeIndex, content)}`,
+      })
+      .returning({ id: storeIndex.productId });
+    written += saved.length;
   }
   // A product moved to a category or a brand (a Vetrina action patches the
   // index at once) is priced by that term's margin from the next read, not
   // within the minute the store-terms cache would otherwise serve.
-  if (rows.length > 0) forgetStoreTerms();
-}
-
-/** Mark rows as seen without changing them (a full read that met an older copy). */
-export async function touchIndexRows(ids: number[], seenAt: Date): Promise<void> {
-  if (ids.length === 0) return;
-  await db.update(storeIndex).set({ seenAt }).where(inArray(storeIndex.productId, ids));
+  if (written > 0) forgetStoreTerms();
+  return written;
 }
 
 export async function deleteIndexRows(ids: number[]): Promise<void> {
@@ -177,10 +187,26 @@ export async function deleteIndexRows(ids: number[]): Promise<void> {
   forgetStoreTerms();
 }
 
-/** Drop the products a complete read did not see: gone from the store, or binned. */
-export async function deleteUnseen(before: Date): Promise<number> {
-  const gone = await db.delete(storeIndex).where(lt(storeIndex.seenAt, before)).returning({ id: storeIndex.productId });
-  return gone.length;
+/**
+ * Drop the products a complete read did not see: gone from the store, or
+ * binned. `seen` is every product id the read was given, written or not;
+ * a row written since the read began (by the read, or by anything else
+ * meanwhile) is newer than the read and stays.
+ */
+export async function deleteUnseen(before: Date, seen: ReadonlySet<number>): Promise<number> {
+  // Only rows older than the read can go, and those are the ones it left
+  // alone: compared here by id, deleted by id — a few, usually none.
+  const older = await db.select({ id: storeIndex.productId }).from(storeIndex).where(lt(storeIndex.seenAt, before));
+  const unseen = older.map((r) => r.id).filter((id) => !seen.has(id));
+  let gone = 0;
+  for (const part of chunkArray(unseen, UPSERT_CHUNK)) {
+    const deleted = await db
+      .delete(storeIndex)
+      .where(and(inArray(storeIndex.productId, part), lt(storeIndex.seenAt, before)))
+      .returning({ id: storeIndex.productId });
+    gone += deleted.length;
+  }
+  return gone;
 }
 
 function rowToProduct(r: typeof storeIndex.$inferSelect): IndexRow {
@@ -266,7 +292,12 @@ export interface IndexInfo {
   products: number;
   /** The newest modification the index holds: where the next check starts. */
   newestModified: Date | null;
-  /** When a read last brought anything in. */
+  /**
+   * When a read last brought a change in (a row written). The runner's own
+   * last read, where this process made one, is the fresher answer (see
+   * loadStatus in service.ts): a read that finds the store as the index has
+   * it writes nothing.
+   */
   lastSeen: Date | null;
 }
 

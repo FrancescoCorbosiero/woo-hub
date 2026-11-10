@@ -13,7 +13,7 @@ import {
   type GsOffer,
 } from "./goldensneakers-model";
 import { getCatalogSources, upsertCatalog } from "@/server/catalog/repo";
-import { GS_FEED, deactivateMissing, existingFeedKeys, upsertFeedItems, feedStats } from "./repo";
+import { GS_FEED, deactivateMissing, existingFeedKeys, offerKey, upsertFeedItems, feedStats } from "./repo";
 
 /**
  * GoldenSneakers sync (the scs-b2b playbook): download and validate EVERYTHING
@@ -54,7 +54,7 @@ export interface GsSyncReport {
   rows: number; // validated offers in this sync
   skus: number; // distinct SKUs covered
   added: number; // brand-new (sku, size) rows
-  updated: number; // refreshed rows
+  updated: number; // known rows whose price, stock or details changed (or that came back)
   deactivated: number; // rows that vanished from the feed
   rejected: number; // invalid rows (bad size, bad shape)
   invalidBarcodes: number; // rows whose barcode a channel would refuse
@@ -67,6 +67,8 @@ export interface GsSyncReport {
  * products KicksDB doesn't carry are first-class: card, drawer, filters.
  * A SKU already registered by KicksDB is left alone — KicksDB owns the row,
  * ownership at plan time is a separate (feed-driven) concern. Best-effort.
+ * Only the products the feed changed are written; the rest are already as it
+ * says (their freshness is the feed's: see getFreshBySkus).
  */
 async function registerGsCatalogEntries(offers: GsOffer[], market: string): Promise<number> {
   const bySku = new Map<string, GsOffer[]>();
@@ -80,7 +82,7 @@ async function registerGsCatalogEntries(offers: GsOffer[], market: string): Prom
     .filter(([sku]) => sources.get(sku) !== "kicksdb")
     .map(([sku, skuOffers]) => gsOffersToSource(sku, skuOffers, market))
     .filter((p) => p.variants.length > 0);
-  await upsertCatalog(market, products);
+  await upsertCatalog(market, products, { unchanged: "skip" });
   return products.length;
 }
 
@@ -120,11 +122,12 @@ export async function syncGoldenSneakers(payload: unknown): Promise<GsSyncReport
 
   try {
     const known = await existingFeedKeys(GS_FEED);
-    const added = offers.filter((o) => !known.has(`${o.sku}::${o.euNorm}`)).length;
+    const added = offers.filter((o) => !known.has(offerKey(o))).length;
 
     const syncedAt = new Date();
-    await upsertFeedItems(GS_FEED, offers, syncedAt);
-    const deactivated = await deactivateMissing(GS_FEED, syncedAt);
+    // Only what moved is written: the rows a sync finds as they were stay untouched.
+    const written = await upsertFeedItems(GS_FEED, offers, syncedAt);
+    const deactivated = await deactivateMissing(GS_FEED, new Set(offers.map(offerKey)), syncedAt);
     let catalogRegistered = 0;
     try {
       catalogRegistered = await registerGsCatalogEntries(offers, market);
@@ -136,7 +139,7 @@ export async function syncGoldenSneakers(payload: unknown): Promise<GsSyncReport
       rows: offers.length,
       skus: new Set(offers.map((o) => o.sku)).size,
       added,
-      updated: offers.length - added,
+      updated: Math.max(0, written - added),
       deactivated,
       rejected: rejected.length,
       invalidBarcodes,
@@ -147,7 +150,7 @@ export async function syncGoldenSneakers(payload: unknown): Promise<GsSyncReport
       await accumulateIngestionRun(runId, {
         requested: report.rows + report.rejected,
         added: report.added,
-        known: report.updated,
+        known: report.rows - report.added,
         rejected: report.rejected,
       }).catch(() => {});
     }

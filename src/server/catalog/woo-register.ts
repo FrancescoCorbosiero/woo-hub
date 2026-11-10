@@ -17,10 +17,10 @@ import type { StoreModel, StoreProductModel } from "@/server/store-json/model";
  * Runs after every snapshot refresh (REST pull or file upload) so the catalog
  * shows the WHOLE store, not just feed-covered products. Provenance precedence:
  * kicksdb and goldensneakers rows are never touched (they carry real source
- * data); "woo" rows are refreshed; unknown SKUs are added. A woo row is an
- * inventory mirror only — getFreshBySkus/getAnyBySkus exclude it from every
- * price-source read, so sync/apply/rebuild behave exactly as if it weren't
- * in the catalog.
+ * data); "woo" rows are refreshed where the store changed them; unknown SKUs
+ * are added. A woo row is an inventory mirror only — getFreshBySkus/
+ * getAnyBySkus exclude it from every price-source read, so sync/apply/rebuild
+ * behave exactly as if it weren't in the catalog.
  */
 
 export const WOO_SOURCE = "woo";
@@ -29,7 +29,7 @@ export const WOO_INGESTION_SOURCE = "store:woo";
 export interface WooRegisterReport {
   products: number; // snapshot products considered
   added: number; // brand-new store-only entries
-  refreshed: number; // existing woo rows updated
+  refreshed: number; // existing woo rows (rewritten only where the store changed them)
   skippedOwned: number; // SKUs owned by kicksdb/goldensneakers — left alone
   skippedNoSku: number; // products without a usable SKU (cannot be keyed)
 }
@@ -125,7 +125,9 @@ export async function registerWooCatalogEntries(model: StoreModel): Promise<WooR
       toUpsert.push(toWooSourceProduct(p, market));
     }
 
-    if (toUpsert.length > 0) await upsertCatalog(market, toUpsert);
+    // A woo row's fetchedAt is read by nothing (no price-source read sees it):
+    // the products the store still shows as before are left as they are.
+    if (toUpsert.length > 0) await upsertCatalog(market, toUpsert, { unchanged: "skip" });
 
     try {
       const runId = await createIngestionRun(WOO_INGESTION_SOURCE, market);
