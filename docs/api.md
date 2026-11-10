@@ -241,7 +241,8 @@ brand or the whole catalog. And another shop's list compared with the shop:
 `GET /api/v1/order-sources/{id}/compare` (its prices against the shop's,
 beyond 2%; what the shop lacks; what is uncertain), `POST …/pairs` (an item
 paired by hand), `POST …/prices` (the `priceMatch` action: preview, start or
-proposal), `POST …/lookup` (KicksDB's products for items with no code) and
+proposal), `GET …/candidates` (one item's closest products), `POST …/lookup`
+(KicksDB's products for items with no code) and
 `POST …/import` (the missing ones published, `admin`). See
 [order-sources.md](order-sources.md#the-api).
 

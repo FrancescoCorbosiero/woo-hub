@@ -15,7 +15,7 @@ import { compareFacts } from "@/server/vetrina/catalog";
 import { VetrinaError } from "@/server/vetrina/source";
 import { words } from "@/server/vetrina/operations/words";
 import { parseOrderSource, type ParsedSource } from "./format";
-import { matchPaired, matchSummary, type SourceMatch } from "./match";
+import { matchSummary, matchWithPairs, shopMatcher, type ShopMatcher, type SourceMatch } from "./match";
 import * as repo from "./repo";
 
 /**
@@ -30,22 +30,23 @@ export async function shopForMatching(): Promise<IndexFacts[]> {
   return (await readIndexFacts()).sort(compareFacts("shop"));
 }
 
-/** A source matched to the shop, its items paired by hand (the comparison) honoured. */
-export function matchAgainst(items: readonly OrderSourceItem[], facts: readonly IndexFacts[], pairs?: SourcePairs | null): SourceMatch {
-  return matchPaired(
-    items,
-    facts.map((f) => ({ id: f.id, sku: f.sku, name: decodeEntities(f.name) })),
-    pairs,
-  );
+/** The shop indexed for matching: once per request, whatever number of sources it matches. */
+export function matcherFor(facts: readonly IndexFacts[]): ShopMatcher {
+  return shopMatcher(facts.map((f) => ({ id: f.id, sku: f.sku, name: decodeEntities(f.name) })));
 }
 
-function summary(row: VetrinaOrderSourceRow, facts: readonly IndexFacts[]): OrderSourceSummary {
+/** A source matched to the shop, its items paired by hand (the comparison) honoured. */
+export function matchAgainst(items: readonly OrderSourceItem[], shop: readonly IndexFacts[] | ShopMatcher, pairs?: SourcePairs | null): SourceMatch {
+  return matchWithPairs("match" in shop ? shop : matcherFor(shop), items, pairs);
+}
+
+function summary(row: VetrinaOrderSourceRow, shop: ShopMatcher): OrderSourceSummary {
   return {
     id: row.id,
     name: row.name,
     origin: row.origin,
     updatedAt: row.updatedAt.toISOString(),
-    ...matchSummary(row.items, matchAgainst(row.items, facts, row.pairs)),
+    ...matchSummary(row.items, matchAgainst(row.items, shop, row.pairs)),
   };
 }
 
@@ -71,7 +72,9 @@ const isUniqueViolation = (e: unknown) =>
 
 export async function listSources(): Promise<OrderSourceSummary[]> {
   const [rows, facts] = await Promise.all([repo.listSourceRows(), shopForMatching()]);
-  return rows.map((row) => summary(row, facts));
+  // The shop indexed once for all of them: at 10 000 products the index is most of a match's cost.
+  const shop = matcherFor(facts);
+  return rows.map((row) => summary(row, shop));
 }
 
 /** Every source's id and name, without matching it: what a list's sort sheet offers. */
@@ -87,7 +90,7 @@ export async function getSource(id: string): Promise<VetrinaOrderSourceRow> {
 
 export async function loadSource(id: string): Promise<OrderSourceSummary> {
   const [row, facts] = await Promise.all([getSource(id), shopForMatching()]);
-  return summary(row, facts);
+  return summary(row, matcherFor(facts));
 }
 
 /** What a text holds and how it matches the shop — nothing is saved. */
@@ -124,7 +127,7 @@ export async function saveSource(input: { id?: string; name: string; origin?: st
       if ((await repo.countSources()) >= MAX_SOURCES) throw new VetrinaError("invalid", words().source.tooManySources(MAX_SOURCES), 400);
       row = await repo.insertSource({ name, origin, items });
     }
-    return summary(row, await shopForMatching());
+    return summary(row, matcherFor(await shopForMatching()));
   } catch (e) {
     if (isUniqueViolation(e)) throw new VetrinaError("invalid", words().source.nameTaken(name), 400);
     throw e;
@@ -143,7 +146,7 @@ export async function putSource(input: { name?: string | null; origin?: string |
   if (existing) {
     const row = await repo.updateSource(existing.id, { name: existing.name, origin, items: source.items });
     if (!row) throw new VetrinaError("not_found", words().source.gone, 404);
-    return { created: false, source: summary(row, await shopForMatching()) };
+    return { created: false, source: summary(row, matcherFor(await shopForMatching())) };
   }
   return { created: true, source: await saveSource({ name, origin, text: input.text }) };
 }

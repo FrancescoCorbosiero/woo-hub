@@ -169,7 +169,10 @@ price there against the shop's, and what to do about it.
   Hub's catalog already has.
 - **Da verificare**: names several products of the shop fit as well ("Nike
   Dunk Low Panda" with six colourways): tapped, the products whose names come
-  closest are offered, and the shop can be searched.
+  closest are offered, and the shop can be searched. The comparison names
+  them for its first 300 uncertain or missing items; any other's are asked
+  for when its pairing opens — a list of 20 000 with 15 000 missing would
+  otherwise spend seconds on suggestions nobody reads.
 - **Tutti**: the whole source in its order; any entry can be paired again.
   "Disponi tutto il catalogo così" uses the order (sourceOrder).
 
@@ -278,7 +281,8 @@ to confirm with `POST /api/v1/proposals/{id}/confirm`, by a person.
 | `GET /api/v1/order-sources/{id}` | one source, matched to the shop now |
 | `DELETE /api/v1/order-sources/{id}` | the orders it was used for stay as they are |
 | `POST /api/v1/order-sources/{id}/apply` | `{ "term": { "taxonomy": "category", "id": 12 }, "dryRun": true }`, or `{}` for the whole catalog |
-| `GET /api/v1/order-sources/{id}/compare?threshold=2` | the comparison: each item's `status` (`matched`, `ambiguous`, `missing`), `paired`, `product` (id, sku, name, price, onSale, status), `price`, `gap` (%), `differs`, `candidates`, `inCatalog`; and a `summary` |
+| `GET /api/v1/order-sources/{id}/compare?threshold=2` | the comparison: each item's `status` (`matched`, `ambiguous`, `missing`), `paired`, `product` (id, sku, name, price, onSale, status), `price`, `gap` (%), `differs`, `candidates` (for the first 300 uncertain or missing items, the uncertain first), `inCatalog`; and a `summary` |
+| `GET /api/v1/order-sources/{id}/candidates?position=7` | one item's candidates, for any item past those 300 |
 | `POST /api/v1/order-sources/{id}/pairs` | `{ "position": 7, "pair": 4810 }` — or `"none"`, or `"auto"`: answers the comparison |
 | `POST /api/v1/order-sources/{id}/prices` | "Allinea": `{ "dryRun": true }` for every item that differs, or `{ "positions": [1, 3], "threshold": 5 }` |
 | `POST /api/v1/order-sources/{id}/lookup` | `{ "positions": [4, 9] }` (at most 10): KicksDB's products for those items, by SKU or by name, up to three each |

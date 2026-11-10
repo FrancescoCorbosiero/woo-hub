@@ -36,11 +36,21 @@ const MIN_WORDS = 2;
 
 const words = (name: string) => [...new Set(nameKey(name).split(" ").filter(Boolean))];
 
+/** The shop, indexed once for matching: any number of sources then matched against it. */
+export interface ShopMatcher {
+  /** Every product of the shop, by id. */
+  known: ReadonlySet<number>;
+  /** A source's items matched; the products in `taken` are no item's. */
+  match(items: readonly OrderSourceItem[], taken?: ReadonlySet<number>): SourceMatch;
+}
+
 /**
- * Match a source's items to the shop's products, given in the shop's order
- * (so that a SKU the shop has twice takes its products in that order).
+ * The shop's products indexed for matching, given in the shop's order (so
+ * that a SKU the shop has twice takes its products in that order): built
+ * once — at 10 000 products the index is most of a match's cost — then used
+ * for every source the screen or the action needs.
  */
-export function matchSource(items: readonly OrderSourceItem[], products: readonly MatchProduct[]): SourceMatch {
+export function shopMatcher(products: readonly MatchProduct[]): ShopMatcher {
   const bySku = new Map<string, number[]>();
   const byName = new Map<string, number[]>();
   const postings = new Map<string, number[]>();
@@ -66,67 +76,77 @@ export function matchSource(items: readonly OrderSourceItem[], products: readonl
     if (!s) sets.set(w, (s = new Set(postings.get(w) ?? [])));
     return s;
   };
-  const taken = new Set<number>();
-  const free = (ids: readonly number[] | undefined) => (ids ?? []).filter((id) => !taken.has(id));
 
-  /** The products a code is: itself, or a code written inside a name ("Nike Dunk Low (DD1391-100)"). */
-  function bySkuOf(item: OrderSourceItem): number[] {
-    if (item.sku) {
-      const ids = free(bySku.get(skuKey(item.sku)));
-      if (ids.length > 0) return ids;
+  function match(items: readonly OrderSourceItem[], already?: ReadonlySet<number>): SourceMatch {
+    const taken = new Set(already);
+    const free = (ids: readonly number[] | undefined) => (ids ?? []).filter((id) => !taken.has(id));
+
+    /** The products a code is: itself, or a code written inside a name ("Nike Dunk Low (DD1391-100)"). */
+    function bySkuOf(item: OrderSourceItem): number[] {
+      if (item.sku) {
+        const ids = free(bySku.get(skuKey(item.sku)));
+        if (ids.length > 0) return ids;
+      }
+      for (const token of (item.name ?? "").split(/[\s()[\],;|]+/)) {
+        if (!/\d/.test(token) || token.length < 6) continue;
+        const ids = free(bySku.get(skuKey(token)));
+        if (ids.length > 0) return ids;
+      }
+      return [];
     }
-    for (const token of (item.name ?? "").split(/[\s()[\],;|]+/)) {
-      if (!/\d/.test(token) || token.length < 6) continue;
-      const ids = free(bySku.get(skuKey(token)));
-      if (ids.length > 0) return ids;
+
+    /** The product a name is, or why none: "none" or "ambiguous". */
+    function byNameOf(text: string): number[] | "none" | "ambiguous" {
+      const exact = free(byName.get(nameKey(text)));
+      if (exact.length > 0) return exact;
+      const ws = words(text);
+      if (ws.length < MIN_WORDS) return "none";
+      // The rarest word's products first: the fewest to check.
+      const ordered = [...ws].sort((a, b) => (postings.get(a)?.length ?? 0) - (postings.get(b)?.length ?? 0));
+      const first = postings.get(ordered[0]) ?? [];
+      if (first.length === 0) return "none";
+      const rest = ordered.slice(1).map(setOf);
+      const candidates = free(first.filter((id) => rest.every((s) => s.has(id))));
+      if (candidates.length === 0) return "none";
+      if (candidates.length === 1) return candidates;
+      // Several have every word: only one with no other word is it ("… Olive Grey", not "… Olive Grey (GS)");
+      // otherwise the name is too short to tell them apart ("Nike Dunk Low").
+      const same = candidates.filter((id) => wordCount.get(id) === ws.length);
+      return same.length === 1 ? same : "ambiguous";
     }
-    return [];
+
+    const ranked: number[] = [];
+    const perItem: number[][] = [];
+    const unmatched: UnmatchedItem[] = [];
+    items.forEach((item, i) => {
+      let ids = bySkuOf(item);
+      let ambiguous = false;
+      if (ids.length === 0) {
+        // A code no product has may still be a model's name ("Gel-1130"): tried as one.
+        const text = item.name ?? item.sku ?? "";
+        const found = text ? byNameOf(text) : "none";
+        if (found === "ambiguous") ambiguous = true;
+        else if (found !== "none") ids = found;
+      }
+      perItem.push(ids);
+      if (ids.length === 0) {
+        unmatched.push({ position: i + 1, sku: item.sku, name: item.name, ambiguous });
+        return;
+      }
+      for (const id of ids) {
+        taken.add(id);
+        ranked.push(id);
+      }
+    });
+    return { ranked, perItem, unmatched };
   }
 
-  /** The product a name is, or why none: "none" or "ambiguous". */
-  function byNameOf(text: string): number[] | "none" | "ambiguous" {
-    const exact = free(byName.get(nameKey(text)));
-    if (exact.length > 0) return exact;
-    const ws = words(text);
-    if (ws.length < MIN_WORDS) return "none";
-    // The rarest word's products first: the fewest to check.
-    const ordered = [...ws].sort((a, b) => (postings.get(a)?.length ?? 0) - (postings.get(b)?.length ?? 0));
-    const first = postings.get(ordered[0]) ?? [];
-    if (first.length === 0) return "none";
-    const rest = ordered.slice(1).map(setOf);
-    const candidates = free(first.filter((id) => rest.every((s) => s.has(id))));
-    if (candidates.length === 0) return "none";
-    if (candidates.length === 1) return candidates;
-    // Several have every word: only one with no other word is it ("… Olive Grey", not "… Olive Grey (GS)");
-    // otherwise the name is too short to tell them apart ("Nike Dunk Low").
-    const same = candidates.filter((id) => wordCount.get(id) === ws.length);
-    return same.length === 1 ? same : "ambiguous";
-  }
+  return { known: new Set(products.map((p) => p.id)), match };
+}
 
-  const ranked: number[] = [];
-  const perItem: number[][] = [];
-  const unmatched: UnmatchedItem[] = [];
-  items.forEach((item, i) => {
-    let ids = bySkuOf(item);
-    let ambiguous = false;
-    if (ids.length === 0) {
-      // A code no product has may still be a model's name ("Gel-1130"): tried as one.
-      const text = item.name ?? item.sku ?? "";
-      const found = text ? byNameOf(text) : "none";
-      if (found === "ambiguous") ambiguous = true;
-      else if (found !== "none") ids = found;
-    }
-    perItem.push(ids);
-    if (ids.length === 0) {
-      unmatched.push({ position: i + 1, sku: item.sku, name: item.name, ambiguous });
-      return;
-    }
-    for (const id of ids) {
-      taken.add(id);
-      ranked.push(id);
-    }
-  });
-  return { ranked, perItem, unmatched };
+/** Match a source's items to the shop's products, given in the shop's order. */
+export function matchSource(items: readonly OrderSourceItem[], products: readonly MatchProduct[]): SourceMatch {
+  return shopMatcher(products).match(items);
 }
 
 /** An item's key in a source's pairs: its SKU, else its name (SourcePairs). */
@@ -143,28 +163,23 @@ export function pairKey(item: OrderSourceItem): string {
  * may now fit the one left. A pair whose product is no longer in the shop
  * counts for nothing: the matcher's answer stands.
  */
-export function matchPaired(
-  items: readonly OrderSourceItem[],
-  products: readonly MatchProduct[],
-  pairs: SourcePairs | null | undefined,
-): SourceMatch {
-  if (!pairs || Object.keys(pairs).length === 0) return matchSource(items, products);
-  const known = new Set(products.map((p) => p.id));
+export function matchWithPairs(shop: ShopMatcher, items: readonly OrderSourceItem[], pairs: SourcePairs | null | undefined): SourceMatch {
+  if (!pairs || Object.keys(pairs).length === 0) return shop.match(items);
   /** By index: the product paired, or null for "none". */
   const paired = new Map<number, number | null>();
   const claimed = new Set<number>();
   items.forEach((item, i) => {
     const pair = pairs[pairKey(item)];
     if (pair === null) paired.set(i, null);
-    else if (pair !== undefined && known.has(pair) && !claimed.has(pair)) {
+    else if (pair !== undefined && shop.known.has(pair) && !claimed.has(pair)) {
       paired.set(i, pair);
       claimed.add(pair);
     }
   });
-  if (paired.size === 0) return matchSource(items, products);
-  const rest = matchSource(
+  if (paired.size === 0) return shop.match(items);
+  const rest = shop.match(
     items.map((item, i) => (paired.has(i) ? { sku: null, name: null } : item)),
-    products.filter((p) => !claimed.has(p.id)),
+    claimed,
   );
   const ambiguousAt = new Set(rest.unmatched.filter((u) => u.ambiguous).map((u) => u.position));
   const perItem = rest.perItem.map((ids, i) => {
@@ -179,6 +194,15 @@ export function matchPaired(
     else unmatched.push({ position: i + 1, sku: items[i].sku, name: items[i].name, ambiguous: ambiguousAt.has(i + 1) });
   });
   return { ranked, perItem, unmatched };
+}
+
+/** matchWithPairs on a shop indexed for this one source. */
+export function matchPaired(
+  items: readonly OrderSourceItem[],
+  products: readonly MatchProduct[],
+  pairs: SourcePairs | null | undefined,
+): SourceMatch {
+  return matchWithPairs(shopMatcher(products), items, pairs);
 }
 
 /** How many of the unmatched items a summary lists. */

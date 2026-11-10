@@ -8,11 +8,12 @@ import {
   MAX_SOURCE_NAME,
   type OrderSourceCheck,
   type OrderSourceSummary,
+  type ComparedItem,
   type SourceComparison,
   type SourceImport,
   type SourceLookup,
 } from "@/lib/vetrina/order-sources";
-import { compareSource, pairItem } from "@/server/vetrina/order-sources/compare";
+import { compareSource, itemCandidates, pairItem } from "@/server/vetrina/order-sources/compare";
 import { importSkus, lookupItems, MAX_IMPORT, MAX_LOOKUP } from "@/server/vetrina/order-sources/import";
 import type { VetrinaErrorCode } from "@/lib/vetrina/types";
 import * as sources from "@/server/vetrina/order-sources/service";
@@ -141,6 +142,15 @@ export async function pairOrderSourceItem(input: {
     if (!parsed.success) return invalid(words().input.invalid);
     const { id, position, pair } = parsed.data;
     return attempt(() => pairItem(id, position, pair === "none" ? null : pair === "auto" ? undefined : pair));
+  });
+}
+
+/** One item's candidates among the shop's products (the comparison names them for its first open items only). */
+export async function loadOrderSourceCandidates(input: { id: string; position: number }): Promise<VetrinaResult<ComparedItem["candidates"]>> {
+  return answer(async () => {
+    const parsed = z.object({ id: z.uuid(), position: z.number().int().positive() }).safeParse(input);
+    if (!parsed.success) return invalid(words().input.invalid);
+    return attempt(() => itemCandidates(parsed.data.id, parsed.data.position));
   });
 }
 

@@ -1,10 +1,10 @@
 import "server-only";
-import { PRICE_GAP_PERCENT, type OrderSourceItem, type SourceComparison, type SourcePairs } from "@/lib/vetrina/order-sources";
+import { PRICE_GAP_PERCENT, type ComparedItem, type OrderSourceItem, type SourceComparison, type SourcePairs } from "@/lib/vetrina/order-sources";
 import { getAnyBySkus } from "@/server/catalog/repo";
 import { getActiveConfig } from "@/server/config/repo";
 import { words } from "@/server/vetrina/operations/words";
 import { VetrinaError } from "@/server/vetrina/source";
-import { catalogSpellings, compareItems } from "./compare-model";
+import { candidatePool, catalogSpellings, compareItems, nameCandidates } from "./compare-model";
 import { pairKey } from "./match";
 import * as repo from "./repo";
 import { getSource, matchAgainst, shopForMatching } from "./service";
@@ -44,6 +44,18 @@ export async function compareSource(id: string, opts: { threshold?: number } = {
     threshold,
     ...compareItems(row.items, facts, match, row.pairs, { threshold, inCatalog }),
   };
+}
+
+/**
+ * One item's candidates: the shop's products whose names come closest — what
+ * the comparison names for its first uncertain and missing items only
+ * (CANDIDATE_ITEMS), asked for any other when its pairing opens.
+ */
+export async function itemCandidates(id: string, position: number): Promise<ComparedItem["candidates"]> {
+  const [row, facts] = await Promise.all([getSource(id), shopForMatching()]);
+  const item = row.items[position - 1];
+  if (!item) throw new VetrinaError("invalid", words().source.itemGone, 400);
+  return nameCandidates(new Map([[0, item.name ?? item.sku ?? ""]]), candidatePool(facts)).get(0) ?? [];
 }
 
 /**

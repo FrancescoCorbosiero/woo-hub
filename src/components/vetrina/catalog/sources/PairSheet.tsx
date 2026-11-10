@@ -6,7 +6,7 @@ import { useI18n } from "@/i18n/provider";
 import type { CatalogSearch } from "@/lib/vetrina/catalog";
 import type { ComparedItem, SourceComparison } from "@/lib/vetrina/order-sources";
 import { searchCatalog } from "@/server/actions/vetrina-catalog";
-import { pairOrderSourceItem } from "@/server/actions/vetrina-order-sources";
+import { loadOrderSourceCandidates, pairOrderSourceItem } from "@/server/actions/vetrina-order-sources";
 import type { VetrinaResult } from "@/server/vetrina/service";
 import { call } from "../act/call";
 import {
@@ -49,6 +49,13 @@ async function fetchSearch([, q]: readonly [string, string]): Promise<Answer> {
   } catch (e) {
     return { q, result: { ok: false, code: "failed", error: e instanceof Error ? e.message : String(e) } };
   }
+}
+
+/** One item's candidates, for an item the comparison named none for (it names them for its first open items only). */
+async function fetchCandidates([, id, position]: readonly [string, string, number]): Promise<ComparedItem["candidates"]> {
+  const res = await loadOrderSourceCandidates({ id, position });
+  if (!res.ok) throw new Error(res.error);
+  return res.data;
 }
 
 export function PairSheet({
@@ -96,6 +103,13 @@ function PairContent({
 
   const search = useSWR(q ? (["vetrina-pair-search", q] as const) : null, fetchSearch, { keepPreviousData: true, revalidateOnFocus: false });
   const answer = search.data?.q === q ? search.data.result : null;
+  // Not among the comparison's first open items: its candidates asked for now (a failure leaves the search).
+  const ask = item.status !== "matched" && item.candidates.length === 0;
+  const asked = useSWR(ask ? (["vetrina-pair-candidates", sourceId, item.position] as const) : null, fetchCandidates, {
+    revalidateOnFocus: false,
+    shouldRetryOnError: false,
+  });
+  const candidates = item.candidates.length > 0 ? item.candidates : (asked.data ?? []);
 
   async function pair(pick: number | "none" | "auto", message: string) {
     if (busy) return;
@@ -148,10 +162,10 @@ function PairContent({
             <PickList label={p.search}>{answer.data.products.slice(0, SHOWN).map(productRow)}</PickList>
           )
         ) : (
-          item.candidates.length > 0 && (
+          candidates.length > 0 && (
             <div>
               <span className={HEADING}>{p.candidates}</span>
-              <PickList label={p.candidates}>{item.candidates.map(productRow)}</PickList>
+              <PickList label={p.candidates}>{candidates.map(productRow)}</PickList>
             </div>
           )
         )}

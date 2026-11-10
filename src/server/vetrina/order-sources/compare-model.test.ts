@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { SourceProduct } from "@core/core-spine";
 import type { IndexFacts } from "@/server/collections/repo";
 import { catalogSpellings, closest, compareItems, differs, nameCandidates, priceGap, similarity } from "./compare-model";
-import { matchPaired, pairKey } from "./match";
+import { matchPaired, matchWithPairs, pairKey, shopMatcher } from "./match";
 
 const fact = (id: number, sku: string, name: string, price: number | null, more: Partial<IndexFacts> = {}): IndexFacts => ({
   id,
@@ -92,6 +92,16 @@ describe("matchPaired — the items paired by hand honoured", () => {
     expect(match.perItem[3]).toEqual([1]);
   });
 
+  it("indexes the shop once for any number of sources, each matched on its own", () => {
+    const shop = shopMatcher(products);
+    const first = matchWithPairs(shop, items, null);
+    // A second source finds the products the first took: each source is matched afresh.
+    expect(matchWithPairs(shop, [{ sku: "ADI035-5", name: null }], null).perItem).toEqual([[3]]);
+    expect(matchWithPairs(shop, items, null)).toEqual(first);
+    // Products already taken are no item's.
+    expect(shop.match([{ sku: "ADI035-5", name: null }], new Set([3])).perItem).toEqual([[]]);
+  });
+
   it("leaves out an item paired with none, and ignores a pair whose product is gone", () => {
     expect(matchPaired(items, products, { "sku:ADI0355": null }).perItem[1]).toEqual([]);
     expect(matchPaired(items, products, { "sku:ADI0355": 999 }).perItem[1]).toEqual([3]);
@@ -126,6 +136,13 @@ describe("compareItems — each item against the shop", () => {
     expect(compared.items[2].candidates.map((c) => c.id)).toEqual([1, 2, 4]);
     expect(compared.items[3]).toMatchObject({ inCatalog: true, price: null });
     expect(compared.summary).toEqual({ items: 4, matched: 2, differ: 1, dearer: 1, cheaper: 0, missing: 1, importable: 1, ambiguous: 1 });
+  });
+
+  it("names candidates for the uncertain first, then the missing, as far as its cap", () => {
+    const compared = compareItems(items, facts, matchPaired(items, products, null), null, { threshold: 2, inCatalog: new Set(), candidates: 1 });
+    // The uncertain third item has them; the missing fourth, past the cap, is asked for when its pairing opens.
+    expect(compared.items[2].candidates.length).toBeGreaterThan(0);
+    expect(compared.items[3].candidates).toEqual([]);
   });
 
   it("marks what was paired by hand: a product, or none", () => {

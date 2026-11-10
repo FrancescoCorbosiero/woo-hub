@@ -16,6 +16,14 @@ import { pairKey, type SourceMatch } from "./match";
 
 /** Candidates named per item. */
 const CANDIDATES = 3;
+/**
+ * Items a comparison names candidates for: the uncertain first, then the
+ * missing, in the source's order. A source of 20 000 with 15 000 missing
+ * would otherwise spend seconds of the server's one thread on suggestions
+ * nobody reads; the rest are asked for one at a time (compare.ts,
+ * itemCandidates), when an item's pairing opens.
+ */
+export const CANDIDATE_ITEMS = 300;
 /** A name sharing less than this share of words with the item's is no candidate (shared words over all words). */
 const MIN_SIMILARITY = 0.3;
 
@@ -34,6 +42,11 @@ export function priceGap(ours: number | null | undefined, theirs: number | null 
 export const differs = (gap: number | null, threshold: number) => gap != null && Math.abs(gap) > threshold;
 
 type Candidate = ComparedItem["candidates"][number];
+
+/** The shop's products a candidate is chosen among: not the trashed, names as the shop shows them. */
+export function candidatePool(facts: readonly IndexFacts[]): { id: number; sku: string; name: string }[] {
+  return facts.filter((f) => f.status !== "trash").map((f) => ({ id: f.id, sku: f.sku, name: decodeEntities(f.name) }));
+}
 
 const wordsOf = (text: string) => [...new Set(nameKey(text).split(" ").filter(Boolean))];
 
@@ -85,16 +98,18 @@ export function compareItems(
   facts: readonly IndexFacts[],
   match: SourceMatch,
   pairs: SourcePairs | null | undefined,
-  opts: { threshold: number; inCatalog: ReadonlySet<number> },
+  opts: { threshold: number; inCatalog: ReadonlySet<number>; candidates?: number },
 ): Pick<SourceComparison, "items" | "summary"> {
   const byId = new Map(facts.map((f) => [f.id, f]));
   const ambiguousAt = new Set(match.unmatched.filter((u) => u.ambiguous).map((u) => u.position));
-  const open = new Map<number, string>();
-  items.forEach((item, i) => {
-    if ((match.perItem[i] ?? []).length === 0) open.set(i, item.name ?? item.sku ?? "");
-  });
-  const shop = facts.filter((f) => f.status !== "trash").map((f) => ({ id: f.id, sku: f.sku, name: decodeEntities(f.name) }));
-  const candidates = nameCandidates(open, shop);
+  // The items left without a product: the uncertain first, then the missing, at most CANDIDATE_ITEMS of them.
+  const openAt = items.flatMap((_, i) => ((match.perItem[i] ?? []).length === 0 ? [i] : []));
+  const chosen = [...openAt.filter((i) => ambiguousAt.has(i + 1)), ...openAt.filter((i) => !ambiguousAt.has(i + 1))].slice(
+    0,
+    opts.candidates ?? CANDIDATE_ITEMS,
+  );
+  const open = new Map(chosen.map((i) => [i, items[i].name ?? items[i].sku ?? ""]));
+  const candidates = open.size > 0 ? nameCandidates(open, candidatePool(facts)) : new Map<number, Candidate[]>();
 
   const compared = items.map((item, i): ComparedItem => {
     const id = match.perItem[i]?.[0];
