@@ -3,6 +3,7 @@ import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { samePrice } from "@core/core-spine";
 import { db } from "@/server/db/client";
 import { countOf } from "@/server/db/rows";
+import { changedBy, rowsToWrite } from "@/server/db/upsert";
 import { priceLedger, storeSnapshot, type PriceLedgerRow } from "@/server/db/schema";
 import { SNAPSHOT_ID } from "@/server/store-json/repo";
 import { skuKey } from "@/lib/skus";
@@ -138,6 +139,10 @@ export async function ledgerForProducts(productIds: number[]): Promise<Map<numbe
  *
  * Returns how many of the notes are listed: what a writer can tell the
  * person as "changed on WordPress, listed below".
+ *
+ * Every plan notes again the edits it keeps — the feed cycle every quarter of
+ * an hour — and almost always nothing about them changed: only the notes
+ * that change their row are written (see db/upsert.ts).
  */
 export async function noteStoreEdits(notes: StoreEditNote[]): Promise<number> {
   const byId = new Map<number, StoreEditNote>();
@@ -145,38 +150,42 @@ export async function noteStoreEdits(notes: StoreEditNote[]): Promise<number> {
     if (n.variationId > 0 && !samePrice(n.storePrice, n.hubPrice)) byId.set(n.variationId, n);
   }
   const hubsOwn = sql`abs(${priceLedger.price} - excluded.store_price) < 0.005`;
+  const content = {
+    seenAt: sql`case when ${hubsOwn} then null
+                     when ${priceLedger.storePrice} = excluded.store_price
+                     then coalesce(${priceLedger.seenAt}, excluded.seen_at)
+                     else excluded.seen_at end`,
+    storePrice: sql`case when ${hubsOwn} then null else excluded.store_price end`,
+    euSize: sql`coalesce(nullif(excluded.eu_size, ''), ${priceLedger.euSize})`,
+    title: sql`coalesce(nullif(excluded.title, ''), ${priceLedger.title})`,
+    sizeLabel: sql`coalesce(nullif(excluded.size_label, ''), ${priceLedger.sizeLabel})`,
+  };
   let listed = 0;
   for (const part of chunks([...byId.values()])) {
-    const rows = await db
-      .insert(priceLedger)
-      .values(
-        part.map((n) => ({
-          variationId: n.variationId,
-          productId: n.productId,
-          sku: skuKey(n.sku),
-          euSize: n.euSize ?? "",
-          price: n.hubPrice,
-          storePrice: n.storePrice,
-          seenAt: new Date(),
-          title: n.title ?? "",
-          sizeLabel: n.sizeLabel ?? "",
-        })),
-      )
-      .onConflictDoUpdate({
-        target: priceLedger.variationId,
-        set: {
-          seenAt: sql`case when ${hubsOwn} then null
-                           when ${priceLedger.storePrice} = excluded.store_price
-                           then coalesce(${priceLedger.seenAt}, excluded.seen_at)
-                           else excluded.seen_at end`,
-          storePrice: sql`case when ${hubsOwn} then null else excluded.store_price end`,
-          euSize: sql`coalesce(nullif(excluded.eu_size, ''), ${priceLedger.euSize})`,
-          title: sql`coalesce(nullif(excluded.title, ''), ${priceLedger.title})`,
-          sizeLabel: sql`coalesce(nullif(excluded.size_label, ''), ${priceLedger.sizeLabel})`,
-        },
-      })
-      .returning({ storePrice: priceLedger.storePrice });
-    listed += rows.filter((r) => r.storePrice != null).length;
+    const proposed = part.map((n) => ({
+      variationId: n.variationId,
+      productId: n.productId,
+      sku: skuKey(n.sku),
+      euSize: n.euSize ?? "",
+      price: n.hubPrice,
+      storePrice: n.storePrice,
+      seenAt: new Date(),
+      title: n.title ?? "",
+      sizeLabel: n.sizeLabel ?? "",
+    }));
+    const changed = await rowsToWrite(priceLedger, [priceLedger.variationId], proposed, content);
+    if (changed.length > 0) {
+      await db
+        .insert(priceLedger)
+        .values(changed)
+        .onConflictDoUpdate({ target: priceLedger.variationId, set: content, setWhere: changedBy(priceLedger, content) });
+    }
+    // Listed: the noted sizes whose row holds a store price now, written this time or not.
+    const [row] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(priceLedger)
+      .where(and(inArray(priceLedger.variationId, part.map((n) => n.variationId)), isNotNull(priceLedger.storePrice)));
+    listed += Number(row?.n ?? 0);
   }
   return listed;
 }

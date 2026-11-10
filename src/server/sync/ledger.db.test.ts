@@ -253,6 +253,31 @@ describe.skipIf(!enabled)("prices changed on the store (real SQL, stand-in store
     expect(await countStoreEdits()).toBe(1);
   });
 
+  it("noting a kept edit again rewrites nothing, keeps its date, and still counts it as listed", async () => {
+    const { db, sql, noteStoreEdits, recordPriceWrites } = await load();
+    const { rowsOf } = await import("@/server/db/rows");
+    // A row Postgres rewrote has a new xmin, whatever its values.
+    const version = async () =>
+      rowsOf<{ v: string; seen: string | null }>(
+        await db.execute(sql`select xmin::text as v, seen_at::text as seen from price_ledger where variation_id = 11`),
+      )[0];
+    await recordPriceWrites([{ variationId: 11, productId: 1, sku: SKU, euSize: "42", price: 130 }]);
+    const note = { variationId: 11, productId: 1, sku: SKU, euSize: "42", storePrice: 125, hubPrice: 130 };
+    expect(await noteStoreEdits([note])).toBe(1);
+    const before = await version();
+    expect(before.seen).not.toBeNull();
+
+    // The next plan keeps the same edit: listed all the same, nothing written.
+    expect(await noteStoreEdits([note])).toBe(1);
+    expect(await version()).toEqual(before);
+
+    // Another price on the store is another edit: written, its date restarted.
+    expect(await noteStoreEdits([{ ...note, storePrice: 120 }])).toBe(1);
+    const after = await version();
+    expect(after.v).not.toBe(before.v);
+    expect(after.seen).not.toBe(before.seen);
+  });
+
   it("a full pull forgets deleted sizes and closes the edits of products it no longer brings", async () => {
     const { db, priceLedger, saveSnapshot, pruneLedgerToSnapshot, noteStoreEdits, recordPriceWrites } = await load();
     await recordPriceWrites([
