@@ -9,6 +9,7 @@ import { originIt } from "./origin.it";
 import { rulesIt } from "./rules.it";
 import { sectionsIt } from "./sections.it";
 import { sheetIt } from "./sheet.it";
+import { shopIt } from "./shop.it";
 import { sourcesIt } from "./sources.it";
 import { termIt } from "./term.it";
 
@@ -34,5 +35,6 @@ export const catalogIt = {
   sections: sectionsIt,
   picker: pickerIt,
   menus: menusIt,
+  shop: shopIt,
   terms: termsIt,
 };

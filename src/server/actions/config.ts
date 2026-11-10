@@ -31,7 +31,14 @@ export async function resetPricingToDefaults(): Promise<PricingSummary> {
       (r) => Object.keys(r.scope).length > 0 && r.scope.source !== "goldensneakers",
     );
     const defaults = buildDefaultConfig(current.connection);
-    return { ...defaults, pricingRules: [...defaults.pricingRules, ...kept] };
+    // The margins only: the categories' rules and the Automatic sync settings
+    // live in the same document, and are another tab's.
+    return {
+      ...defaults,
+      taxonomy: current.taxonomy,
+      ...(current.automation ? { automation: current.automation } : {}),
+      pricingRules: [...defaults.pricingRules, ...kept],
+    };
   });
   return pricingSummary(fresh);
 }

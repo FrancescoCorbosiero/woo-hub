@@ -1,18 +1,22 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { SourceProduct } from "@core/core-spine";
+import { DEFAULT_AUTOMATION } from "@/lib/automation";
 
 /**
- * Real-SQL test of the scheduler's store syncs with AUTO_SYNC=on, on a shop
- * with both sources: the daily run writes the KicksDB-priced products a few
- * at a time (AUTO_SYNC_STORE_MAX_CHANGES a run) and leaves the feed's
- * products to the feed cycle, which writes them a quarter of an hour later.
+ * Real-SQL test of the scheduler's store syncs with the KicksDB prices
+ * included (Automatic sync: dailyStoreSync), on a shop with both sources: the
+ * daily run writes the KicksDB-priced products a few at a time
+ * (storeMaxChanges a run) and leaves the feed's products to the feed cycle,
+ * which writes them a quarter of an hour later. The settings are saved in the
+ * config, as the Feeds tab saves them, and read back by the scheduler.
  * The scheduler itself runs, on fake timers; the store and KicksDB are
  * stand-ins, and so are the steps around the sync (pull, feed download,
  * re-pricing, categories, photos). Opt-in, like the other DB suites:
  *
  *   DATABASE_URL=postgres://…@localhost:…/hub_test npm run test:db
  *
- * It empties scheduler_runs, and the feed and the ledger, like the others.
+ * It empties scheduler_runs, and the feed and the ledger, like the others,
+ * and puts back the config it found.
  */
 const url = process.env.DATABASE_URL ?? "";
 const enabled = process.env.RUN_DB_TESTS === "1" && /@(localhost|127\.0\.0\.1)[:/]/.test(url);
@@ -90,6 +94,7 @@ const load = async () => ({
   ...(await import("@/server/db/client")),
   ...(await import("@/server/db/schema")),
   ...(await import("@/server/store-json/repo")),
+  ...(await import("@/server/automation/settings")),
   ...(await import("./scheduler")),
 });
 
@@ -140,17 +145,25 @@ const written = (ids: number[], old: string) =>
 // 30 October 2026, 11:05 in Rome: the 04:30 sync never ran, the next feed cycle is at 11:15.
 const NOW = new Date("2026-10-30T10:05:00Z");
 
-describe.skipIf(!enabled)("the scheduler's store syncs, AUTO_SYNC=on (real SQL, stand-in store and KicksDB)", () => {
+describe.skipIf(!enabled)("the scheduler's store syncs, KicksDB prices included (real SQL, stand-in store and KicksDB)", () => {
+  let savedConfig: unknown[] = [];
+
   beforeAll(async () => {
     vi.stubEnv("SCHEDULER", "on");
-    vi.stubEnv("AUTO_SYNC", "on");
-    vi.stubEnv("AUTO_SYNC_STORE_MAX_CHANGES", "2");
     vi.stubEnv("GS_FEED_URL", "https://gs.example.com/api/assortment-flat/");
     vi.stubEnv("GS_FEED_TOKEN", "test-token");
-    vi.stubEnv("SCHEDULER_ORDERS_MINUTES", "0");
-    vi.stubEnv("SCHEDULER_COLLECTIONS_MINUTES", "0");
 
-    const { db, feedItems, priceLedger, schedulerRuns, storeOverrides, saveSnapshot } = await load();
+    const { db, config, feedItems, priceLedger, schedulerRuns, storeOverrides, saveSnapshot, saveAutomation } = await load();
+    savedConfig = await db.select().from(config);
+    // The Feeds tab's settings: the store follows the feed every 15 minutes, and
+    // the daily sync writes the rest, two changes a run. No orders, no categories.
+    await saveAutomation({
+      ...DEFAULT_AUTOMATION,
+      dailyStoreSync: true,
+      storeMaxChanges: 2,
+      ordersEveryMinutes: 0,
+      collectionsEveryMinutes: 0,
+    });
     await db.delete(schedulerRuns);
     await db.delete(feedItems);
     await db.delete(priceLedger);
@@ -182,10 +195,13 @@ describe.skipIf(!enabled)("the scheduler's store syncs, AUTO_SYNC=on (real SQL, 
   afterAll(async () => {
     vi.useRealTimers();
     vi.unstubAllEnvs();
-    delete (globalThis as { __storeHubScheduler?: unknown }).__storeHubScheduler;
-    const { db, catalogProducts, feedItems, inArray } = await load();
+    const g = globalThis as Record<string, unknown>;
+    for (const key of ["__storeHubScheduler", "__storeHubSchedulerTimers", "__storeHubAutomation"]) delete g[key];
+    const { db, config, catalogProducts, feedItems, inArray } = await load();
     await db.delete(feedItems).where(inArray(feedItems.sku, [FEED]));
     await db.delete(catalogProducts).where(inArray(catalogProducts.sku, [FEED, ...KICKS]));
+    await db.delete(config);
+    if (savedConfig.length > 0) await db.insert(config).values(savedConfig as never);
   });
 
   // A whole daily run on a database the other suites have filled: more than the default 5 s.
@@ -224,5 +240,20 @@ describe.skipIf(!enabled)("the scheduler's store syncs, AUTO_SYNC=on (real SQL, 
     expect(status.feedsLastWritten).toBe(2);
     expect(store.products.get(FEED_ID)!.map((v) => v.regular_price)).toEqual(["160.00", "160.00"]);
     expect(written(KICKS_IDS, "100.00")).toBe(1);
+  });
+
+  it("records a run by hand apart from the daily runs: never the day's slot", { timeout: 60_000 }, async () => {
+    const { db, eq, schedulerRuns, getSchedulerStatus, syncNow, lastManualRun } = await load();
+    expect(syncNow()).toEqual({ started: true, steps: ["gs", "feedSync", "kicksdb", "storeSync"] });
+    await vi.waitFor(() => expect(getSchedulerStatus().current).toBeNull(), { timeout: 30_000 });
+    const rows = await db.select().from(schedulerRuns).where(eq(schedulerRuns.trigger, "manual"));
+    expect(rows).toHaveLength(1);
+    // The feed's product is in step already; the KicksDB ones go on, two changes a run.
+    const last = await lastManualRun();
+    expect(last?.summary.feedSync).toMatchObject({ ok: true, sync: { written: 0 } });
+    expect(last?.summary.storeSync).toMatchObject({ ok: true, sync: { written: 2 }, deferred: 2 });
+    expect(written(KICKS_IDS, "100.00")).toBe(2);
+    // The next daily run is still tomorrow's: a run by hand serves no slot.
+    expect(getSchedulerStatus().nextRunAt).toBe(Date.UTC(2026, 9, 31, 3, 30));
   });
 });

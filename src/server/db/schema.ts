@@ -393,24 +393,57 @@ export const orderWorkflow = pgTable("order_workflow", {
 
 /**
  * The in-app scheduler's runs (src/server/scheduler.ts): one row per run of
- * the daily sync, and of each feed cycle (trigger "interval", kept a week). `slot_at` is the scheduled time the run is for — a
- * catch-up after downtime and a retry of failed steps carry the slot they
- * make up for — so the last successful slot tells a restarting server
- * whether it missed one.
+ * the daily sync, of each feed cycle (trigger "interval") and of each run
+ * started by hand (trigger "manual"), those two kept a week. `slot_at` is the
+ * scheduled time the run is for — a catch-up after downtime and a retry of
+ * failed steps carry the slot they make up for — so the last successful slot
+ * of a daily run tells a restarting server whether it missed one.
  */
+/**
+ * What one step of a scheduled run did, or why it failed: `count` its main
+ * number, `note` the words for the log and the Feeds tab, `deferred` what the
+ * whole-store sync left for its next run. A store sync adds its numbers in
+ * `sync`, and a feed cycle that refused to write, what it planned and its
+ * limit in `capped` — for the owner's report in the Vetrina, which says them
+ * in its own words.
+ */
+export interface SchedulerStepSummary {
+  ok: boolean;
+  count?: number;
+  note?: string;
+  deferred?: number;
+  sync?: {
+    /** Variations written. */
+    written: number;
+    /** Missing sizes added. */
+    added: number;
+    /** Prices changed on the store since the last pull, kept (they wait for a person). */
+    kept: number;
+    /** Writes the store refused. */
+    failed: number;
+    /** Missing sizes left for the Sync tab: more than the run may write at once. */
+    held: number;
+  };
+  capped?: { planned: number; limit: number };
+  /** A store pull was reading the store: the sync wrote nothing, and the next run does. */
+  pullRunning?: boolean;
+  /** The supplier feed's sync: its products added, updated, taken off sale. */
+  feed?: { added: number; updated: number; deactivated: number };
+}
+
 export const schedulerRuns = pgTable(
   "scheduler_runs",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     slotAt: timestamp("slot_at", { withTimezone: true }).notNull(),
-    // "interval": a feed cycle (SCHEDULER_FEEDS_MINUTES); the others are daily runs.
-    trigger: text("trigger", { enum: ["schedule", "catch-up", "retry", "interval"] }).notNull(),
+    // "interval": a feed cycle (every N minutes, Automatic sync); "manual": one
+    // started by hand ("Sincronizza ora"), slotted when it started; the others are daily runs.
+    trigger: text("trigger", { enum: ["schedule", "catch-up", "retry", "interval", "manual"] }).notNull(),
     status: text("status", { enum: ["running", "ok", "failed", "interrupted"] })
       .notNull()
       .default("running"),
-    // Per step: { ok, count?, note?, deferred? } — what the run did, or why a
-    // step failed; deferred: what the whole-store sync left for its next run.
-    summary: jsonb("summary").$type<Record<string, { ok: boolean; count?: number; note?: string; deferred?: number }>>(),
+    // Per step: what the run did, or why a step failed (SchedulerStepSummary).
+    summary: jsonb("summary").$type<Record<string, SchedulerStepSummary>>(),
     error: text("error"),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
     finishedAt: timestamp("finished_at", { withTimezone: true }),

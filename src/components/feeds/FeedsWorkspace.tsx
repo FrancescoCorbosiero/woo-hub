@@ -13,6 +13,7 @@ import {
 import type { FeedProductsPage } from "@/server/feeds/repo";
 import { useI18n } from "@/i18n/provider";
 import { useShopTime } from "@/components/use-shop-time";
+import { AutomationSettings } from "@/components/feeds/AutomationSettings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ProductLink } from "@/components/catalog/CatalogDrawerHost";
@@ -59,8 +60,12 @@ export function FeedsWorkspace({ initialState }: { initialState: FeedsState }) {
 
   return (
     <div className="space-y-5">
-      {/* The in-app daily scheduler: status only — runs happen server-side */}
-      <SchedulerCard status={state.scheduler} />
+      {/* The in-app scheduler: its status, and the settings it follows — runs happen server-side */}
+      <SchedulerCard
+        status={state.scheduler}
+        automation={state.automation}
+        onSaved={(automation, scheduler) => setState((current) => ({ ...current, automation, scheduler }))}
+      />
 
       {/* Registry: the built-in feed */}
       <section className="rounded-xl border border-line bg-surface p-4 shadow-xs">
@@ -142,7 +147,15 @@ export function FeedsWorkspace({ initialState }: { initialState: FeedsState }) {
   );
 }
 
-function SchedulerCard({ status }: { status: FeedsState["scheduler"] }) {
+function SchedulerCard({
+  status,
+  automation,
+  onSaved,
+}: {
+  status: FeedsState["scheduler"];
+  automation: FeedsState["automation"];
+  onSaved: (automation: FeedsState["automation"], scheduler: FeedsState["scheduler"]) => void;
+}) {
   const { t } = useI18n();
   const s = t.feeds.scheduler;
   const when = useShopTime(status.timeZone);
@@ -253,6 +266,7 @@ function SchedulerCard({ status }: { status: FeedsState["scheduler"] }) {
           {s.collectionsErrorPrefix} {status.collectionsError}
         </p>
       )}
+      <AutomationSettings view={automation} onSaved={onSaved} />
     </section>
   );
 }

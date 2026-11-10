@@ -216,46 +216,61 @@ below). To get an email when a daily sync fails or never runs:
 
 1. Create a free check at [healthchecks.io](https://healthchecks.io): period
    **1 day**, grace **3 hours**.
-2. Put its ping URL in `deploy/.env` as `SCHEDULER_HEARTBEAT_URL=…`, then run
-   `docker compose up -d` (no rebuild needed: settings are read at start).
+2. Paste its ping URL in the Hub: **Feeds › Automatic sync › Advanced ›
+   Alert when the full sync stops**, and save. Nothing to restart.
 3. With the GoldenSneakers feed set, the feed cycle runs every 15 minutes
-   (below): add a second check with a period of **15 minutes** and a grace of
-   **1 hour**, as `SCHEDULER_FEEDS_HEARTBEAT_URL=…`.
+   (below): add a second check with a period matching the cycle (**15
+   minutes**) and a grace of **1 hour**, as *Alert when the feed stops*.
 
 ## Scheduled syncs
 
-| What | When | Setting |
+What runs, and when, is set in the Hub, not in `deploy/.env`: **Feeds ›
+Automatic sync › Settings**. A change saved there applies within a minute —
+no restart, no redeploy.
+
+| What | When (default) | Setting (Feeds › Automatic sync) |
 | --- | --- | --- |
-| Store pull, GS sync, KicksDB re-pricing, store sync of the whole store, housekeeping | every day at 04:30, Italian time | `SCHEDULER_TIMES` (e.g. `04:30,13:30`), `SCHEDULER_TIMEZONE` |
-| GS sync, then store sync of the feed's products | every 15 minutes, with `GS_FEED_URL` and `GS_FEED_TOKEN` set | `SCHEDULER_FEEDS_MINUTES` (`0` = off) |
-| Recent orders | every 15 minutes | `SCHEDULER_ORDERS_MINUTES` |
+| Store pull, GS sync, KicksDB re-pricing, store sync of the whole store, housekeeping | every day at 04:30, Italian time | *Full sync every day at* (e.g. `04:30, 13:30`); Advanced › *The shop's time zone* |
+| GS sync, then store sync of the feed's products | every 15 minutes, with `GS_FEED_URL` and `GS_FEED_TOKEN` set | *Update the store automatically*, *every N minutes* |
+| Recent orders | every 15 minutes | Advanced › *Orders: update every* (`0` = by hand) |
 | Photos of newly published products (they stay hidden until the first lands) | whenever something is due, looked at every minute | — |
 
 **The store sync** writes to WooCommerce on its own. By default it writes
 the feed's products' changes every feed cycle, and the daily sync writes
 nothing: a KicksDB-priced product's new price waits in the Sync tab.
-**`AUTO_SYNC=on`** has the daily sync write the rest of the store's changes
-too, KicksDB prices included. **`AUTO_SYNC=off`** writes nothing: the runs
-refresh the Hub and you apply the changes yourself in the Sync tab. When it
-writes:
+Ticking **the KicksDB prices of the rest of the store too** has the daily
+sync write the rest of the store's changes too, KicksDB prices included.
+Switching **Update the store automatically** off writes nothing, and stops the
+feed cycle: the daily sync refreshes the Hub and you apply the changes
+yourself in the Sync tab. When it writes:
 - **What it writes:** the price and stock changes the Sync tab would apply,
   manual price locks honored. Only prices and stock: no size cleanup, never
   a deletion.
-- **The limits:** a feed cycle that would change more than
-  `AUTO_SYNC_MAX_CHANGES` variations (default 500) writes nothing, and the
-  Feeds tab says why. Review it in the Sync tab and apply it there: in a
-  quarter of an hour, a change that big is a new price list or a broken feed.
-  The daily sync of `AUTO_SYNC=on` writes at most
-  `AUTO_SYNC_STORE_MAX_CHANGES` variations a run (default: the same 500) and
-  leaves the rest for the next run; the Feeds tab shows how many are waiting.
-  The KicksDB prices of a whole store move a lot from one day to the next
-  (thousands of sizes on a 2,000-product store), so size it to that, or run
-  the daily sync more than once a day (`SCHEDULER_TIMES`). While the feed
-  cycle runs, the daily sync leaves the feed's products to it.
+- **The limits:** a feed cycle that would change more than the *feed safety
+  limit* (Advanced, default 500 variations) writes nothing, and the Feeds tab
+  says why. Review it in the Sync tab and apply it there: in a quarter of an
+  hour, a change that big is a new price list or a broken feed. The daily
+  sync with the KicksDB prices writes at most *changes at a time* (Advanced,
+  default 500) variations a run and leaves the rest for the next run; the
+  Feeds tab shows how many are waiting. The KicksDB prices of a whole store
+  move a lot from one day to the next (thousands of sizes on a 2,000-product
+  store), so size it to that, or run the daily sync more than once a day
+  (several times in *Full sync every day at*). While the feed cycle runs, the
+  daily sync leaves the feed's products to it.
 - **The record:** every write appears in the Sync tab's history.
 - **Edits in WordPress:** a price changed by hand in WooCommerce is seen at
   the next store pull (the daily sync). For a product the feed owns, the
   feed's value wins.
+
+**Upgrading a deploy that set them in `deploy/.env`.** `AUTO_SYNC`,
+`SCHEDULER_TIMES`, `SCHEDULER_FEEDS_MINUTES`, `AUTO_SYNC_MAX_CHANGES`,
+`AUTO_SYNC_STORE_MAX_CHANGES`, `SCHEDULER_ORDERS_MINUTES`,
+`SCHEDULER_COLLECTIONS_MINUTES`, `COLLECTIONS_MAX_CHANGES`, `AUTO_REPAIR`,
+`SCHEDULER_TIMEZONE` and the two `…_HEARTBEAT_URL`s keep working as they
+were: they are the settings' starting values until you first press **Save**
+on the Feeds tab, and are not read after that. The tab names the ones still
+in the file; delete those lines when convenient (the README maps each to its
+setting).
 
 - **A failed step** doesn't stop the others. It is retried an hour later,
   twice at most.

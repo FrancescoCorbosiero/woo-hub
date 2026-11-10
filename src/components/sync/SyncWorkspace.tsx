@@ -39,7 +39,7 @@ import { PricingBar } from "@/components/pricing/PricingBar";
 import { ProductGroup } from "@/components/preview/ProductGroup";
 import { NotFoundCard } from "@/components/preview/NotFoundCard";
 import { RebuildPanel } from "./RebuildPanel";
-import { StoreEditsPanel } from "./StoreEditsPanel";
+import { StoreEditsNotice } from "./StoreEditsNotice";
 
 const selKey = (planId: string, variantId: string) => `${planId}:${variantId}`;
 
@@ -704,18 +704,8 @@ export function SyncWorkspace({
         </p>
       )}
 
-      {/* Prices changed on WordPress: kept by every sync until a person decides */}
-      <StoreEditsPanel
-        initial={initialState.storeEdits}
-        siteUrl={snapshotInfo?.siteUrl ?? ""}
-        timeZone={initialState.timeZone}
-        refreshKey={runId}
-        disabled={!initialState.wooConfigured || pulling || pending || applying != null}
-        onResolved={() => {
-          void refreshHistory();
-          if (plans.length > 0) rerun();
-        }}
-      />
+      {/* Prices changed on WordPress: kept by every sync until the owner decides, in the Vetrina */}
+      <StoreEditsNotice initial={initialState.storeEdits} refreshKey={runId} />
 
       {/* One-click sync: per-owner lookup, one summary, one confirmation */}
       <div className="relative flex flex-wrap items-center gap-4 overflow-hidden rounded-xl border border-accent/40 bg-accent/5 p-4">

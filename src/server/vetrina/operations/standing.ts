@@ -1,5 +1,5 @@
 import "server-only";
-import { env } from "@/lib/env";
+import { automationNow } from "@/server/automation/settings";
 import { readIndexRowsById } from "@/server/collections/repo";
 import { demoMode } from "@/server/collections/store";
 import type { VetrinaOperationRow } from "@/server/db/schema";
@@ -17,11 +17,9 @@ import * as repo from "./repo";
  * term's sale put on sale.
  */
 
-const DEFAULT_TIME_ZONE = "Europe/Rome";
-
-/** Today in the shop's time zone (the scheduler's), YYYY-MM-DD: a sale's last day is the shop's. */
+/** Today in the shop's time zone (its Automatic sync settings'), YYYY-MM-DD: a sale's last day is the shop's. */
 export function shopToday(at = new Date()): string {
-  return dayIn(env.SCHEDULER_TIMEZONE ?? DEFAULT_TIME_ZONE, at);
+  return dayIn(automationNow().timeZone, at);
 }
 
 // One start per demo shop, kept with it on globalThis: the server bundles share the shop, and a new shop starts again.

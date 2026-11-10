@@ -81,7 +81,8 @@ Ideas taken from golden-hive-plugin, and what we do differently:
 
 The Hub writes regular prices from the sources (StockX via KicksDB, the
 supplier feed) through the margin rules: every quarter of an hour for the
-feed's products, daily for the rest with `AUTO_SYNC=on`, and whenever the
+feed's products, daily for the rest when the Automatic sync settings include
+the KicksDB prices, and whenever the
 operator applies the Sync tab. The catalog adds a person changing prices from a
 phone, at any moment, possibly while the Sync tab is open and the feed cycle is
 writing. This section is the contract that keeps the two from fighting.
