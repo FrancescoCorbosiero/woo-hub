@@ -331,7 +331,7 @@ describe.skipIf(!enabled)("the automatic categories' runs (real SQL)", () => {
     expect(row.members).toBe(0);
   });
 
-  it("holds a change bigger than the limit (COLLECTIONS_MAX_CHANGES, default 200)", async () => {
+  it("holds a change bigger than the limit (the Automatic sync settings' collectionsMaxChanges, default 200)", async () => {
     const { runCheck, listCollectionRows } = await load();
     const store = new FakeStore();
     for (let id = 1; id <= 201; id++) store.add({ id, tags: [7] });

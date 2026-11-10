@@ -698,6 +698,57 @@ export const it = {
         moved === 0 ? `ultimo ${when}` : `ultimo ${when} · ${moved === 1 ? "1 prodotto spostato" : `${moved} prodotti spostati`}`,
       collectionsErrorPrefix: "Categorie automatiche:",
     },
+    automation: {
+      title: "Impostazioni",
+      storeSync: "Aggiorna il negozio in automatico",
+      storeSyncWhat: "Prezzi e disponibilità del listino fornitore,",
+      every: "ogni",
+      minutes: "minuti",
+      storeSyncOff:
+        "Spenta: il negozio cambia solo quando applichi le modifiche dalla scheda Sync. Il listino si scarica comunque una volta al giorno, con la sincronizzazione completa.",
+      noFeed:
+        "Nessun listino fornitore collegato (GS_FEED_URL e GS_FEED_TOKEN): qui sotto puoi far scrivere al negozio i prezzi KicksDB, una volta al giorno.",
+      dailyStoreSync: "Anche i prezzi KicksDB del resto del negozio, con la sincronizzazione completa",
+      dailyStoreSyncHint:
+        "Cambiano di migliaia di taglie al giorno: vengono scritti un blocco per volta, il resto alla volta successiva.",
+      daily: "Sincronizzazione completa ogni giorno alle",
+      dailyHint: "Copia del negozio, listini, ri-prezzatura e manutenzione. Più orari separati da virgola: 04:30, 13:30.",
+      advanced: "Avanzate",
+      timeZone: "Fuso orario del negozio",
+      timeZoneHint: "Quello degli orari qui sopra, e del giorno in cui finisce un saldo.",
+      maxChanges: "Limite di sicurezza del listino",
+      maxChangesHint:
+        "Un ciclo che cambierebbe più varianti di così non scrive nulla e ti aspetta nella scheda Sync: di solito è un listino rotto.",
+      storeMaxChanges: "Modifiche per volta (prezzi KicksDB)",
+      storeMaxChangesHint: "La sincronizzazione completa ne scrive al massimo tante, il resto la volta dopo.",
+      changes: "varianti",
+      orders: "Ordini: aggiorna ogni",
+      ordersHint: "0 = solo a mano, dalla scheda Ordini.",
+      collections: "Categorie automatiche: controlla ogni",
+      collectionsHint: "0 = solo con la sincronizzazione completa.",
+      collectionsMax: "Categorie automatiche: prodotti spostati al massimo",
+      collectionsMaxHint:
+        "Oltre, o quando una categoria si svuoterebbe, aspetta una conferma nella scheda Categorie automatiche.",
+      products: "per categoria",
+      autoRepair: "Riparazione automatica",
+      autoRepairHint:
+        "Ogni giorno rimette foto, marchio, categoria e genere mancanti ai prodotti già online. Non sostituisce mai un campo pieno.",
+      heartbeat: "Avviso se la sincronizzazione completa si ferma",
+      feedsHeartbeat: "Avviso se il listino si ferma",
+      heartbeatHint:
+        "L'indirizzo di un controllo di healthchecks.io (o simile), chiamato a ogni esecuzione riuscita: se le chiamate si fermano, ti arriva un avviso.",
+      range: (min: number, max: number) => `Da ${min} a ${max}.`,
+      save: "Salva",
+      saving: "Salvataggio…",
+      discard: "Annulla",
+      saved: "Salvate. Valgono entro un minuto, senza riavviare nulla.",
+      invalid: "Controlla i campi in rosso.",
+      failed: "Salvataggio non riuscito:",
+      fromEnv: (names: string) =>
+        `Per ora questi valori vengono dal file .env (${names}). Salvali qui una volta: da quel momento valgono quelli del Hub, e quelle righe si possono togliere.`,
+      leftInEnv: (names: string) =>
+        `Nel file .env restano ${names}: non vengono più lette, puoi toglierle.`,
+    },
     kicksdb: {
       name: "Aggiornamento KicksDB",
       notConfigured:

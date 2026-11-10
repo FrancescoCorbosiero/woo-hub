@@ -403,7 +403,7 @@ export const schedulerRuns = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     slotAt: timestamp("slot_at", { withTimezone: true }).notNull(),
-    // "interval": a feed cycle (SCHEDULER_FEEDS_MINUTES); the others are daily runs.
+    // "interval": a feed cycle (every N minutes, Automatic sync); the others are daily runs.
     trigger: text("trigger", { enum: ["schedule", "catch-up", "retry", "interval"] }).notNull(),
     status: text("status", { enum: ["running", "ok", "failed", "interrupted"] })
       .notNull()

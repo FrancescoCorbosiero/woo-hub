@@ -1,14 +1,15 @@
 /**
  * When the in-app scheduler runs: fixed times of day in one time zone (the
  * shop's), so a sync lands at a quiet hour whatever time the server happened
- * to start. Pure — shared by src/server/scheduler.ts and the env check.
+ * to start. Pure — shared by src/server/scheduler.ts and the settings' checks
+ * (src/server/automation/settings.ts).
  *
  * On the two daylight-saving days a time that falls in the skipped hour runs
  * an hour later, and one in the repeated hour runs once; times outside 02:00–
  * 03:00 are never affected.
  */
 
-/** The shop's time zone unless SCHEDULER_TIMEZONE says otherwise. */
+/** The shop's time zone unless its settings say otherwise. */
 export const DEFAULT_TIMEZONE = "Europe/Rome";
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -151,7 +152,7 @@ export function intervalTimes(minutes: number): string[] {
   return times;
 }
 
-/** The feed cycle's step when the GoldenSneakers API is set and SCHEDULER_FEEDS_MINUTES is not. */
+/** The feed cycle's step out of the box. */
 export const DEFAULT_FEEDS_MINUTES = 15;
 
 /**
@@ -162,20 +163,20 @@ export const DEFAULT_FEEDS_MINUTES = 15;
 export type AutoSync = "all" | "feed" | "off";
 
 /**
- * The feed cycle and the automatic store sync, from the settings. A shop with
- * the GoldenSneakers API set keeps its store in step with the feed out of the
- * box: a cycle every DEFAULT_FEEDS_MINUTES that writes the feed's products'
- * price and stock changes — the feed is their source of truth. AUTO_SYNC=on
- * adds the whole store to the daily sync; AUTO_SYNC=off writes nothing, and
- * SCHEDULER_FEEDS_MINUTES=0 stops the cycle.
+ * The feed cycle and the automatic store sync, from the owner's settings and
+ * the sources this shop has. On (the default), a shop with a supplier feed
+ * connected keeps its store in step with it: a cycle every feedsEveryMinutes
+ * that reads the feed and writes its products' price and stock changes — the
+ * feed is their source of truth. dailyStoreSync adds the rest of the store
+ * (the KicksDB prices) to the daily sync. Off, nothing is written unattended
+ * and there is no cycle: the feed is read with the daily sync, or by hand.
  */
-export function feedSchedule(settings: {
-  feedsMinutes: number | undefined;
-  autoSync: "on" | "off" | undefined;
-  gsConfigured: boolean;
-}): { feedsEveryMinutes: number; autoSync: AutoSync } {
-  const feedsEveryMinutes = settings.feedsMinutes ?? (settings.gsConfigured ? DEFAULT_FEEDS_MINUTES : 0);
-  if (settings.autoSync === "on") return { feedsEveryMinutes, autoSync: "all" };
-  if (settings.autoSync === "off" || feedsEveryMinutes === 0) return { feedsEveryMinutes, autoSync: "off" };
-  return { feedsEveryMinutes, autoSync: "feed" };
+export function effectiveSync(
+  settings: { storeSync: boolean; feedsEveryMinutes: number; dailyStoreSync: boolean },
+  feedConnected: boolean,
+): { feedsEveryMinutes: number; autoSync: AutoSync } {
+  const feedsEveryMinutes = settings.storeSync && feedConnected ? settings.feedsEveryMinutes : 0;
+  if (!settings.storeSync) return { feedsEveryMinutes, autoSync: "off" };
+  if (settings.dailyStoreSync) return { feedsEveryMinutes, autoSync: "all" };
+  return { feedsEveryMinutes, autoSync: feedsEveryMinutes > 0 ? "feed" : "off" };
 }

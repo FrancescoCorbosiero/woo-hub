@@ -679,6 +679,55 @@ export const en: Dictionary = {
         moved === 0 ? `last ${when}` : `last ${when} · ${moved === 1 ? "1 product moved" : `${moved} products moved`}`,
       collectionsErrorPrefix: "Automatic categories:",
     },
+    automation: {
+      title: "Settings",
+      storeSync: "Update the store automatically",
+      storeSyncWhat: "Prices and stock from the supplier feed,",
+      every: "every",
+      minutes: "minutes",
+      storeSyncOff:
+        "Off: the store changes only when you apply the changes from the Sync tab. The feed is still downloaded once a day, with the full sync.",
+      noFeed:
+        "No supplier feed connected (GS_FEED_URL and GS_FEED_TOKEN): below, you can have the store take the KicksDB prices, once a day.",
+      dailyStoreSync: "The KicksDB prices of the rest of the store too, with the full sync",
+      dailyStoreSyncHint: "They move by thousands of sizes a day: they are written a batch at a time, the rest the next time.",
+      daily: "Full sync every day at",
+      dailyHint: "Copy of the store, feeds, re-pricing and housekeeping. Several times apart by commas: 04:30, 13:30.",
+      advanced: "Advanced",
+      timeZone: "The shop's time zone",
+      timeZoneHint: "The one of the times above, and of the day a sale ends.",
+      maxChanges: "Feed safety limit",
+      maxChangesHint:
+        "A cycle that would change more variations than this writes nothing and waits for you in the Sync tab: usually a broken feed.",
+      storeMaxChanges: "Changes at a time (KicksDB prices)",
+      storeMaxChangesHint: "The full sync writes at most this many, the rest the next time.",
+      changes: "variations",
+      orders: "Orders: update every",
+      ordersHint: "0 = by hand only, from the Orders tab.",
+      collections: "Automatic categories: check every",
+      collectionsHint: "0 = with the full sync only.",
+      collectionsMax: "Automatic categories: most products moved",
+      collectionsMaxHint:
+        "Past this, or when a category would be emptied, it waits for a confirmation in the Automatic categories tab.",
+      products: "per category",
+      autoRepair: "Automatic repair",
+      autoRepairHint:
+        "Every day it puts back the missing photo, brand, category and gender of products already online. It never replaces a field that holds something.",
+      heartbeat: "Alert when the full sync stops",
+      feedsHeartbeat: "Alert when the feed stops",
+      heartbeatHint:
+        "The address of a healthchecks.io check (or similar), called after every successful run: when the calls stop, you get an alert.",
+      range: (min, max) => `From ${min} to ${max}.`,
+      save: "Save",
+      saving: "Saving…",
+      discard: "Discard",
+      saved: "Saved. They apply within a minute, with nothing to restart.",
+      invalid: "Check the fields in red.",
+      failed: "Could not save:",
+      fromEnv: (names) =>
+        `For now these values come from the .env file (${names}). Save them here once: from then on the values saved here apply, and those lines can go.`,
+      leftInEnv: (names) => `The .env file still sets ${names}: no longer read, you can remove them.`,
+    },
     kicksdb: {
       name: "KicksDB refresh",
       notConfigured:

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  feedSchedule,
+  effectiveSync,
   intervalTimes,
   isTimeZone,
   nextSlot,
@@ -117,34 +117,32 @@ describe("an interval on the clock", () => {
 });
 
 describe("the feed cycle and the automatic store sync", () => {
-  const unset = { feedsMinutes: undefined, autoSync: undefined };
+  const out = { storeSync: true, feedsEveryMinutes: 15, dailyStoreSync: false };
 
   it("keeps a GoldenSneakers shop's store in step every 15 minutes, out of the box", () => {
-    expect(feedSchedule({ ...unset, gsConfigured: true })).toEqual({ feedsEveryMinutes: 15, autoSync: "feed" });
+    expect(effectiveSync(out, true)).toEqual({ feedsEveryMinutes: 15, autoSync: "feed" });
   });
 
-  it("leaves a shop without the feed API alone", () => {
-    expect(feedSchedule({ ...unset, gsConfigured: false })).toEqual({ feedsEveryMinutes: 0, autoSync: "off" });
+  it("takes the owner's interval: every 20 minutes is every 20 minutes", () => {
+    expect(effectiveSync({ ...out, feedsEveryMinutes: 20 }, true)).toEqual({ feedsEveryMinutes: 20, autoSync: "feed" });
   });
 
-  it("takes the operator's interval, and 0 stops the cycle and its writes", () => {
-    expect(feedSchedule({ ...unset, feedsMinutes: 30, gsConfigured: true })).toEqual({
-      feedsEveryMinutes: 30,
-      autoSync: "feed",
-    });
-    expect(feedSchedule({ ...unset, feedsMinutes: 0, gsConfigured: true })).toEqual({
+  it("has no cycle, and writes nothing, for a shop without a feed connected", () => {
+    expect(effectiveSync(out, false)).toEqual({ feedsEveryMinutes: 0, autoSync: "off" });
+  });
+
+  it("off, writes nothing and runs no cycle: the feed is read with the daily sync", () => {
+    expect(effectiveSync({ ...out, storeSync: false }, true)).toEqual({ feedsEveryMinutes: 0, autoSync: "off" });
+    // Off is off: the rest of the store is not written either.
+    expect(effectiveSync({ ...out, storeSync: false, dailyStoreSync: true }, true)).toEqual({
       feedsEveryMinutes: 0,
       autoSync: "off",
     });
   });
 
-  it("writes nothing with AUTO_SYNC=off, and the whole store too with AUTO_SYNC=on", () => {
-    expect(feedSchedule({ feedsMinutes: undefined, autoSync: "off", gsConfigured: true })).toEqual({
-      feedsEveryMinutes: 15,
-      autoSync: "off",
-    });
-    expect(feedSchedule({ feedsMinutes: undefined, autoSync: "on", gsConfigured: true }).autoSync).toBe("all");
-    // The daily sync writes the whole store even with no feed cycle at all.
-    expect(feedSchedule({ feedsMinutes: 0, autoSync: "on", gsConfigured: false }).autoSync).toBe("all");
+  it("writes the rest of the store with the daily sync when asked to, with a feed or without", () => {
+    expect(effectiveSync({ ...out, dailyStoreSync: true }, true)).toEqual({ feedsEveryMinutes: 15, autoSync: "all" });
+    // A KicksDB-only shop: no cycle, and the daily sync writes the whole store.
+    expect(effectiveSync({ ...out, dailyStoreSync: true }, false)).toEqual({ feedsEveryMinutes: 0, autoSync: "all" });
   });
 });

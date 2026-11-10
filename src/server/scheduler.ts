@@ -1,11 +1,11 @@
 import { and, desc, eq, isNotNull, lt, max, ne } from "drizzle-orm";
+import type { AutomationConfig } from "@core/config";
+import { DEFAULT_AUTOMATION } from "@/lib/automation";
 import { env } from "@/lib/env";
 import {
-  DEFAULT_TIMEZONE,
-  feedSchedule,
+  effectiveSync,
   intervalTimes,
   nextSlot,
-  parseTimes,
   previousSlot,
   retryAt,
   slotMissed,
@@ -14,6 +14,7 @@ import {
 // eslint-disable-next-line no-restricted-imports -- predates the boundary rule; hoisted into src/server in weeks 3-6 (docs/middleware-readiness.md §6)
 import { runKicksdbRefresh } from "@/server/actions/feeds";
 import { kicksdbConfigured } from "@/server/adapters/kicksdb";
+import { automationNow, loadAutomation, onAutomationChange } from "@/server/automation/settings";
 import { db } from "@/server/db/client";
 import { schedulerRuns, type SchedulerRunRow } from "@/server/db/schema";
 import { isWriter } from "@/server/writer";
@@ -22,49 +23,56 @@ import { isWriter } from "@/server/writer";
  * In-app scheduler: the app syncs itself, no external cron needed.
  * Started once per server boot from src/instrumentation.ts.
  *
- * Every day at SCHEDULER_TIMES (default 04:30) in SCHEDULER_TIMEZONE
- * (default Europe/Rome) it runs, in order:
+ * What it does and when is the owner's Automatic sync settings (Feeds tab;
+ * AppConfig.automation, src/lib/automation.ts), followed while it runs: a
+ * change saved there re-arms the timers it concerns within a minute, at once
+ * in the process that saved it (see reconfigure). No restart, no .env.
+ *
+ * Every day at the settings' daily times (default 04:30) in the shop's time
+ * zone (default Europe/Rome) it runs, in order:
  *   1. the store pull — the Hub's copy of every product on WooCommerce;
  *   2. the GoldenSneakers complete sync;
  *   3. a KicksDB re-pricing pass, so whatever the sync registered is priced;
- *   4. with AUTO_SYNC=on, the store sync of the whole store: every price and
+ *   4. with the store sync on and the rest of the store included
+ *      (dailyStoreSync), the store sync of the whole store: every price and
  *      stock change the sources now call for, written to it a few at a time
- *      (AUTO_SYNC_STORE_MAX_CHANGES a run) — the feed's products left to the
- *      feed cycle while there is one (see syncStore);
+ *      (storeMaxChanges a run) — the feed's products left to the feed cycle
+ *      while there is one (see syncStore);
  *   5. the automatic categories, against a full read of the store;
- *   6. self-repair (AUTO_REPAIR=on only), metadata backfill, recategorize.
+ *   6. self-repair (autoRepair only), metadata backfill, recategorize.
  * A step that fails does not stop the others, and is retried an hour later
  * (twice at most). Every run is recorded in scheduler_runs, so a restarting
  * server knows whether the last slot ran: one missed while the server was
  * down, or whose run failed, runs a minute after boot — while a deploy after
- * a good run starts nothing. A fully successful run calls
- * SCHEDULER_HEARTBEAT_URL, for a monitor that alerts when the calls stop.
+ * a good run starts nothing. A fully successful run calls the settings'
+ * heartbeat URL, for a monitor that alerts when the calls stop.
  *
- * The feed cycle, every SCHEDULER_FEEDS_MINUTES on the clock (15 → :00, :15,
- * :30, :45; 15 by default when the GoldenSneakers API is set), is the short
- * version for a supplier whose stock moves during the day: the GoldenSneakers
- * sync, then the store sync of the feed's products only — unless
- * AUTO_SYNC=off (see feedSchedule). KicksDB-priced products wait for the
- * daily run: planning them asks KicksDB about every one, every time. A cycle
- * never overlaps another run: it skips its turn while one is going, and the
- * daily run waits for a cycle to finish rather than lose its slot. A fully
- * successful cycle calls SCHEDULER_FEEDS_HEARTBEAT_URL.
+ * The feed cycle, every feedsEveryMinutes on the clock (15 → :00, :15, :30,
+ * :45; 15 by default) while the store sync is on and the GoldenSneakers API
+ * is set, is the short version for a supplier whose stock moves during the
+ * day: the GoldenSneakers sync, then the store sync of the feed's products
+ * only (see effectiveSync). KicksDB-priced products wait for the daily run:
+ * planning them asks KicksDB about every one, every time. A cycle never
+ * overlaps another run: it skips its turn while one is going, and the daily
+ * run waits for a cycle to finish rather than lose its slot. A fully
+ * successful cycle calls the feed heartbeat URL.
  *
- * Alongside, the recent orders are pulled every SCHEDULER_ORDERS_MINUTES
- * (default 15), so new orders reach the Orders tab without a click, and the
- * photo queue is worked whenever something is due (see woo/media.ts): the
+ * Alongside, the recent orders are pulled every ordersEveryMinutes (default
+ * 15), so new orders reach the Orders tab without a click, and the photo
+ * queue is worked whenever something is due (see woo/media.ts): the
  * Publisher creates products hidden, and they go on sale with their first
  * photo. It pauses while a store pull runs — a product put on sale as the pull
  * assembles its copy of the store would be left out of it.
  *
- * And every SCHEDULER_COLLECTIONS_MINUTES (default 5) the automatic
- * categories check the store for changes and take in or let go of the
- * products their rules now say (src/server/collections). While no category
- * is automatic the check still keeps the store index fresh — the Vetrina's
- * catalog lists from it — and writes nothing.
+ * And every collectionsEveryMinutes (default 5) the automatic categories
+ * check the store for changes and take in or let go of the products their
+ * rules now say (src/server/collections). While no category is automatic the
+ * check still keeps the store index fresh — the Vetrina's catalog lists from
+ * it — and writes nothing.
  *
- * On by default in production, off in dev; SCHEDULER=on|off overrides.
- * Needs a long-running server (`next start`, Docker) — a serverless
+ * On by default in production, off in dev; SCHEDULER=on|off overrides — the
+ * one switch left in the environment, since it is the process's, not the
+ * shop's. Needs a long-running server (`next start`, Docker) — a serverless
  * platform that freezes the process between requests won't tick.
  * The /api/cron/* endpoints stay available for external schedulers.
  */
@@ -80,11 +88,6 @@ const RETRY_DELAY_MS = 60 * 60 * 1000;
 const MAX_RETRIES = 2;
 /** A store pull the Sync tab moved forward this recently is still being driven. */
 const ACTIVE_PULL_MS = 2 * 60 * 1000;
-const DEFAULT_TIMES = "04:30";
-const DEFAULT_ORDERS_MINUTES = 15;
-const DEFAULT_COLLECTIONS_MINUTES = 5;
-/** Variations an automatic store sync may change in one run (AUTO_SYNC_MAX_CHANGES). */
-const DEFAULT_MAX_CHANGES = 500;
 /** How long the daily run waits for a feed cycle still going before it gives up. */
 const WAIT_FOR_IDLE_MS = 60 * 60 * 1000;
 /** Feed cycles kept in scheduler_runs. */
@@ -169,7 +172,40 @@ export interface SchedulerStatus {
 // Instrumentation and the server-action bundle each get their own copy of
 // this module; globalThis is the one store both see.
 type SchedulerState = SchedulerStatus & { started: boolean };
-const g = globalThis as { __storeHubScheduler?: SchedulerState };
+
+/** The background loops beside the daily run and the feed cycle. */
+type Loop = "orders" | "collections";
+
+/**
+ * The timers, kept to be re-armed when the settings change — never shown
+ * (getSchedulerStatus): a timer is no status. One pending timer per kind of
+ * run at most: re-arming clears the old one first, and a run going re-arms
+ * itself when it ends, on the settings in force then.
+ */
+interface Timers {
+  /** The daily run's next job and its timer; null while that job runs. */
+  daily: { timer: ReturnType<typeof setTimeout>; job: Job } | null;
+  feeds: ReturnType<typeof setTimeout> | null;
+  feedsRunning: boolean;
+  loops: Record<Loop, { timer: ReturnType<typeof setTimeout> | null; running: boolean }>;
+  /** The settings listener is registered (once per process). */
+  listening: boolean;
+  /** The first timers are armed: from then on a change of settings re-arms them. */
+  armed: boolean;
+}
+
+const g = globalThis as { __storeHubScheduler?: SchedulerState; __storeHubSchedulerTimers?: Timers };
+
+function timers(): Timers {
+  return (g.__storeHubSchedulerTimers ??= {
+    daily: null,
+    feeds: null,
+    feedsRunning: false,
+    loops: { orders: { timer: null, running: false }, collections: { timer: null, running: false } },
+    listening: false,
+    armed: false,
+  });
+}
 
 function store(): SchedulerState {
   return (g.__storeHubScheduler ??= {
@@ -177,7 +213,7 @@ function store(): SchedulerState {
     enabled: false,
     running: false,
     times: [],
-    timeZone: DEFAULT_TIMEZONE,
+    timeZone: DEFAULT_AUTOMATION.timeZone,
     nextRunAt: null,
     lastRunAt: null,
     lastPulled: null,
@@ -188,8 +224,8 @@ function store(): SchedulerState {
     lastDeferred: null,
     lastError: null,
     autoSync: "off",
-    autoSyncMax: DEFAULT_MAX_CHANGES,
-    autoSyncStoreMax: DEFAULT_MAX_CHANGES,
+    autoSyncMax: DEFAULT_AUTOMATION.maxChanges,
+    autoSyncStoreMax: DEFAULT_AUTOMATION.storeMaxChanges,
     feedsEveryMinutes: 0,
     feedsNextAt: null,
     feedsLastAt: null,
@@ -246,11 +282,11 @@ async function refreshCatalog(): Promise<{ refreshed: number; error: string | nu
  * Narrower than the tab, on purpose: prices, stock and the sizes a product is
  * missing — no size cleanup (it deletes variations) and no identifiers. Every
  * write lands in the Sync tab's history like a manual apply. And bounded:
- *  - a feed cycle that would change more than AUTO_SYNC_MAX_CHANGES
+ *  - a feed cycle that would change more than the settings' maxChanges
  *    variations writes nothing. In a quarter of an hour a change that large is
  *    a broken feed or a new price list, and either is reviewed in the Sync tab
  *    first;
- *  - the whole-store run writes AUTO_SYNC_STORE_MAX_CHANGES at most — whole
+ *  - the whole-store run writes storeMaxChanges at most — whole
  *    products — and leaves the rest to the next run. It used to write nothing
  *    past its limit, like the cycle; but a whole store's KicksDB prices move
  *    by more than that from one day to the next, and what a run refused was
@@ -318,14 +354,13 @@ async function syncStore(scope: "store" | "feed"): Promise<StepOutcome | null> {
   });
   if (capped != null) {
     throw new Error(
-      `${capped} changes planned, more than the ${limit} a feed cycle may write (AUTO_SYNC_MAX_CHANGES): ` +
+      `${capped} changes planned, more than the ${limit} a feed cycle may write (the safety limit of Automatic sync): ` +
         "nothing written. Review and apply them in the Sync tab.",
     );
   }
   const held = sizesHeld != null ? `${sizesHeld} missing size(s) wait for the Sync tab (more than ${limit} changes at once)` : null;
   if (held) console.log(`[scheduler] store sync: ${held}`);
-  const waiting =
-    deferred != null ? `${deferred} more wait for the next run (${limit} a run: AUTO_SYNC_STORE_MAX_CHANGES)` : null;
+  const waiting = deferred != null ? `${deferred} more wait for the next run (${limit} a run)` : null;
   if (!outcome) return { ok: true, count: 0, ...(held ? { note: held } : {}) };
   if (outcome.failedTotal > 0) {
     throw new Error(
@@ -359,8 +394,8 @@ async function syncStore(scope: "store" | "feed"): Promise<StepOutcome | null> {
 
 /**
  * The scheduled runs' steps. Each answers what it did, null when it does not
- * apply to this shop (its source is not configured, or AUTO_SYNC is off), or
- * throws.
+ * apply to this shop (its source is not configured, or the store sync is
+ * off), or throws.
  */
 const RUN_STEP: Record<StepName, () => Promise<StepOutcome | null>> = {
   async pull() {
@@ -416,9 +451,9 @@ const RUN_STEP: Record<StepName, () => Promise<StepOutcome | null>> = {
 
   // Self-repair: products already online that lost a field to a source's
   // change of shape. Additive and idempotent, but it writes to the LIVE
-  // store, so it runs only when explicitly armed.
+  // store, so it runs only when the owner turned it on (autoRepair).
   async repair() {
-    if (env.AUTO_REPAIR !== "on") return null;
+    if (!automationNow().autoRepair) return null;
     const { scanRepairCandidates, repairProducts } = await import("@/server/woo/repair");
     const { incomplete } = await scanRepairCandidates();
     // Bounded: a big store heals over successive days rather than
@@ -576,7 +611,7 @@ async function pruneLogs(): Promise<void> {
 }
 
 /** Tell the monitor behind a heartbeat URL that a run went through. */
-async function heartbeat(url: string | undefined): Promise<void> {
+async function heartbeat(url: string | null): Promise<void> {
   if (!url) return;
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
@@ -647,7 +682,8 @@ async function run(job: Job): Promise<StepName[] | null> {
   }
   // Every step has now succeeded (a retry runs only the failed ones).
   if (failed.length === 0) {
-    await heartbeat(job.kind === "feeds" ? env.SCHEDULER_FEEDS_HEARTBEAT_URL : env.SCHEDULER_HEARTBEAT_URL);
+    const settings = automationNow();
+    await heartbeat(job.kind === "feeds" ? settings.feedsHeartbeatUrl : settings.heartbeatUrl);
   }
   if (job.kind === "daily") {
     await history.prune();
@@ -656,9 +692,17 @@ async function run(job: Job): Promise<StepName[] | null> {
   return failed;
 }
 
+/** Arm the daily run's next job — the only one: a job armed before it is dropped. */
 function arm(at: number, job: Job): void {
+  const t = timers();
+  if (t.daily) clearTimeout(t.daily.timer);
   store().nextRunAt = at;
-  setTimeout(() => void fire(job), Math.max(0, at - Date.now())).unref();
+  const timer: NodeJS.Timeout = setTimeout(() => {
+    timers().daily = null;
+    void fire(job);
+  }, Math.max(0, at - Date.now()));
+  timer.unref();
+  t.daily = { timer, job };
 }
 
 /** Run a daily job, then arm what comes next: a retry of its failed steps, or the next slot. */
@@ -708,26 +752,63 @@ async function boot(s: SchedulerState): Promise<void> {
 }
 
 /**
- * The feed cycle's timer: the next mark on the clock after `after`. No
- * catch-up and no retries — the next cycle is never far off.
+ * The daily times or the time zone changed: the next scheduled run moves to
+ * the new next slot. A retry or a catch-up keeps its time — it is for a slot
+ * that already came — and a run going works its next slot out of the new
+ * times when it ends.
+ */
+function rearmDaily(): void {
+  const t = timers();
+  if (!t.daily || t.daily.job.trigger !== "schedule") return;
+  const s = store();
+  const slot = nextSlot(new Date(), s.times, s.timeZone);
+  arm(slot.getTime(), { kind: "daily", slot, trigger: "schedule", steps: DAILY_STEPS, attempt: 0 });
+}
+
+/**
+ * The feed cycle's timer: the next mark on the clock after `after` — the
+ * only one pending. No catch-up and no retries — the next cycle is never far off.
  */
 function armFeeds(after: Date): void {
   const s = store();
+  const t = timers();
+  if (t.feeds) clearTimeout(t.feeds);
   const slot = nextSlot(after, intervalTimes(s.feedsEveryMinutes), s.timeZone);
   s.feedsNextAt = slot.getTime();
-  setTimeout(() => void fireFeeds(slot), Math.max(0, slot.getTime() - Date.now())).unref();
+  const timer: NodeJS.Timeout = setTimeout(() => void fireFeeds(slot), Math.max(0, slot.getTime() - Date.now()));
+  timer.unref();
+  t.feeds = timer;
 }
 
 async function fireFeeds(slot: Date): Promise<void> {
+  const t = timers();
+  t.feeds = null;
+  t.feedsRunning = true;
   try {
     await run({ kind: "feeds", slot, trigger: "interval", steps: FEED_STEPS, attempt: 0 });
   } catch (e) {
     console.error(`[scheduler] feed cycle crashed: ${messageOf(e)}`);
+  } finally {
+    t.feedsRunning = false;
   }
-  armFeeds(new Date(Math.max(Date.now(), slot.getTime())));
+  // On the settings in force now: the interval may have changed while it ran, or the cycle stopped.
+  const s = store();
+  if (s.feedsEveryMinutes > 0) armFeeds(new Date(Math.max(Date.now(), slot.getTime())));
+  else s.feedsNextAt = null;
 }
 
-/** Pull the recent orders, then again every SCHEDULER_ORDERS_MINUTES. */
+/** The cycle's interval changed, or it started or stopped. A cycle going arms the next one itself when it ends. */
+function rearmFeeds(): void {
+  const s = store();
+  const t = timers();
+  if (t.feedsRunning) return;
+  if (t.feeds) clearTimeout(t.feeds);
+  t.feeds = null;
+  s.feedsNextAt = null;
+  if (s.feedsEveryMinutes > 0) armFeeds(new Date());
+}
+
+/** Pull the recent orders, so new ones reach the Orders tab without a click. */
 async function pullOrders(): Promise<void> {
   const s = store();
   try {
@@ -743,8 +824,6 @@ async function pullOrders(): Promise<void> {
     const cause = (e as { cause?: { message?: string } })?.cause;
     s.ordersError = cause?.message ?? messageOf(e);
     console.error(`[scheduler] orders pull failed: ${s.ordersError}`);
-  } finally {
-    setTimeout(() => void pullOrders(), s.ordersEveryMinutes * 60 * 1000).unref();
   }
 }
 
@@ -763,8 +842,8 @@ async function sweepHiddenTerms(): Promise<void> {
 }
 
 /**
- * The automatic categories' check, then again every SCHEDULER_COLLECTIONS_MINUTES.
- * Said once when it starts failing and once when it recovers, not every round.
+ * The automatic categories' check. Said once when it starts failing and once
+ * when it recovers, not every round.
  */
 async function checkCollections(): Promise<void> {
   const s = store();
@@ -781,9 +860,53 @@ async function checkCollections(): Promise<void> {
   } catch (e) {
     if (s.collectionsError !== messageOf(e)) console.error(`[scheduler] automatic categories: ${messageOf(e)}`);
     s.collectionsError = messageOf(e);
-  } finally {
-    setTimeout(() => void checkCollections(), s.collectionsEveryMinutes * 60 * 1000).unref();
   }
+}
+
+/** The loops: what a turn does, and how often — the settings in force at the end of each turn. */
+const LOOPS: Record<Loop, { work: () => Promise<void>; everyMinutes: (s: SchedulerStatus) => number }> = {
+  orders: { work: pullOrders, everyMinutes: (s) => s.ordersEveryMinutes },
+  collections: { work: checkCollections, everyMinutes: (s) => s.collectionsEveryMinutes },
+};
+
+/** A loop's next turn, `delayMs` from now: the only one pending. */
+function armLoop(loop: Loop, delayMs: number): void {
+  const slot = timers().loops[loop];
+  if (slot.timer) clearTimeout(slot.timer);
+  const timer: NodeJS.Timeout = setTimeout(() => void turn(loop), delayMs);
+  timer.unref();
+  slot.timer = timer;
+}
+
+/** One turn of a loop, then the next one, as many minutes on as the settings say then — none at 0. */
+async function turn(loop: Loop): Promise<void> {
+  const slot = timers().loops[loop];
+  slot.timer = null;
+  slot.running = true;
+  try {
+    await LOOPS[loop].work();
+  } catch (e) {
+    console.error(`[scheduler] ${loop}: ${messageOf(e)}`);
+  } finally {
+    slot.running = false;
+  }
+  const minutes = LOOPS[loop].everyMinutes(store());
+  if (minutes > 0) armLoop(loop, minutes * 60 * 1000);
+}
+
+/**
+ * A loop's interval changed: its next turn is that far from now — a minute
+ * from now when it was off, none when it is turned off. A turn going arms the
+ * next one itself when it ends.
+ */
+function rearmLoop(loop: Loop): void {
+  const slot = timers().loops[loop];
+  if (slot.running) return;
+  const wasOn = slot.timer != null;
+  if (slot.timer) clearTimeout(slot.timer);
+  slot.timer = null;
+  const minutes = LOOPS[loop].everyMinutes(store());
+  if (minutes > 0) armLoop(loop, wasOn ? minutes * 60 * 1000 : CATCH_UP_DELAY_MS);
 }
 
 /**
@@ -823,23 +946,77 @@ async function workMedia(): Promise<void> {
   }
 }
 
-export function startScheduler(): void {
-  // The schedule, shown on /feeds even while the scheduler is off.
+/** A supplier feed to cycle on — gsConfigured()'s test: its module loads only once a run needs it. */
+const feedConnected = () => !!(env.GS_FEED_URL && env.GS_FEED_TOKEN);
+
+/** The settings into the status: what the runs read, and /feeds shows. */
+function applySettings(s: SchedulerState, settings: AutomationConfig): void {
+  const sync = effectiveSync(settings, feedConnected());
+  s.times = settings.dailyTimes;
+  s.timeZone = settings.timeZone;
+  s.feedsEveryMinutes = sync.feedsEveryMinutes;
+  s.autoSync = sync.autoSync;
+  s.autoSyncMax = settings.maxChanges;
+  s.autoSyncStoreMax = settings.storeMaxChanges;
+  s.ordersEveryMinutes = settings.ordersEveryMinutes;
+  s.collectionsEveryMinutes = settings.collectionsEveryMinutes;
+}
+
+/** What the scheduler does, for the log. */
+function describeSchedule(s: SchedulerStatus): string {
+  const sync =
+    s.autoSync === "all"
+      ? `, store sync (${s.autoSyncStoreMax} changes a run, the rest at the next` +
+        (s.feedsEveryMinutes > 0 ? "; the feed's products left to the feed cycle)" : ")")
+      : "";
+  const feedSync =
+    s.autoSync === "off" ? "" : ` + store sync of the feed's products (a cycle past ${s.autoSyncMax} changes writes nothing)`;
+  return (
+    `daily sync at ${s.times.join(", ")} (${s.timeZone}): store pull, GS sync, KicksDB re-pricing${sync}; ` +
+    (s.feedsEveryMinutes > 0 ? `feeds every ${s.feedsEveryMinutes} min${feedSync}; ` : "") +
+    (s.ordersEveryMinutes > 0 ? `orders every ${s.ordersEveryMinutes} min` : "orders by hand only") +
+    (s.collectionsEveryMinutes > 0 ? `; automatic categories every ${s.collectionsEveryMinutes} min` : "") +
+    "; photo queue in the background"
+  );
+}
+
+/**
+ * New settings, saved on the Feeds tab: into the status, then the timers
+ * they concern re-armed — the daily run on new times, the feed cycle on a new
+ * interval (or started, or stopped), the loops likewise. The store sync's
+ * reach and limits, self-repair and the heartbeats are read when used:
+ * nothing to re-arm. In a process that does not run the scheduler, or before
+ * its first timers are armed, only the status changes.
+ */
+function reconfigure(next: AutomationConfig): void {
   const s = store();
-  s.times = parseTimes(env.SCHEDULER_TIMES ?? DEFAULT_TIMES);
-  s.timeZone = env.SCHEDULER_TIMEZONE ?? DEFAULT_TIMEZONE;
-  s.ordersEveryMinutes = env.SCHEDULER_ORDERS_MINUTES ?? DEFAULT_ORDERS_MINUTES;
-  s.collectionsEveryMinutes = env.SCHEDULER_COLLECTIONS_MINUTES ?? DEFAULT_COLLECTIONS_MINUTES;
-  const feeds = feedSchedule({
-    feedsMinutes: env.SCHEDULER_FEEDS_MINUTES,
-    autoSync: env.AUTO_SYNC,
-    // gsConfigured()'s test: its module loads only once a run needs it.
-    gsConfigured: !!(env.GS_FEED_URL && env.GS_FEED_TOKEN),
-  });
-  s.feedsEveryMinutes = feeds.feedsEveryMinutes;
-  s.autoSync = feeds.autoSync;
-  s.autoSyncMax = env.AUTO_SYNC_MAX_CHANGES ?? DEFAULT_MAX_CHANGES;
-  s.autoSyncStoreMax = env.AUTO_SYNC_STORE_MAX_CHANGES ?? s.autoSyncMax;
+  const before = {
+    times: s.times.join(","),
+    timeZone: s.timeZone,
+    feeds: s.feedsEveryMinutes,
+    orders: s.ordersEveryMinutes,
+    collections: s.collectionsEveryMinutes,
+  };
+  applySettings(s, next);
+  if (!s.started || !timers().armed) return;
+  const zone = before.timeZone !== s.timeZone;
+  if (zone || before.times !== s.times.join(",")) rearmDaily();
+  if (zone || before.feeds !== s.feedsEveryMinutes) rearmFeeds();
+  if (before.orders !== s.ordersEveryMinutes) rearmLoop("orders");
+  if (before.collections !== s.collectionsEveryMinutes) rearmLoop("collections");
+  console.log(`[scheduler] settings changed — ${describeSchedule(s)}`);
+}
+
+export function startScheduler(): void {
+  // The schedule, shown on /feeds even while the scheduler is off: the
+  // settings as last read (their defaults before), kept current as they change.
+  const s = store();
+  applySettings(s, automationNow());
+  const t = timers();
+  if (!t.listening) {
+    t.listening = true;
+    onAutomationChange((next) => reconfigure(next));
+  }
 
   const enabled =
     env.SCHEDULER === "on" || (env.SCHEDULER === undefined && process.env.NODE_ENV === "production");
@@ -854,24 +1031,21 @@ export function startScheduler(): void {
   if (s.started) return;
   s.started = true;
   s.enabled = true;
+  void begin(s);
+}
 
-  const sync =
-    s.autoSync === "all"
-      ? `, store sync (${s.autoSyncStoreMax} changes a run, the rest at the next` +
-        (s.feedsEveryMinutes > 0 ? "; the feed's products left to the feed cycle)" : ")")
-      : "";
-  const feedSync =
-    s.autoSync === "off" ? "" : ` + store sync of the feed's products (a cycle past ${s.autoSyncMax} changes writes nothing)`;
-  console.log(
-    `[scheduler] on — daily sync at ${s.times.join(", ")} (${s.timeZone}): store pull, GS sync, KicksDB re-pricing${sync}; ` +
-      (s.feedsEveryMinutes > 0 ? `feeds every ${s.feedsEveryMinutes} min${feedSync}; ` : "") +
-      (s.ordersEveryMinutes > 0 ? `orders every ${s.ordersEveryMinutes} min` : "orders by hand only") +
-      (s.collectionsEveryMinutes > 0 ? `; automatic categories every ${s.collectionsEveryMinutes} min` : "") +
-      "; photo queue in the background",
-  );
+/** The settings as stored, then the first timers on them. */
+async function begin(s: SchedulerState): Promise<void> {
+  try {
+    applySettings(s, (await loadAutomation()).settings);
+  } catch (e) {
+    console.error(`[scheduler] settings unavailable (${messageOf(e)}): the defaults until they can be read`);
+  }
+  console.log(`[scheduler] on — ${describeSchedule(s)}`);
+  timers().armed = true;
   void boot(s);
   if (s.feedsEveryMinutes > 0) armFeeds(new Date());
-  if (s.ordersEveryMinutes > 0) setTimeout(() => void pullOrders(), CATCH_UP_DELAY_MS).unref();
+  if (s.ordersEveryMinutes > 0) armLoop("orders", CATCH_UP_DELAY_MS);
   setTimeout(() => void workMedia(), CATCH_UP_DELAY_MS).unref();
-  if (s.collectionsEveryMinutes > 0) setTimeout(() => void checkCollections(), CATCH_UP_DELAY_MS).unref();
+  if (s.collectionsEveryMinutes > 0) armLoop("collections", CATCH_UP_DELAY_MS);
 }

@@ -7,7 +7,7 @@ import {
   type IndexedTerm,
   type SmartCollection,
 } from "@core/collections";
-import { env } from "@/lib/env";
+import { automationNow } from "@/server/automation/settings";
 import { assertWriter, isWriter, NOT_WRITER } from "@/server/writer";
 import type { WooClient } from "@/server/woo/client";
 import { pageVerdict } from "@/server/woo/paginate";
@@ -52,7 +52,6 @@ const OVERLAP_MS = 10 * 60_000;
 const WRITE_CHUNK = 25;
 /** A product the store refused is not tried again by the automatic runs for this long. */
 const REFUSED_PAUSE_MS = 60 * 60_000;
-const DEFAULT_MAX_CHANGES = 200;
 
 /**
  * What a run is: a full read, a check for changes, a change confirmed by
@@ -137,8 +136,9 @@ export function getRunnerStatus(): RunnerStatus {
 
 const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
+/** The most products an automatic run moves in or out of one category unasked: the owner's setting (Feeds › Automatic sync). */
 export function maxChanges(): number {
-  return env.COLLECTIONS_MAX_CHANGES ?? DEFAULT_MAX_CHANGES;
+  return automationNow().collectionsMaxChanges;
 }
 
 /** Run `fn` after everything queued before it; its failure is remembered and passed on. */

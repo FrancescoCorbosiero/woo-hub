@@ -73,17 +73,20 @@ const EnvSchema = z.object({
   // process on this shop's database, which must never become a second writer.
   HUB_ROLE: blankIsUnset(z.enum(["writer", "web"]).optional()),
 
-  // Automatic self-repair inside the daily scheduler: put back missing
-  // pictures / brand / category on products already online. OFF by default —
-  // it is the only pass that WRITES to the live store unattended, and arming
-  // that is the operator's decision, not a default.
-  AUTO_REPAIR: z.enum(["on", "off"]).optional(),
-
-  // In-app scheduler (src/server/scheduler.ts). Default: on in production,
-  // off in dev; set explicitly to override either way.
+  // In-app scheduler (src/server/scheduler.ts): the process runs the
+  // scheduled syncs at all. Default: on in production, off in dev; set
+  // explicitly to override either way. WHAT they do and WHEN is a setting of
+  // the Hub (Feeds tab › Automatic sync), not of the environment.
   SCHEDULER: z.enum(["on", "off"]).optional(),
-  // When the daily sync runs: HH:MM times, comma-separated, in
-  // SCHEDULER_TIMEZONE. Default 04:30, Europe/Rome.
+
+  // --- Former settings -------------------------------------------------
+  // What the scheduled syncs do used to be set here, a variable each. It is
+  // now the Automatic sync settings on the Feeds tab (AppConfig.automation,
+  // src/lib/automation.ts), stored with the rest of the config and followed
+  // within a minute. These variables are read only as the settings' STARTING
+  // values, until the owner first saves them; never after. Still checked here,
+  // so a deploy that sets one boots as it always did.
+  AUTO_REPAIR: z.enum(["on", "off"]).optional(),
   SCHEDULER_TIMES: blankIsUnset(
     z
       .string()
@@ -93,16 +96,8 @@ const EnvSchema = z.object({
   SCHEDULER_TIMEZONE: blankIsUnset(
     z.string().refine((v) => isTimeZone(v), "SCHEDULER_TIMEZONE is an IANA time zone, e.g. Europe/Rome").optional(),
   ),
-  // Minutes between two pulls of the recent orders. Default 15; 0 = off.
   SCHEDULER_ORDERS_MINUTES: blankIsUnset(z.coerce.number().int().min(0).max(1440).optional()),
-  // Called (GET) after every fully successful daily sync: point a dead man's
-  // switch at it (healthchecks.io, Uptime Kuma push, ...) to hear about a sync
-  // that failed or never ran.
   SCHEDULER_HEARTBEAT_URL: blankIsUnset(z.url().optional()),
-  // The feed cycle: every N minutes on the clock (15 → :00, :15, :30, :45),
-  // the supplier feed is refreshed and its products' changes are written to
-  // the store (unless AUTO_SYNC=off). Default 15 when GS_FEED_URL and
-  // GS_FEED_TOKEN are set, else 0 = off (the feeds refresh daily only).
   SCHEDULER_FEEDS_MINUTES: blankIsUnset(
     z.coerce
       .number()
@@ -110,36 +105,13 @@ const EnvSchema = z.object({
       .refine((v) => v === 0 || (v >= 5 && v <= 720), "SCHEDULER_FEEDS_MINUTES is 0 (off) or 5–720 minutes")
       .optional(),
   ),
-  // Called after every fully successful feed cycle, like the heartbeat above.
   SCHEDULER_FEEDS_HEARTBEAT_URL: blankIsUnset(z.url().optional()),
-  // Automatic categories (src/server/collections): every N minutes the store
-  // is asked what changed, and every automatic category takes in or lets go
-  // of the products its rule now says. Default 5; 0 = off (the daily sync
-  // still runs them once a day). The same check keeps the store index fresh
-  // for the Vetrina's catalog, so it reads even while no category is automatic.
   SCHEDULER_COLLECTIONS_MINUTES: blankIsUnset(z.coerce.number().int().min(0).max(1440).optional()),
-  // An automatic run that would move more products in or out of one category
-  // than this leaves that category alone until the change is confirmed in the
-  // Hub (as it does with one that would empty a category). Default 200.
   COLLECTIONS_MAX_CHANGES: blankIsUnset(z.coerce.number().int().min(1).optional()),
-
-  // Automatic store sync: after the feeds refresh, write the planned price and
-  // stock changes to the LIVE store. Prices and stock only: no size cleanup,
-  // no deletions. Unset, the feed cycle writes the feed's products — the feed
-  // owns them, and keeping the store in step with it is the cycle's job — and
-  // the daily sync writes nothing. On, the daily sync also writes the whole
-  // store's (KicksDB prices included): that one is the operator's decision, as
-  // with AUTO_REPAIR. Off, nothing is written unattended.
   AUTO_SYNC: z.enum(["on", "off"]).optional(),
-  // A feed cycle that would change more variations than this writes nothing
-  // and says so on the Feeds tab: in a quarter of an hour, a change that large
-  // is a broken feed, reviewed in the Sync tab first. Default 500.
   AUTO_SYNC_MAX_CHANGES: blankIsUnset(z.coerce.number().int().min(1).optional()),
-  // The whole-store sync of AUTO_SYNC=on writes at most this many variations a
-  // run — whole products — and leaves the rest to the next run, so what it
-  // has to write never piles up past what it may. Size it to what the KicksDB
-  // prices move between two runs. Default: AUTO_SYNC_MAX_CHANGES.
   AUTO_SYNC_STORE_MAX_CHANGES: blankIsUnset(z.coerce.number().int().min(1).optional()),
+  // ---------------------------------------------------------------------
 
   // GoldenSneakers feed — the flat-assortment endpoint (include VAT/markup
   // query params there: presented_price arrives FINAL) and its bearer token.

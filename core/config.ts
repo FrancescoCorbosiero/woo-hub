@@ -204,6 +204,46 @@ export interface TaxonomyConfig {
     };
 }
 
+/* ------------------------------------------------------------------ */
+/* AUTOMATION — what the Hub does on its own, on a schedule            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The scheduled runs (src/server/scheduler.ts), as the owner sets them on the
+ * Feeds tab. One switch and one number carry the everyday choice — "keep my
+ * store in step with the feed every N minutes"; everything else has a default
+ * and sits under Advanced. Settings, not secrets: they live here, in the
+ * stored config, and the scheduler follows a change within a minute.
+ */
+export interface AutomationConfig {
+    /** The Hub writes price and stock changes to the store on its own. Off: nothing, until applied in the Sync tab. */
+    storeSync: boolean;
+    /** With a supplier feed connected (and storeSync on): read it and write its products' changes every N minutes, 5–720. */
+    feedsEveryMinutes: number;
+    /** The daily sync writes the rest of the store too — the KicksDB prices — storeMaxChanges a run. */
+    dailyStoreSync: boolean;
+    /** When the daily sync runs: HH:MM times, in timeZone. */
+    dailyTimes: string[];
+    /** The shop's IANA time zone: the schedule's, and the one a sale's last day is counted in. */
+    timeZone: string;
+    /** A feed cycle that would change more variations than this writes nothing: a broken feed, for a person to look at. */
+    maxChanges: number;
+    /** The daily store sync writes at most this many variations a run, and leaves the rest to the next. */
+    storeMaxChanges: number;
+    /** Minutes between two pulls of the recent orders; 0 = by hand only. */
+    ordersEveryMinutes: number;
+    /** Minutes between two checks of the automatic categories; 0 = with the daily sync only. */
+    collectionsEveryMinutes: number;
+    /** The most products an automatic run moves in or out of one category before it asks for a confirmation. */
+    collectionsMaxChanges: number;
+    /** The daily sync puts back what products online are missing (photo, brand, category, gender). */
+    autoRepair: boolean;
+    /** Called after every fully successful daily sync — a dead man's switch (healthchecks.io); null = none. */
+    heartbeatUrl: string | null;
+    /** Called after every fully successful feed cycle; null = none. */
+    feedsHeartbeatUrl: string | null;
+}
+
 export interface AppConfig {
     source: SourceConfig;
     pricingRules: ScopedPricingRule[];    // ordered general -> specific
@@ -211,6 +251,12 @@ export interface AppConfig {
     matching: MatchingConfig;
     apply: ApplyConfig;
     connection: ConnectionConfig;
+    /**
+     * Absent until the owner first saves the Automatic sync settings: until
+     * then the defaults stand in, seeded by the environment variables that
+     * used to hold them (src/server/automation/settings.ts).
+     */
+    automation?: AutomationConfig;
 }
 
 /** Split a configured category into its path parts ("A > B" -> ["A","B"]). */

@@ -1,9 +1,9 @@
 import "server-only";
 import { createHash } from "node:crypto";
-import { env } from "@/lib/env";
 import { orderIds } from "@/lib/vetrina/order";
 import { FIELD_SPECS, fieldProblem } from "@/lib/vetrina/fields";
 import { SECTION_FEATURES } from "@/lib/vetrina/sections";
+import { automationNow } from "@/server/automation/settings";
 import type {
   BlockRef,
   BlockWrite,
@@ -84,10 +84,10 @@ export function demoShop(): DemoState {
   return state();
 }
 
-/** The shop's day (YYYY-MM-DD), in the scheduler's time zone: a sale's last day is the shop's. */
+/** The shop's day (YYYY-MM-DD), in its time zone (Automatic sync settings): a sale's last day is the shop's. */
 function shopDay(at = Date.now()): string {
   return new Intl.DateTimeFormat("en-CA", {
-    timeZone: env.SCHEDULER_TIMEZONE ?? "Europe/Rome",
+    timeZone: automationNow().timeZone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",

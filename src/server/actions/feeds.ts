@@ -1,7 +1,10 @@
 "use server";
 
 import { z } from "zod";
+import { checkAutomation, type AutomationDraft, type AutomationField } from "@/lib/automation";
+import { loadAutomation, saveAutomation, type AutomationState } from "@/server/automation/settings";
 import { getActiveConfig } from "@/server/config/repo";
+import { signedInActor } from "./signed-in";
 import { getSource, kicksdbConfigured } from "@/server/adapters/kicksdb";
 import { countCatalog, countStale } from "@/server/catalog/repo";
 import { refreshStaleCatalog } from "@/server/catalog/refresh";
@@ -29,6 +32,14 @@ export interface GsFeedState {
   lastRuns: IngestionHistoryEntry[];
 }
 
+/** The Automatic sync settings, as the Feeds tab edits them. */
+export interface AutomationView extends AutomationState {
+  /** A supplier feed's API is set (GS_FEED_URL, GS_FEED_TOKEN): there is a feed cycle to run. */
+  feedConnected: boolean;
+  /** KicksDB is set (KICKS_SECRET): there are KicksDB prices for the daily sync to write. */
+  kicksdbConnected: boolean;
+}
+
 export interface FeedsState {
   market: string;
   catalogTotal: number;
@@ -39,6 +50,7 @@ export interface FeedsState {
   lastRuns: IngestionHistoryEntry[];
   gs: GsFeedState;
   scheduler: import("@/server/scheduler").SchedulerStatus;
+  automation: AutomationView;
 }
 
 export async function getFeedsState(): Promise<FeedsState> {
@@ -49,12 +61,14 @@ export async function getFeedsState(): Promise<FeedsState> {
   const config = await getActiveConfig();
   const market = config.source.market;
   const ttl = config.source.cacheTtlSeconds;
-  const [catalogTotal, staleCount, lastRuns, gsStats, gsRuns] = await Promise.all([
+  const [catalogTotal, staleCount, lastRuns, gsStats, gsRuns, automation] = await Promise.all([
     countCatalog(market),
     countStale(market, ttl),
     listIngestionRunsBySource(KICKSDB_FEED_SOURCE),
     feedStats(GS_FEED),
     listIngestionRunsBySource(GS_INGESTION_SOURCE),
+    // Read now, not the copy of a minute ago: the screen shows what is saved.
+    loadAutomation(),
   ]);
   return {
     market,
@@ -70,7 +84,36 @@ export async function getFeedsState(): Promise<FeedsState> {
       lastRuns: gsRuns,
     },
     scheduler: getSchedulerStatus(),
+    automation: { ...automation, feedConnected: gsConfigured(), kicksdbConnected: kicksdbConfigured() },
   };
+}
+
+export type SaveAutomationResult =
+  | { ok: true; automation: AutomationView; scheduler: import("@/server/scheduler").SchedulerStatus }
+  | { ok: false; invalid: AutomationField[]; error?: string };
+
+/**
+ * Save the Automatic sync settings, whole. The scheduler follows them at once
+ * when it runs in this process, within a minute when it runs in another (the
+ * writer, under a split deploy): no restart, no .env.
+ */
+export async function saveAutomationSettings(input: AutomationDraft): Promise<SaveAutomationResult> {
+  const checked = checkAutomation(input);
+  if (!checked.ok) return { ok: false, invalid: checked.invalid };
+  try {
+    const { gsConfigured } = await import("@/server/feeds/goldensneakers");
+    const { getSchedulerStatus } = await import("@/server/scheduler");
+    const state = await saveAutomation(checked.settings);
+    const by = await signedInActor();
+    console.log(`[settings] Automatic sync settings saved${by ? ` by ${by.name}` : ""}`);
+    return {
+      ok: true,
+      automation: { ...state, feedConnected: gsConfigured(), kicksdbConnected: kicksdbConfigured() },
+      scheduler: getSchedulerStatus(),
+    };
+  } catch (e) {
+    return { ok: false, invalid: [], error: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 export interface GsSyncActionResult {

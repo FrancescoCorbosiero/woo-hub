@@ -22,8 +22,7 @@ import { syncRunApplicable } from "@/server/sync/runs";
 import { getApplyJob, runningApplyJob, startApplyJob, type ApplyJob } from "@/server/sync/apply-job";
 import { loadStoreEdits, type StoreEditsState } from "@/server/sync/store-edits";
 import { snapshotSiteMatch } from "@/server/woo/site-guard";
-import { env } from "@/lib/env";
-import { DEFAULT_TIMEZONE } from "@/lib/schedule";
+import { automationNow } from "@/server/automation/settings";
 
 function errMessage(e: unknown): string {
   const cause = (e as { cause?: { message?: string } })?.cause;
@@ -129,7 +128,7 @@ export async function getSyncState(): Promise<SyncPageState> {
   ]);
   return {
     wooConfigured: wooConfigured(),
-    timeZone: env.SCHEDULER_TIMEZONE ?? DEFAULT_TIMEZONE,
+    timeZone: automationNow().timeZone,
     unpublished,
     storeEdits,
     runningApply: runningApplyJob(),
