@@ -10,6 +10,7 @@ import { originEn } from "./origin.en";
 import { rulesEn } from "./rules.en";
 import { sectionsEn } from "./sections.en";
 import { sheetEn } from "./sheet.en";
+import { shopEn } from "./shop.en";
 import { sourcesEn } from "./sources.en";
 import { termEn } from "./term.en";
 
@@ -26,5 +27,6 @@ export const catalogEn: typeof catalogIt = {
   sections: sectionsEn,
   picker: pickerEn,
   menus: menusEn,
+  shop: shopEn,
   terms: termsEn,
 };

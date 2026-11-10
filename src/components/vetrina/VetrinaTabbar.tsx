@@ -11,13 +11,14 @@ import { House } from "./catalog/term/glyphs";
 import { MenuGlyph } from "./menus/parts";
 
 /**
- * The Vetrina's tabs, Homepage, Catalogo and Menu (the site's navigation
- * menus): Konsta's floating glass tab bar, above the home indicator. It steps aside in the section editor, which
+ * The Vetrina's tabs, Homepage, Catalogo, Menu (the site's navigation
+ * menus) and Negozio (the store kept in step with the supplier, and what
+ * waits for the owner): Konsta's floating glass tab bar, above the home indicator. It steps aside in the section editor, which
  * has its own publish bar down there, and while a catalog list is selecting:
  * the selection's action bar takes its place.
  */
 
-export type VetrinaTab = "home" | "catalog" | "menu";
+export type VetrinaTab = "home" | "catalog" | "menu" | "shop";
 
 /**
  * The tab an address belongs to, or null where the bar is not shown (the
@@ -27,6 +28,7 @@ export function tabOf(pathname: string): VetrinaTab | null {
   if (pathname === "/vetrina" || pathname === "/") return "home";
   if (pathname === "/vetrina/catalogo" || pathname.startsWith("/vetrina/catalogo/")) return "catalog";
   if (pathname === "/vetrina/menu" || pathname.startsWith("/vetrina/menu/")) return "menu";
+  if (pathname === "/vetrina/negozio" || pathname.startsWith("/vetrina/negozio/")) return "shop";
   return null;
 }
 
@@ -38,7 +40,12 @@ export function tabOf(pathname: string): VetrinaTab | null {
  */
 export const TABBAR_SPACE = "calc(80px + env(safe-area-inset-bottom))";
 
-const HREF: Record<VetrinaTab, string> = { home: "/vetrina", catalog: "/vetrina/catalogo", menu: "/vetrina/menu" };
+const HREF: Record<VetrinaTab, string> = {
+  home: "/vetrina",
+  catalog: "/vetrina/catalogo",
+  menu: "/vetrina/menu",
+  shop: "/vetrina/negozio",
+};
 
 /** At the tab's first screen, nothing searched or chosen in the address. */
 function atStart(tab: VetrinaTab): boolean {
@@ -128,6 +135,7 @@ export function VetrinaTabbar({ active }: { active: VetrinaTab | null }) {
               {link("home", tabs.homepage, <House className={iconSize} />)}
               {link("catalog", tabs.catalog, <CatalogIcon className={iconSize} />)}
               {link("menu", tabs.menu, <MenuGlyph className={iconSize} />)}
+              {link("shop", tabs.shop, <StoreIcon className={iconSize} />)}
             </ToolbarPane>
           </Tabbar>
         </motion.nav>
@@ -154,6 +162,17 @@ function CatalogIcon({ className }: { className?: string }) {
       <rect x="13.5" y="4" width="6.5" height="6.5" rx="1.8" />
       <rect x="4" y="13.5" width="6.5" height="6.5" rx="1.8" />
       <rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.8" />
+    </svg>
+  );
+}
+
+/** A shopfront: its awning and its door — the store itself, kept in step. */
+function StoreIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className} {...stroke}>
+      <path d="M4.5 9.5V19a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1V9.5" />
+      <path d="M3.5 9.2 5.2 4.6a1 1 0 0 1 .94-.66h11.72a1 1 0 0 1 .94.66l1.7 4.6a2.6 2.6 0 0 1-4.25 2.3 2.6 2.6 0 0 1-4.25 0 2.6 2.6 0 0 1-4.25 0A2.6 2.6 0 0 1 3.5 9.2Z" />
+      <path d="M10 20v-4.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1V20" />
     </svg>
   );
 }

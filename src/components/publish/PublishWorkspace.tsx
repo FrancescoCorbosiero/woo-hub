@@ -8,11 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useI18n } from "@/i18n/provider";
-import { listPublishSkus, type PublishActionResult } from "@/server/actions/publish";
+import { listPublishSkus } from "@/server/actions/publish";
 import type { PublishOutcome, PublishProductReport, PublishTarget, UnpublishableTarget } from "@/server/woo/publish";
 import { hasMixedSources, type PublishCounts, type PublishSourceLens } from "@/lib/publish-page";
 import { mergeQuery, type QueryParams } from "@/lib/qs";
-import { FIRST_BATCH, nextBatchSize, nextPace } from "@/lib/publish-batching";
+import { FIRST_BATCH } from "@/lib/publish-batching";
+import { MAX_PROXY_FAILURES, runPublishBatches } from "@/lib/publish-run";
 import { CardImage } from "@/components/catalog/CardImage";
 import { ProductLink } from "@/components/catalog/CatalogDrawerHost";
 import { RepairPanel } from "./RepairPanel";
@@ -32,10 +33,6 @@ import type { MediaQueueState } from "@/server/woo/media";
  * for 40 products as for 400, only for longer. A long run can be stopped
  * between batches, and leaving the page asks first.
  */
-/** Answers from the proxy in front, not the app: it stopped waiting. */
-const PROXY_GAVE_UP = new Set([502, 503, 504, 520, 522, 524]);
-/** Such answers in a row before a run stops: the server itself is in trouble. */
-const MAX_PROXY_FAILURES = 3;
 /** Report rows rendered. The counters above them always cover the whole run. */
 const REPORT_LIMIT = 60;
 
@@ -53,37 +50,6 @@ const REPORT_LIMIT = 60;
  */
 
 const eur = new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" });
-
-/** The server answered with something that is not the route's JSON. */
-class UnexpectedResponse extends Error {
-  constructor(readonly status: number) {
-    super(`HTTP ${status}`);
-  }
-}
-
-/**
- * One batch through /api/publish rather than the server action itself: an
- * action in flight holds every page change behind it (see the route), and a
- * run is batch after batch of them.
- */
-async function publishBatch(input: {
-  skus: string[];
-  dryRun: boolean;
-  includeGallery: boolean;
-  force: boolean;
-  replaceMedia: boolean;
-}): Promise<PublishActionResult> {
-  const res = await fetch("/api/publish", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  // A sign-in that expired mid-run answers with the sign-in page, not JSON.
-  if (!res.headers.get("content-type")?.includes("application/json")) {
-    throw new UnexpectedResponse(res.status);
-  }
-  return (await res.json()) as PublishActionResult;
-}
 
 /** Keystrokes settle before the server is asked — same as discovery's. */
 const DEBOUNCE_MS = 350;
@@ -253,69 +219,29 @@ export function PublishWorkspace({
     setBusy(true);
     if (!dryRun) setLiveRunning(true);
     let merged: PublishOutcome | null = null;
-    let lost = 0;
-    let proxyFailures = 0;
-    let size = FIRST_BATCH;
-    let pace: number | null = null; // ms per product, smoothed
     try {
-      for (let i = 0; i < skus.length; ) {
-        if (stopRef.current) {
-          setStopped({ done: i, total: skus.length });
-          break;
-        }
-        const batch = skus.slice(i, i + size);
-        if (many) {
-          setProgress({ done: i, total: skus.length, msLeft: pace == null ? null : (skus.length - i) * pace });
-        }
-        const started = performance.now();
-        let res: PublishActionResult;
-        try {
-          res = await publishBatch({
-            skus: batch,
-            dryRun,
-            includeGallery,
-            force,
-            replaceMedia,
-          });
-        } catch (e) {
-          if (!(e instanceof UnexpectedResponse) || !PROXY_GAVE_UP.has(e.status)) throw e;
-          // The proxy stopped waiting, not the server: this batch is most
-          // likely being finished there right now. Its products stay selected
-          // — publishing them again later is safe: the ones created by then
-          // are skipped, and the server refuses any it is still creating — and
-          // the run moves on to the next batch.
-          lost += batch.length;
-          setUnanswered(lost);
-          if (++proxyFailures >= MAX_PROXY_FAILURES) {
-            setError(t.publish.proxyGaveUp(e.status, MAX_PROXY_FAILURES));
-            break;
-          }
-          // The time the proxy waited counts as this batch's pace: the next
-          // one comes out smaller.
-          pace = nextPace(pace, performance.now() - started, batch.length);
-          size = nextBatchSize(size, pace);
-          i += batch.length;
-          continue;
-        }
-        proxyFailures = 0;
-        pace = nextPace(pace, performance.now() - started, batch.length);
-        size = nextBatchSize(size, pace);
-        i += batch.length;
-        if (!res.ok || !res.outcome) {
-          setError(res.error ?? t.publish.failed);
-          break;
-        }
-        merged = merged ? mergeOutcomes(merged, res.outcome) : res.outcome;
-        setOutcome(merged);
-      }
-    } catch (e) {
-      setError(
-        e instanceof UnexpectedResponse
-          ? t.publish.unexpectedResponse(e.status)
-          : e instanceof Error
-            ? e.message
-            : t.publish.failed,
+      const end = await runPublishBatches(
+        "/api/publish",
+        skus,
+        { dryRun, includeGallery, force, replaceMedia },
+        {
+          progress: many ? setProgress : undefined,
+          outcome: setOutcome,
+          unanswered: setUnanswered,
+          stop: () => stopRef.current,
+        },
       );
+      merged = end.merged;
+      if (end.stopped) setStopped(end.stopped);
+      if (end.error) {
+        setError(
+          end.error.kind === "proxy"
+            ? t.publish.proxyGaveUp(end.error.status, MAX_PROXY_FAILURES)
+            : end.error.kind === "unexpected"
+              ? t.publish.unexpectedResponse(end.error.status)
+              : (end.error.message ?? t.publish.failed),
+        );
+      }
     } finally {
       running.current = false;
       setProgress(null);
@@ -709,20 +635,6 @@ export function PublishWorkspace({
  * add up, and the audit id shown is the first batch's (each batch writes its
  * own audit row — the operator sees one list, the history keeps the detail).
  */
-function mergeOutcomes(a: PublishOutcome, b: PublishOutcome): PublishOutcome {
-  return {
-    ...a,
-    status: b.status === "failed" || a.status === "failed" ? "failed" : a.status,
-    products: [...a.products, ...b.products],
-    created: a.created + b.created,
-    reimported: a.reimported + b.reimported,
-    completed: a.completed + b.completed,
-    variations: a.variations + b.variations,
-    skipped: a.skipped + b.skipped,
-    failed: a.failed + b.failed,
-  };
-}
-
 /** What a run did (or would do), product by product. */
 function OutcomePanel({ outcome, siteUrl }: { outcome: PublishOutcome; siteUrl: string }) {
   const { t } = useI18n();

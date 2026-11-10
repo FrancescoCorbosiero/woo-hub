@@ -6,7 +6,7 @@ import type { QuickView } from "@/lib/vetrina/catalog";
  */
 export const homeIt = {
   title: "Catalogo",
-  tabs: { homepage: "Homepage", catalog: "Catalogo", menu: "Menu" },
+  tabs: { homepage: "Homepage", catalog: "Catalogo", menu: "Menu", shop: "Negozio" },
   search: "Cerca nel catalogo",
   segments: { category: "Categorie", brand: "Brand" },
 
