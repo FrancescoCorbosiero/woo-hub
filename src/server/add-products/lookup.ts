@@ -1,6 +1,7 @@
 import "server-only";
 import type { SourceProduct } from "@core/core-spine";
 import { LOOKUP_BATCH, type AddLookup, type AddRoute } from "@/lib/add-products";
+import { isMadeUp } from "@/lib/handmade";
 import { skuKey } from "@/lib/skus";
 import { getSource as kicksdb, kicksdbConfigured } from "@/server/adapters/kicksdb";
 import { getAnyBySkus } from "@/server/catalog/repo";
@@ -128,7 +129,8 @@ export async function lookupProducts(skus: readonly string[]): Promise<AddLookup
 
   const facts: LookupFacts = { onStore, feed: feed.owned, delisted: feed.delisted, catalog, kicksdb: new Map() };
   const answers = facts.kicksdb as Map<string, SourceProduct | null | "unreachable">;
-  const unknown = asked.filter((sku) => routeOne(sku, facts).route === "unknown");
+  // A code the Hub made up is nobody else's: KicksDB is not asked about it.
+  const unknown = asked.filter((sku) => !isMadeUp(sku) && routeOne(sku, facts).route === "unknown");
   if (unknown.length > 0 && kicksdbConfigured()) {
     const source = kicksdb(config);
     await forEachLimit(unknown, 6, async (sku) => {

@@ -6,9 +6,11 @@ import { Block, Button, List, ListItem, Page, Preloader } from "konsta/react";
 import { toast } from "sonner";
 import { useI18n } from "@/i18n/provider";
 import { codesIn, groupLookups, KICKSDB_UNREACHABLE, LOOKUP_BATCH, MAX_ENTRIES, NOT_ON_KICKSDB, type AddLookup } from "@/lib/add-products";
+import { checkHandmade, type HandmadeInput } from "@/lib/handmade";
+import { matchCategories, readProductSheet, sheetToHandmade, type SheetProduct } from "@/lib/product-sheet";
 import { runPublishBatches } from "@/lib/publish-run";
 import { skuKey } from "@/lib/skus";
-import { lookupNewProducts } from "@/server/actions/vetrina-add";
+import { getHandmadeSetup, lookupNewProducts, makeHandmadeProduct } from "@/server/actions/vetrina-add";
 import type { PublishOutcome, PublishProductReport } from "@/server/woo/publish";
 import { FILL } from "../../catalog/act/parts";
 import { NextLinkTag } from "../../catalog/home/ui";
@@ -16,19 +18,10 @@ import { HEADING } from "../../catalog/sheet/look";
 import { TabbarSpacer } from "../../catalog/TabbarSpacer";
 import { ShopConfirm, ShopSubNavbar, ShopThumb, type ConfirmAsk } from "../parts";
 import { INPUT } from "./look";
+import { editorHref, SHEET_DRAFT } from "./routes";
 
 /** The one tap's own route: on the Vetrina's address only /vetrina is served. */
 const ROUTE = "/vetrina/negozio/aggiungi/importa";
-const EDITOR = "/vetrina/negozio/aggiungi/nuovo";
-
-/** The form for a code made by hand, starting from what is known of it. */
-export function editorHref(sku: string | null, back = false): string {
-  const query = new URLSearchParams();
-  if (sku) query.set("sku", sku);
-  if (back) query.set("da", "codici");
-  const q = query.toString();
-  return q ? `${EDITOR}?${q}` : EDITOR;
-}
 
 /**
  * "Aggiungi prodotti" (src/lib/add-products.ts): the one way in for new
@@ -57,8 +50,14 @@ export function AddProductsScreen({ wpAdmin, kicksdb }: { wpAdmin: string; kicks
   const [reports, setReports] = React.useState<ReadonlyMap<string, PublishProductReport>>(new Map());
   const [outcome, setOutcome] = React.useState<PublishOutcome | null>(null);
   const [note, setNote] = React.useState<string | null>(null);
+  // A product sheet given instead of codes: its products by code, and the shop's categories they are filed under.
+  const [sheet, setSheet] = React.useState<ReadonlyMap<string, SheetProduct> | null>(null);
+  const [categories, setCategories] = React.useState<{ id: number; path: string }[]>([]);
+  const [sheetNotes, setSheetNotes] = React.useState<string[]>([]);
+  const [making, setMaking] = React.useState<{ done: number; total: number } | null>(null);
+  const [made, setMade] = React.useState<ReadonlyMap<string, { text: string; good: boolean }>>(new Map());
   const file = React.useRef<HTMLInputElement>(null);
-  const running = progress != null;
+  const running = progress != null || making != null;
 
   // Leaving the page mid-run would stop it: the browser asks first.
   React.useEffect(() => {
@@ -103,6 +102,60 @@ export function AddProductsScreen({ wpAdmin, kicksdb }: { wpAdmin: string; kicks
     }
   }
 
+  /** What the box or a file holds: a product sheet, whose codes are looked up with its data kept, or codes. */
+  async function begin(content: string) {
+    const read = readProductSheet(content);
+    setMade(new Map());
+    if (!read) {
+      setSheet(null);
+      setSheetNotes([]);
+      await search(codesIn(content));
+      return;
+    }
+    setSheet(new Map(read.products.map((p) => [skuKey(p.sku), p])));
+    const setup = await getHandmadeSetup(null);
+    const shop = setup.ok ? setup.data.categories : [];
+    setCategories(shop);
+    const unknown = [...new Set(read.products.flatMap((p) => matchCategories(p.categories, shop).unknown))];
+    setSheetNotes(
+      [
+        w.sheetFound(read.products.length),
+        unknown.length > 0 ? w.unknownCategories(unknown) : null,
+        read.unattached.length > 0 ? w.unattached(read.unattached) : null,
+      ].filter((line): line is string => line != null),
+    );
+    await search(read.products.map((p) => p.sku));
+  }
+
+  /** A sheet's product as the form's, filed under the shop's categories it names. */
+  function draftOf(product: SheetProduct): HandmadeInput {
+    return sheetToHandmade(product, matchCategories(product.categories, categories).ids);
+  }
+
+  /** The sheet's products ready to be made as they are, one after the other. */
+  async function makeFromSheet(products: SheetProduct[]) {
+    setMaking({ done: 0, total: products.length });
+    try {
+      for (const [i, product] of products.entries()) {
+        const res = await makeHandmadeProduct(draftOf(product));
+        const key = skuKey(product.sku);
+        const line = !res.ok
+          ? { text: `${w.notAdded}: ${res.error}`, good: false }
+          : res.data.ok
+            ? { text: res.data.status === "publish" ? w.madeLive : w.madeHidden, good: true }
+            : res.data.code === "skuTaken"
+              ? { text: w.taken, good: false }
+              : { text: `${t.vetrinaCatalog.shop.handmade.invalid} ${res.data.invalid.map((f) => t.vetrinaCatalog.shop.handmade.fields[f]).join(", ")}`, good: false };
+        setMade((current) => new Map(current).set(key, line));
+        setMaking({ done: i + 1, total: products.length });
+      }
+    } finally {
+      setMaking(null);
+    }
+    const count = products.length;
+    toast.success(w.madeCount(count));
+  }
+
   async function retry(codes: string[]) {
     const keep = (lookups ?? []).filter((l) => !codes.includes(l.sku));
     const res = await lookupNewProducts(codes.slice(0, LOOKUP_BATCH));
@@ -122,13 +175,12 @@ export function AddProductsScreen({ wpAdmin, kicksdb }: { wpAdmin: string; kicks
       toast.error(w.fileUnreadable);
       return;
     }
-    const codes = codesIn(content);
-    if (codes.length === 0) {
+    if (!readProductSheet(content) && codesIn(content).length === 0) {
       toast.error(w.fileEmpty);
       return;
     }
-    setText(codes.join("\n"));
-    await search(codes);
+    setText(content.replace(/^\uFEFF/, ""));
+    await begin(content);
   }
 
   async function add(skus: string[]) {
@@ -215,7 +267,7 @@ export function AddProductsScreen({ wpAdmin, kicksdb }: { wpAdmin: string; kicks
           colors={FILL}
           className="w-full"
           disabled={searching != null || running || text.trim() === ""}
-          onClick={() => void search(codesIn(text))}
+          onClick={() => void begin(text)}
         >
           {searching ? (
             <span className="flex items-center gap-2">
@@ -252,6 +304,13 @@ export function AddProductsScreen({ wpAdmin, kicksdb }: { wpAdmin: string; kicks
         />
         <p className="px-1 text-[13px] leading-snug opacity-60">{w.fileHint}</p>
         {!kicksdb && <p className="px-1 text-[13px] leading-snug opacity-60">{w.kicksdbOff}</p>}
+        {sheet && sheetNotes.length > 0 && (
+          <div className="space-y-1 rounded-xl bg-black/[0.04] px-3 py-2.5 text-[13px] leading-snug dark:bg-white/[0.08]" role="status">
+            {sheetNotes.map((line) => (
+              <p key={line}>{line}</p>
+            ))}
+          </div>
+        )}
       </div>
 
       {groups && (
@@ -261,7 +320,7 @@ export function AddProductsScreen({ wpAdmin, kicksdb }: { wpAdmin: string; kicks
               <h2 className="px-5 pb-0.5 pt-5 text-[13px] font-semibold uppercase tracking-wide opacity-50">
                 {w.groups.ready(groups.ready.length)}
               </h2>
-              <p className="px-5 pb-1 text-[13px] leading-snug opacity-60">{w.readyHint}</p>
+              <p className="px-5 pb-1 text-[13px] leading-snug opacity-60">{sheet ? `${w.readyHint} ${w.sheetSourceNote}` : w.readyHint}</p>
               <List strong inset dividers className="!mt-2" aria-label={w.groups.ready(groups.ready.length)}>
                 {groups.ready.map((l) => {
                   const line = reportLine(reports.get(skuKey(l.sku)));
@@ -286,7 +345,7 @@ export function AddProductsScreen({ wpAdmin, kicksdb }: { wpAdmin: string; kicks
                 })}
               </List>
               <div className="px-4">
-                {running ? (
+                {progress ? (
                   <Block strong inset className="!mx-0 !my-0 space-y-2" role="status">
                     <p className="text-[15px] font-semibold">{w.progress(progress.done, progress.total)}</p>
                     <div className="h-1.5 overflow-hidden rounded-full bg-black/[0.08] dark:bg-white/[0.12]">
@@ -300,7 +359,8 @@ export function AddProductsScreen({ wpAdmin, kicksdb }: { wpAdmin: string; kicks
                     <p className="text-[13px] opacity-60">{t.vetrinaCatalog.shop.publish.keepOpen}</p>
                   </Block>
                 ) : (
-                  toAdd.length > 0 && (
+                  toAdd.length > 0 &&
+                  !running && (
                     <Button
                       large
                       rounded
@@ -331,22 +391,97 @@ export function AddProductsScreen({ wpAdmin, kicksdb }: { wpAdmin: string; kicks
               <h2 className="px-5 pb-0.5 pt-5 text-[13px] font-semibold uppercase tracking-wide opacity-50">
                 {w.groups.byHand(groups.byHand.length)}
               </h2>
-              <p className="px-5 pb-1 text-[13px] leading-snug opacity-60">{w.byHandHint}</p>
+              <p className="px-5 pb-1 text-[13px] leading-snug opacity-60">{sheet ? w.byHandSheetHint : w.byHandHint}</p>
               <List strong inset dividers className="!mt-2" aria-label={w.groups.byHand(groups.byHand.length)}>
-                {groups.byHand.map((l) => (
-                  <ListItem
-                    key={l.sku}
-                    link
-                    linkComponent={NextLinkTag}
-                    linkProps={{ href: editorHref(l.sku, true) }}
-                    media={<ShopThumb src={l.image} />}
-                    title={l.title ?? l.sku}
-                    subtitle={w.route[l.route]}
-                    text={l.title ? l.sku : undefined}
-                    after={<span className="text-primary">{w.make}</span>}
-                  />
-                ))}
+                {groups.byHand.map((l) => {
+                  const fromSheet = sheet?.get(skuKey(l.sku));
+                  const ready = fromSheet ? checkHandmade(draftOf(fromSheet)).ok : false;
+                  const line = made.get(skuKey(l.sku));
+                  if (line?.good) {
+                    return (
+                      <ListItem
+                        key={l.sku}
+                        media={<ShopThumb src={fromSheet?.photos[0] ?? l.image} />}
+                        title={fromSheet?.title || l.title || l.sku}
+                        subtitle={l.sku}
+                        text={<span className="text-green-700 dark:text-green-400">{line.text}</span>}
+                      />
+                    );
+                  }
+                  return (
+                    <ListItem
+                      key={l.sku}
+                      link
+                      linkComponent={NextLinkTag}
+                      linkProps={{
+                        href: editorHref(l.sku, true),
+                        // The form opens with the sheet's row filled in.
+                        onClick: () => {
+                          if (!fromSheet) return;
+                          try {
+                            sessionStorage.setItem(`${SHEET_DRAFT}${skuKey(l.sku)}`, JSON.stringify(draftOf(fromSheet)));
+                          } catch {
+                            // No storage (a private window): the form opens with what the Hub knows.
+                          }
+                        },
+                      }}
+                      media={<ShopThumb src={fromSheet?.photos[0] ?? l.image} />}
+                      title={fromSheet?.title || l.title || l.sku}
+                      subtitle={fromSheet ? (ready ? w.sheetReady : w.sheetIncomplete) : w.route[l.route]}
+                      text={
+                        line ? (
+                          <span className="text-red-600 dark:text-red-400">{line.text}</span>
+                        ) : fromSheet?.title || l.title ? (
+                          l.sku
+                        ) : undefined
+                      }
+                      after={<span className="text-primary">{fromSheet ? w.complete : w.make}</span>}
+                    />
+                  );
+                })}
               </List>
+              {sheet &&
+                (() => {
+                  const ready = groups.byHand
+                    .map((l) => sheet.get(skuKey(l.sku)))
+                    .filter((p): p is SheetProduct => p != null && !made.has(skuKey(p.sku)) && checkHandmade(draftOf(p)).ok);
+                  if (making) {
+                    return (
+                      <div className="px-4">
+                        <Block strong inset className="!mx-0 !my-0 space-y-2" role="status">
+                          <p className="text-[15px] font-semibold">{w.making(making.done, making.total)}</p>
+                          <div className="h-1.5 overflow-hidden rounded-full bg-black/[0.08] dark:bg-white/[0.12]">
+                            <div
+                              className="h-full rounded-full bg-primary transition-[width] duration-500"
+                              style={{ width: `${Math.round((making.done / Math.max(making.total, 1)) * 100)}%` }}
+                            />
+                          </div>
+                          <p className="text-[13px] opacity-60">{t.vetrinaCatalog.shop.publish.keepOpen}</p>
+                        </Block>
+                      </div>
+                    );
+                  }
+                  return ready.length > 0 && !running ? (
+                    <div className="px-4">
+                      <Button
+                        large
+                        rounded
+                        colors={FILL}
+                        className="w-full"
+                        onClick={() =>
+                          setAsk({
+                            title: w.makeConfirmTitle,
+                            body: w.makeConfirmBody(ready.length),
+                            confirm: w.makeConfirm,
+                            run: async () => void makeFromSheet(ready),
+                          })
+                        }
+                      >
+                        <span className="truncate">{w.makeFromSheet(ready.length)}</span>
+                      </Button>
+                    </div>
+                  ) : null;
+                })()}
             </>
           )}
 
@@ -407,6 +542,9 @@ export function AddProductsScreen({ wpAdmin, kicksdb }: { wpAdmin: string; kicks
                 onClick={() => {
                   setLookups(null);
                   setText("");
+                  setSheet(null);
+                  setSheetNotes([]);
+                  setMade(new Map());
                   setReports(new Map());
                   setOutcome(null);
                   setNote(null);

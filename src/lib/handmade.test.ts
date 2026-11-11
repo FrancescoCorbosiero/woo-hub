@@ -4,6 +4,7 @@ import {
   duplicateSizes,
   generateSku,
   isEuSize,
+  isMadeUp,
   paragraphs,
   sizeKey,
   slugify,
@@ -108,5 +109,8 @@ describe("a code made up", () => {
     let i = 0;
     expect(generateSku(() => i++)).toBe("HM-234567");
     expect(generateSku()).toMatch(/^HM-[2-9A-HJ-NP-Z]{6}$/);
+    expect(isMadeUp(generateSku())).toBe(true);
+    expect(isMadeUp("HM-BORSA1")).toBe(false);
+    expect(isMadeUp("DD1391-100")).toBe(false);
   });
 });

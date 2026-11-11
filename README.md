@@ -624,6 +624,24 @@ what waits for the owner, on the phone (`/vetrina/negozio`,
 
   Uploading photos needs `WP_APP_USER` and `WP_APP_PASSWORD`, from a user who
   may upload files. Without them, the form takes photo links.
+
+  The same box takes a *product sheet* (`src/lib/product-sheet.ts`): a CSV
+  file, or cells pasted from Excel or Google Sheets.
+  - **Columns** are recognised by their headers, in Italian or English, in any
+    order: code, name, brand, category, description, size, price, pieces,
+    barcode, photos (links), Google title and description, address, visible.
+  - **Rows** are grouped into products by code: one row a product (its sizes
+    in one cell, "S, M, L"), or one row a size. A row without a code continues
+    the product above.
+  - **Codes a source knows** come from that source, as typed ones do: the
+    sheet's names and prices for them are not used.
+  - **Codes nobody knows** are made from the sheet. Those with a name and a
+    price for every size are created in one go, from the "Crea N prodotti dal
+    foglio" button. The others open the form filled in from their row.
+  - **Categories** are the shop's, matched by path or name. A name the shop
+    has no category for is left out, and the screen says which.
+  - **Made-up codes:** codes the Hub makes up (`HM-` and six characters) are
+    never looked up on KicksDB.
 - **Da fare** — the orders to fulfil, the prices changed on WordPress, the new
   products to publish, each with its count and its screen:
   - *Ordini*: to fulfil, shipped, or all, searchable; an order's sheet takes

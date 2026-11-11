@@ -185,10 +185,18 @@ export function paragraphs(text: string): string {
     .join("\n");
 }
 
+/** The prefix of the codes the Hub makes up (generateSku): never a code any source knows. */
+export const MADE_UP = "HM-";
+
+/** A code the Hub made up: no source is asked about it. */
+export function isMadeUp(sku: string): boolean {
+  return /^HM-[2-9A-HJ-NP-Z]{6}$/i.test(sku.trim());
+}
+
 /** A code for a product that has none: "HM-" and six letters or digits, never 0/O or 1/I. */
 export function generateSku(random: (n: number) => number = (n) => Math.floor(Math.random() * n)): string {
   const alphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
-  let out = "HM-";
+  let out = MADE_UP;
   for (let i = 0; i < 6; i++) out += alphabet[random(alphabet.length)];
   return out;
 }

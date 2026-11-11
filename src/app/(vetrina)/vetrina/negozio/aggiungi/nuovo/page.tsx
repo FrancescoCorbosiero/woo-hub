@@ -16,5 +16,5 @@ export default async function HandmadePage({ searchParams }: { searchParams: Pro
   const sku = typeof query.sku === "string" ? query.sku : null;
   const result = await getHandmadeSetup(sku);
   // Keyed by the code: another code opens a fresh form, not the last one's.
-  return <HandmadeScreen key={sku ?? ""} result={result} fromCodes={query.da === "codici"} />;
+  return <HandmadeScreen key={sku ?? ""} result={result} fromCodes={query.da === "codici"} code={sku} />;
 }

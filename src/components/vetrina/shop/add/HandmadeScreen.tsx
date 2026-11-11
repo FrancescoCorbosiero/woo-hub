@@ -15,6 +15,7 @@ import {
   type HandmadeField,
   type HandmadeInput,
 } from "@/lib/handmade";
+import { skuKey } from "@/lib/skus";
 import { makeHandmadeProduct, type HandmadeSetup } from "@/server/actions/vetrina-add";
 import type { HandmadeOutcome } from "@/server/add-products/handmade";
 import type { VetrinaResult } from "@/server/vetrina/service";
@@ -24,6 +25,7 @@ import { ErrorState } from "../../ErrorState";
 import { parsePrice } from "../../format";
 import { useBack } from "../../use-back";
 import { CARD, FIELD, INPUT, INVALID, SECTION } from "./look";
+import { SHEET_DRAFT } from "./routes";
 import { photoKey, PhotosField, type FormPhoto } from "./PhotosField";
 import { sizeRow, SizesField, type OneSize, type SizeRow } from "./SizesField";
 
@@ -44,6 +46,62 @@ interface Form {
   one: OneSize;
   seo: { title: string; description: string; slug: string };
   visible: boolean;
+}
+
+/** A product sheet's row as the form's (see product-sheet.ts): the sizes' prices as the owner types them. */
+function formFromDraft(draft: HandmadeInput): Form {
+  const price = (amount: number) => (amount > 0 ? amount.toFixed(2).replace(".", ",") : "");
+  const sizes = draft.sizes;
+  const single = sizes.length === 1 && sizes[0].label === ONE_SIZE;
+  return {
+    photos: (draft.photos ?? []).map((photo) =>
+      "id" in photo
+        ? { key: photoKey(), id: photo.id, url: photo.url ?? "", status: "done" as const }
+        : { key: photoKey(), url: photo.url, link: true, status: "done" as const },
+    ),
+    sku: draft.sku,
+    title: draft.title,
+    brand: draft.brand ?? "",
+    categoryIds: draft.categoryIds ?? [],
+    description: draft.description ?? "",
+    mode: single ? "one" : "sizes",
+    sizes: single ? [] : sizes.map((s) => ({ ...sizeRow(s.label), price: price(s.price), stock: String(s.stock), barcode: s.barcode ?? "" })),
+    one: single
+      ? { price: price(sizes[0].price), stock: String(sizes[0].stock), barcode: sizes[0].barcode ?? "" }
+      : { price: "", stock: "1", barcode: "" },
+    seo: { title: draft.seo?.title ?? "", description: draft.seo?.description ?? "", slug: draft.seo?.slug ?? "" },
+    visible: draft.visible,
+  };
+}
+
+const subscribeNothing = () => () => undefined;
+
+/**
+ * The row of a product sheet the form was opened from ("Completa" in
+ * "Aggiungi prodotti"), kept in this tab's storage: none while the page is
+ * rendered on the server, read once the page runs in the phone.
+ */
+function useSheetDraft(code: string | null): string | null {
+  return React.useSyncExternalStore(
+    subscribeNothing,
+    () => {
+      try {
+        return code ? sessionStorage.getItem(`${SHEET_DRAFT}${skuKey(code)}`) : null;
+      } catch {
+        return null;
+      }
+    },
+    () => null,
+  );
+}
+
+function readDraft(raw: string | null): HandmadeInput | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as HandmadeInput;
+  } catch {
+    return null;
+  }
 }
 
 function startingForm(prefill: HandmadeSetup["prefill"]): Form {
@@ -105,13 +163,37 @@ function toInput(form: Form): HandmadeInput {
  * their prices and pieces, how it shows on Google, and whether it goes on
  * sale at once. The shop owns it from then on (src/server/add-products/handmade.ts).
  */
-export function HandmadeScreen({ result, fromCodes }: { result: VetrinaResult<HandmadeSetup>; fromCodes: boolean }) {
+export function HandmadeScreen({
+  result,
+  fromCodes,
+  code,
+}: {
+  result: VetrinaResult<HandmadeSetup>;
+  fromCodes: boolean;
+  /** The code the form was opened for, as written. */
+  code: string | null;
+}) {
+  const raw = useSheetDraft(code);
+  const draft = React.useMemo(() => readDraft(raw), [raw]);
+  // A sheet's row arrives after the page first shows: the form starts again from it.
+  return <HandmadeForm key={draft ? "sheet" : "known"} result={result} fromCodes={fromCodes} draft={draft} />;
+}
+
+function HandmadeForm({
+  result,
+  fromCodes,
+  draft,
+}: {
+  result: VetrinaResult<HandmadeSetup>;
+  fromCodes: boolean;
+  draft: HandmadeInput | null;
+}) {
   const { t } = useI18n();
   const w = t.vetrinaCatalog.shop.handmade;
   const router = useRouter();
   const back = useBack("/vetrina/negozio/aggiungi");
   const setup = result.ok ? result.data : null;
-  const [form, setForm] = React.useState<Form>(() => startingForm(setup?.prefill ?? null));
+  const [form, setForm] = React.useState<Form>(() => (draft ? formFromDraft(draft) : startingForm(setup?.prefill ?? null)));
   const [invalid, setInvalid] = React.useState<ReadonlySet<HandmadeField>>(new Set());
   const [taken, setTaken] = React.useState<{
     title: string;
@@ -174,6 +256,11 @@ export function HandmadeScreen({ result, fromCodes }: { result: VetrinaResult<Ha
       const outcome = res.data;
       if (outcome.ok) {
         setMade(outcome);
+        try {
+          sessionStorage.removeItem(`${SHEET_DRAFT}${skuKey(outcome.sku)}`);
+        } catch {
+          // No storage: nothing kept.
+        }
         window.scrollTo({ top: 0 });
       } else if (outcome.code === "invalid") {
         setInvalid(new Set(outcome.invalid));

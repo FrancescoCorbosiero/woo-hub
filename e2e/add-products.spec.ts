@@ -59,3 +59,42 @@ test("sizes are picked in a tap, priced all at once, and a size twice is named",
   // Already there: nothing added twice.
   await expect(page.getByRole("textbox", { name: /— Prezzo$/ }).filter(visible)).toHaveCount(3);
 });
+
+test("a product sheet pasted in the box is read as one: its products counted, a category the shop lacks named", async ({ page }) => {
+  await open(page, "/vetrina/negozio/aggiungi");
+  await page
+    .getByRole("textbox", { name: "Codici" })
+    .fill("Codice\tNome\tTaglia\tPrezzo\tCategoria\nHM-SHEET-1\tBorsa\t\t89,90\tAccessori di lusso\nHM-SHEET-2\tFelpa\tM, L\t60\t");
+  await page.getByRole("button", { name: "Cerca" }).click();
+  await expect(page.getByText(/Un foglio con 2 prodotti/)).toBeVisible();
+  await expect(page.getByText("Categorie che il negozio non ha, lasciate fuori: Accessori di lusso.")).toBeVisible();
+  // The demo shop looks nothing up.
+  await expect(toast(page, /Sul negozio di prova non si aggiungono prodotti/)).toBeVisible();
+});
+
+test("the form opens with the sheet's row it was opened for", async ({ page }) => {
+  await open(page, "/vetrina/negozio/aggiungi");
+  await page.evaluate(() =>
+    sessionStorage.setItem(
+      "handmade-draft:HM-SHEET-1",
+      JSON.stringify({
+        sku: "HM-SHEET-1",
+        title: "Borsa dal foglio",
+        brand: "Artigiana",
+        categoryIds: [],
+        description: "Pelle.",
+        photos: [],
+        sizes: [{ label: "Unica", price: 89.9, stock: 2, barcode: "" }],
+        seo: { title: "", description: "", slug: "" },
+        visible: true,
+      }),
+    ),
+  );
+  await open(page, "/vetrina/negozio/aggiungi/nuovo?sku=HM-SHEET-1&da=codici");
+  const visible = { visible: true } as const;
+  await expect(page.getByRole("textbox", { name: "Nome" }).filter(visible)).toHaveValue("Borsa dal foglio");
+  // With the shop's brands as suggestions: a combobox.
+  await expect(page.getByRole("combobox", { name: "Marca" }).filter(visible)).toHaveValue("Artigiana");
+  await expect(page.getByRole("textbox", { name: "Prezzo (€)" }).filter(visible)).toHaveValue("89,90");
+  await expect(page.getByRole("textbox", { name: "Pezzi" }).filter(visible)).toHaveValue("2");
+});
