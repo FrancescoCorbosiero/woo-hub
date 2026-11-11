@@ -296,12 +296,13 @@ cadences:
   (default `Europe/Rome`). In order:
   1. the **store pull** (the Hub's copy of every product on WooCommerce);
   2. the GoldenSneakers complete sync;
-  3. a KicksDB re-pricing pass;
-  4. with *the KicksDB prices of the rest of the store too* ticked, the
+  3. **auto-publish** of the feed's new products (below);
+  4. a KicksDB re-pricing pass;
+  5. with *the KicksDB prices of the rest of the store too* ticked, the
      **store sync** of the whole store, a few at a time, the feed's products
      left to the feed cycle (below);
-  5. the **automatic categories**, against a full read of the store;
-  6. self-repair (with *Automatic repair* ticked, under Advanced), metadata
+  6. the **automatic categories**, against a full read of the store;
+  7. self-repair (with *Automatic repair* ticked, under Advanced), metadata
      backfill and recategorization.
 
   A failed step doesn't stop the others and is retried an hour later, twice
@@ -309,7 +310,7 @@ cadences:
 - **The feed cycle**, every N minutes on the clock (`15` runs at :00, :15,
   :30 and :45), while *Update the store automatically* is on and the
   GoldenSneakers API is set (`GS_FEED_URL` and `GS_FEED_TOKEN`). It runs the
-  GoldenSneakers sync, then the store sync of the feed's products, so the
+  GoldenSneakers sync, auto-publish, then the store sync of the feed's products, so the
   store follows the feed within the interval. KicksDB-priced products wait for
   the daily sync, because planning them asks KicksDB about every one of them,
   every time. A cycle skips its turn while another run is going, and the daily
@@ -330,6 +331,15 @@ cadences:
   check runs even while no category is automatic: the store index it keeps is
   also what the Vetrina's catalog lists. It then only reads; nothing is
   written to the store.
+
+**Auto-publish** (*Publish the feed's new products on its own*, on by default)
+puts a product on the store as soon as the supplier's feed lists it: Publish's
+own run, created hidden and on sale with its first photo, each SKU looked up
+live before it is created. Feed products only — a KicksDB pick stays a
+person's choice. At most 20 a run, the rest at the next; a product the store
+refuses is left alone for 6 hours; nothing until the Hub has its copy of the
+store, nor while a store pull runs; and nothing at all with *Update the store
+automatically* off. "Sincronizza ora" includes it whenever it is on.
 
 **The store sync** does unattended what the Sync tab does with "apply all":
 it plans the price and stock changes the sources call for and writes them to
@@ -574,6 +584,64 @@ what waits for the owner, on the phone (`/vetrina/negozio`,
   prices changed on WordPress left for the owner, a list past its safety limit
   refused, what waits for next time, a step that failed. Recorded as a run
   "by hand", it never counts as the day's sync.
+- **Aggiungi prodotti** — the one way in for new products
+  (`/vetrina/negozio/aggiungi`, `src/lib/add-products.ts`,
+  `src/server/add-products`). One box takes codes: typed, scanned, pasted,
+  a whole spreadsheet column, or a CSV file (its column headed "SKU",
+  "Codice"…, else its first). The Hub works out, code by code, how each
+  comes in, trying the sources in order:
+  - *already in the shop*: nothing is added twice;
+  - *from the supplier's feed*: one tap, through Publish;
+  - *from KicksDB*: the Hub's catalog, or KicksDB asked for it, with one tap
+    as well;
+  - *by hand*: a code nobody knows, a product without EU sizes, or one the
+    supplier no longer sells.
+
+  One tap runs Publish batch by batch, through its own route
+  (`/vetrina/negozio/aggiungi/importa`). Each product is created hidden and
+  goes on sale with its first photo. KicksDB's answer from the lookup is
+  remembered, so the add asks for nothing twice. A single code that can't be
+  added with one tap opens the form straight away.
+
+  The form (`/vetrina/negozio/aggiungi/nuovo?sku=…`) is pre-filled with what
+  is known of the code. It has:
+  - photos uploaded from the phone into WordPress's media library, or photo
+    links;
+  - name and code, brand, the shop's categories, a description;
+  - sizes (EU shoe sizes, clothes sizes, or one size), each with a price,
+    pieces and an optional barcode;
+  - a Google preview with the SEO plugin's title and description (Rank Math
+    or Yoast, detected from the site's REST index), and the address;
+  - whether it goes on sale at once.
+
+  The product gets the shape Publish gives every product. Its EU sizes use
+  Publish's labels and SKUs (`{SKU}-EU42.5`), and a clothes size or the one
+  size gets its own (`{SKU}-M`, `{SKU}-UNICA`). The shop owns it from then on,
+  through an ownership pin, `store`, in the Hub's overrides. Every source
+  honours it: the feed never takes it over or zeroes it, even when the feed
+  carries the same code, the store sync prices it from nowhere, and Publish
+  and auto-publish never offer it. The shop is its only copy.
+
+  Uploading photos needs `WP_APP_USER` and `WP_APP_PASSWORD`, from a user who
+  may upload files. Without them, the form takes photo links.
+
+  The same box takes a *product sheet* (`src/lib/product-sheet.ts`): a CSV
+  file, or cells pasted from Excel or Google Sheets.
+  - **Columns** are recognised by their headers, in Italian or English, in any
+    order: code, name, brand, category, description, size, price, pieces,
+    barcode, photos (links), Google title and description, address, visible.
+  - **Rows** are grouped into products by code: one row a product (its sizes
+    in one cell, "S, M, L"), or one row a size. A row without a code continues
+    the product above.
+  - **Codes a source knows** come from that source, as typed ones do: the
+    sheet's names and prices for them are not used.
+  - **Codes nobody knows** are made from the sheet. Those with a name and a
+    price for every size are created in one go, from the "Crea N prodotti dal
+    foglio" button. The others open the form filled in from their row.
+  - **Categories** are the shop's, matched by path or name. A name the shop
+    has no category for is left out, and the screen says which.
+  - **Made-up codes:** codes the Hub makes up (`HM-` and six characters) are
+    never looked up on KicksDB.
 - **Da fare** — the orders to fulfil, the prices changed on WordPress, the new
   products to publish, each with its count and its screen:
   - *Ordini*: to fulfil, shipped, or all, searchable; an order's sheet takes
@@ -587,7 +655,8 @@ what waits for the owner, on the phone (`/vetrina/negozio`,
     route under `/vetrina`; dry runs, force reimport and the rest stay on the
     Publish tab.
 - **Aggiornamento automatico** — the everyday settings of Automatic sync: on
-  or off, every N minutes, the KicksDB prices too, the full update's times.
+  or off, every N minutes, the feed's new products published on their own,
+  the KicksDB prices too, the full update's times.
   The rest of them are on the Feeds tab.
 
 **Rolling back** past the store-term rules: an older engine ignores their

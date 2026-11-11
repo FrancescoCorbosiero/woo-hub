@@ -174,7 +174,7 @@ export async function loadDrawerData(
   // computed pin-blind so the drawer can offer the source switch either way.
   const covered = (await gsOwnedProducts([entry.sku], market, null)).get(entry.sku);
   const pin = overrides ? ownerPinFor(overrides, entry.sku) : null;
-  const gs = pin === "kicksdb" ? undefined : covered;
+  const gs = pin === "kicksdb" || pin === "store" ? undefined : covered;
   // With the shop's categories and brands, as the sync plans it: a margin set
   // on one of them shows here exactly as it will be written.
   // A catalog row whose data lacks its sizes (an old or partial entry) opens with none, rather than not at all.

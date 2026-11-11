@@ -45,6 +45,7 @@ describe("the Automatic sync settings, before anything is saved", () => {
     expect(settings).toEqual({
       storeSync: true,
       feedsEveryMinutes: 20,
+      autoPublish: true,
       dailyStoreSync: true,
       dailyTimes: ["04:30", "13:30"],
       timeZone: "Europe/London",

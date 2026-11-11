@@ -99,8 +99,8 @@ const MEDIA_BUDGET_MS = 4 * 60 * 1000;
 /** …this many products at once: every photo is a download and a round of thumbnails on the shop's server. */
 const MEDIA_CONCURRENCY = 2;
 
-const DAILY_STEPS = ["pull", "gs", "kicksdb", "storeSync", "collections", "repair", "backfill", "recategorize"] as const;
-const FEED_STEPS = ["gs", "feedSync"] as const;
+const DAILY_STEPS = ["pull", "gs", "publish", "kicksdb", "storeSync", "collections", "repair", "backfill", "recategorize"] as const;
+const FEED_STEPS = ["gs", "publish", "feedSync"] as const;
 type StepName = (typeof DAILY_STEPS)[number] | (typeof FEED_STEPS)[number];
 /** A step of a scheduled run, as the status names the one going. */
 export type SchedulerStep = StepName;
@@ -108,6 +108,11 @@ export type SchedulerStep = StepName;
 type StepOutcome = SchedulerStepSummary;
 /** The runs nobody scheduled for a slot of the day: the feed cycles, and those started by hand. */
 const NOT_DAILY: SchedulerRunRow["trigger"][] = ["interval", "manual"];
+
+/** New feed products published per run: a new price list's hundreds go out over a few cycles. */
+const PUBLISH_PER_RUN = 20;
+/** A product the store refused is not offered to it again, unattended, for this long. */
+const PUBLISH_RETRY_MS = 6 * 60 * 60 * 1000;
 
 /** A step that failed with numbers to report: a feed cycle past its limit, writes the store refused. */
 class StepFailure extends Error {
@@ -122,6 +127,7 @@ class StepFailure extends Error {
 const LABEL: Record<StepName, string> = {
   pull: "store pull",
   gs: "GS sync",
+  publish: "auto-publish",
   kicksdb: "KicksDB refresh",
   storeSync: "store sync",
   feedSync: "store sync",
@@ -428,6 +434,60 @@ async function syncStore(scope: "store" | "feed", manual = false): Promise<StepO
   };
 }
 
+/** SKUs the store refused, and when: left alone for PUBLISH_RETRY_MS (per process). */
+const g2 = globalThis as { __storeHubPublishRefused?: Map<string, number> };
+const refusedAt = () => (g2.__storeHubPublishRefused ??= new Map());
+
+/**
+ * Auto-publish: the supplier feed's products the store does not have yet,
+ * published as the Publish tab publishes them — created hidden, on sale with
+ * their first photo (the photo queue), each SKU looked up live before it is
+ * created, so a stale copy of the store never makes a duplicate. KicksDB
+ * picks are not published here: those are a person's choice.
+ *
+ * Bounded: PUBLISH_PER_RUN a run, the rest at the next; a product the store
+ * refused waits PUBLISH_RETRY_MS rather than failing every cycle; nothing
+ * while there is no copy of the store yet (the delta cannot be trusted), or
+ * while a store pull is reading it.
+ */
+async function publishFeedProducts(): Promise<StepOutcome | null> {
+  if (!feedConnected()) return null;
+  const { wooConfigured } = await import("@/server/woo/client");
+  if (!wooConfigured()) return null;
+  const { getLatestPullRun, pullInFlight } = await import("@/server/woo/pull");
+  if (pullInFlight(await getLatestPullRun())) return { ok: true, count: 0, pullRunning: true };
+
+  const { GS_FEED } = await import("@/server/feeds/repo");
+  const { listPublishTargets, publishProducts } = await import("@/server/woo/publish");
+  const page = await listPublishTargets({ source: "goldensneakers" }, Number.MAX_SAFE_INTEGER);
+  if (!page.hasSnapshot) return { ok: true, count: 0, note: "no copy of the store yet: nothing published" };
+
+  const refused = refusedAt();
+  const now = Date.now();
+  for (const [sku, at] of refused) if (now - at > PUBLISH_RETRY_MS) refused.delete(sku);
+  // The lens is ignored when only one source is in the pool: the feed's, said here.
+  const fresh = page.candidates.filter((c) => c.source === GS_FEED && !c.onStore && !refused.has(c.sku));
+  const batch = fresh.slice(0, PUBLISH_PER_RUN).map((c) => c.sku);
+  const waiting = fresh.length - batch.length;
+  if (batch.length === 0) return { ok: true, count: 0, published: { created: 0, failed: 0, waiting: 0 } };
+
+  const outcome = await publishProducts(batch, { dryRun: false });
+  const failed = outcome.products.filter((p) => p.error);
+  for (const p of failed) refused.set(p.sku, now);
+  const created = outcome.created + outcome.completed;
+  console.log(
+    `[scheduler] auto-publish: ${created} new feed product(s) published` +
+      (failed.length > 0 ? `, ${failed.length} refused (${failed[0].sku}: ${failed[0].error})` : "") +
+      (waiting > 0 ? `; ${waiting} more at the next run` : ""),
+  );
+  return {
+    ok: true,
+    count: created,
+    published: { created, failed: failed.length, waiting },
+    ...(failed.length > 0 ? { note: `${failed.length} refused: ${failed[0].sku}: ${failed[0].error}` } : {}),
+  };
+}
+
 /**
  * The scheduled runs' steps. Each answers what it did, null when it does not
  * apply to this shop (its source is not configured, or the store sync is
@@ -469,6 +529,14 @@ const RUN_STEP: Record<StepName, (job: Job) => Promise<StepOutcome | null>> = {
     const { refreshed, error } = await refreshCatalog();
     if (error) throw new Error(`${error} (after ${refreshed} re-priced)`);
     return { ok: true, count: refreshed };
+  },
+
+  // The feed's new products, published as soon as the feed lists them — on the
+  // store sync's switch, like every write nobody watches; by hand, on its own.
+  async publish(job) {
+    const settings = automationNow();
+    if (!settings.autoPublish || (job.kind !== "manual" && !settings.storeSync)) return null;
+    return publishFeedProducts();
   },
 
   storeSync: (job) => syncStore("store", job.kind === "manual"),
@@ -1136,7 +1204,7 @@ export type SyncNowAnswer =
  */
 function manualSteps(settings: AutomationConfig): StepName[] {
   const steps: StepName[] = [];
-  if (feedConnected()) steps.push("gs", "feedSync");
+  if (feedConnected()) steps.push("gs", ...(settings.autoPublish ? (["publish"] as const) : []), "feedSync");
   if (settings.dailyStoreSync && kicksdbConfigured()) steps.push("kicksdb", "storeSync");
   return steps;
 }

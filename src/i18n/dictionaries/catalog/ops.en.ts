@@ -242,6 +242,10 @@ export const opsEn: typeof opsIt = {
       `Margin saved, but not every price was updated (${message}): the next price update aligns them.`,
   },
 
+  add: {
+    demo: "The demo shop takes no new products: the search shows, the creation does not.",
+    busy: "This product is being created already: wait a moment.",
+  },
   source: {
     wholeCatalog: "the whole catalog",
     parse: {

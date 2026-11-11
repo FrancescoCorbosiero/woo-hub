@@ -48,4 +48,16 @@ describe("what a sync by hand did, in the owner's words", () => {
       ["warn", "Altri 120 alla prossima sincronizzazione"],
     ]);
   });
+
+  it("says the feed's new products published, those refused, and those for next time", () => {
+    const lines = resultLines(
+      { gs: { ok: true, count: 10 }, publish: { ok: true, count: 20, note: "1 refused", published: { created: 20, failed: 1, waiting: 4 } } },
+      words,
+    );
+    expect(lines.slice(1)).toEqual([
+      { tone: "ok", text: "20 nuovi prodotti pubblicati: compaiono con la prima foto" },
+      { tone: "error", text: "1 nuovo prodotto non pubblicato", href: "/vetrina/negozio/nuovi", detail: "1 refused" },
+      { tone: "warn", text: "Altri 4 nuovi prodotti alla prossima sincronizzazione" },
+    ]);
+  });
 });

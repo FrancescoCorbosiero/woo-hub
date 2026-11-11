@@ -120,15 +120,21 @@ export function wordpressConfigured(): boolean {
   return Boolean(env.WOO_BASE_URL && env.WP_APP_USER && env.WP_APP_PASSWORD);
 }
 
-function root(): string {
+/** The site's REST root, …/wp-json: WOO_BASE_URL's site. */
+export function restRoot(): string {
   const base = (env.WOO_BASE_URL ?? "").replace(/\/+$/, "");
   const origin = base.includes("/wp-json") ? base.slice(0, base.indexOf("/wp-json")) : base;
   return `${origin}/wp-json`;
 }
+const root = restRoot;
+
+/** The Application Password's sign-in, for a request this module does not make itself (a photo's upload). */
+export function wpAuthorization(): string {
+  return `Basic ${Buffer.from(`${env.WP_APP_USER}:${env.WP_APP_PASSWORD}`).toString("base64")}`;
+}
 
 function headers(): HeadersInit {
-  const token = Buffer.from(`${env.WP_APP_USER}:${env.WP_APP_PASSWORD}`).toString("base64");
-  return { Authorization: `Basic ${token}`, Accept: "application/json", "Content-Type": "application/json" };
+  return { Authorization: wpAuthorization(), Accept: "application/json", "Content-Type": "application/json" };
 }
 
 function assertConfigured(): void {

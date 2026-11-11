@@ -12,7 +12,12 @@ import { skuKey } from "@/lib/skus";
  * re-imported. Stored whole as a single jsonb blob (one active operator).
  */
 
-export type ProductOwner = "kicksdb" | "goldensneakers";
+/**
+ * Who a product answers to, when the owner decided instead of the automation:
+ * KicksDB's prices whatever the feed says, or "store" — a product made by
+ * hand in the shop, which no source ever writes to (src/server/add-products).
+ */
+export type ProductOwner = "kicksdb" | "goldensneakers" | "store";
 
 export interface ProductOverride {
   followSaleRule?: boolean;

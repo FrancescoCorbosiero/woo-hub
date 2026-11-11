@@ -22,6 +22,7 @@ import { Input } from "@/components/ui/input";
 interface Draft {
   storeSync: boolean;
   feedsEveryMinutes: string;
+  autoPublish: boolean;
   dailyStoreSync: boolean;
   dailyTimes: string;
   timeZone: string;
@@ -39,6 +40,7 @@ function toDraft(s: AutomationConfig): Draft {
   return {
     storeSync: s.storeSync,
     feedsEveryMinutes: String(s.feedsEveryMinutes),
+    autoPublish: s.autoPublish,
     dailyStoreSync: s.dailyStoreSync,
     dailyTimes: s.dailyTimes.join(", "),
     timeZone: s.timeZone,
@@ -65,6 +67,7 @@ function fromDraft(d: Draft): AutomationDraft {
   return {
     storeSync: d.storeSync,
     feedsEveryMinutes: numberOf(d.feedsEveryMinutes),
+    autoPublish: d.autoPublish,
     dailyStoreSync: d.dailyStoreSync,
     dailyTimes: d.dailyTimes
       .split(",")
@@ -208,7 +211,18 @@ export function AutomationSettings({
         </div>
       </div>
 
-      {/* Under the switch: a part of the store sync, off with it. */}
+      {/* Under the switch: parts of the store sync, off with it. */}
+      {view.feedConnected && (
+        <CheckRow
+          className="pl-12"
+          id="automation-auto-publish"
+          checked={draft.storeSync && draft.autoPublish}
+          disabled={!draft.storeSync}
+          onChange={(on) => set("autoPublish", on)}
+          label={a.autoPublish}
+          hint={a.autoPublishHint}
+        />
+      )}
       {view.kicksdbConnected && (
         <CheckRow
           className="pl-12"

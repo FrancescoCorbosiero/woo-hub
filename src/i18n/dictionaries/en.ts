@@ -670,6 +670,9 @@ export const en: Dictionary = {
         "Off: the store changes only when you apply the changes from the Sync tab. The feed is still downloaded once a day, with the full sync.",
       noFeed:
         "No supplier feed connected (GS_FEED_URL and GS_FEED_TOKEN): below, you can have the store take the KicksDB prices, once a day.",
+      autoPublish: "Publish the feed's new products on its own",
+      autoPublishHint:
+        "As soon as the supplier lists them: created hidden, on sale with their first photo. At most 20 a cycle, the rest at the next.",
       dailyStoreSync: "The KicksDB prices of the rest of the store too, with the full sync",
       dailyStoreSyncHint: "They move by thousands of sizes a day: they are written a batch at a time, the rest the next time.",
       daily: "Full sync every day at",

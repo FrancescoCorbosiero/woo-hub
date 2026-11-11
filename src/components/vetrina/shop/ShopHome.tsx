@@ -116,6 +116,23 @@ export function ShopHome({ result }: { result: VetrinaResult<ShopOverview> }) {
           <p className="px-5 pb-1 pt-1 text-[15px] leading-snug opacity-60">{s.intro}</p>
           <SyncCard overview={overview} onChange={setOverview} />
 
+          {overview.woo && (
+            <List strong inset className="!mt-4">
+              <ListItem
+                link
+                linkComponent={NextLinkTag}
+                linkProps={{ href: "/vetrina/negozio/aggiungi" }}
+                media={
+                  <span aria-hidden className="grid h-8 w-8 place-items-center rounded-lg bg-primary text-[22px] font-semibold leading-none text-white dark:text-black">
+                    +
+                  </span>
+                }
+                title={s.add.title}
+                subtitle={s.add.homeHint}
+              />
+            </List>
+          )}
+
           <h2 className="px-5 pb-0.5 pt-4 text-[13px] font-semibold uppercase tracking-wide opacity-50">{s.todo.title}</h2>
           <List strong inset dividers aria-label={s.todo.title} className="!mt-2">
             <TodoRow href="/vetrina/negozio/ordini" title={s.todo.orders} count={overview.todo.orders} none={s.todo.none} />
@@ -137,6 +154,22 @@ export function ShopHome({ result }: { result: VetrinaResult<ShopOverview> }) {
                 />
               }
             />
+            {overview.feed && (
+              <ListItem
+                title={s.settings.autoPublish}
+                className={settings.storeSync ? undefined : "opacity-50"}
+                after={
+                  <Toggle
+                    className={SWITCH_TARGET}
+                    checked={settings.autoPublish}
+                    disabled={!settings.storeSync}
+                    colors={TOGGLE_COLORS}
+                    aria-label={s.settings.autoPublish}
+                    onChange={() => void save({ autoPublish: !settings.autoPublish })}
+                  />
+                }
+              />
+            )}
             {overview.feed && (
               <ListItem
                 link
@@ -172,7 +205,7 @@ export function ShopHome({ result }: { result: VetrinaResult<ShopOverview> }) {
             />
           </List>
           <p className="px-5 pt-1 text-[13px] leading-snug opacity-60">
-            {s.settings.storeSyncHint} {overview.kicksdb ? s.settings.kicksdbHint : ""}
+            {s.settings.storeSyncHint} {overview.feed ? s.settings.autoPublishHint : ""} {overview.kicksdb ? s.settings.kicksdbHint : ""}
           </p>
           {!standalone && (
             <List strong inset className="!mt-4">

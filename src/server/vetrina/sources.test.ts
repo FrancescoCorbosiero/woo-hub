@@ -40,6 +40,13 @@ describe("where a product comes from", () => {
     expect([isDeletable("kicksdb"), isDeletable("woo")]).toEqual([true, true]);
   });
 
+  it("a product made by hand in the shop is the shop's, whatever the feed or the catalog say", () => {
+    const handmade = new Set(["HM-1"]);
+    expect(productSource("hm-1", facts({ handmade, carried: new Set(["HM-1"]), catalog: new Map([["HM-1", "kicksdb"]]) }))).toBe("woo");
+    expect(productSource("hm-1", facts({ handmade, listed: new Set(["HM-1"]) }))).toBe("woo");
+    expect(isDeletable(productSource("hm-1", facts({ handmade, carried: new Set(["HM-1"]) })))).toBe(true);
+  });
+
   it("reads a SKU as the feed and the catalog file it: any case, spaces around; none links nothing", () => {
     const f = facts({ carried: new Set(["DD1391-100"]), listed: new Set(["DD1391-100"]) });
     expect(productSource(" dd1391-100 ", f)).toBe("goldensneakers");

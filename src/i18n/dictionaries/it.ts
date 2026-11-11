@@ -688,6 +688,9 @@ export const it = {
         "Spenta: il negozio cambia solo quando applichi le modifiche dalla scheda Sync. Il listino si scarica comunque una volta al giorno, con la sincronizzazione completa.",
       noFeed:
         "Nessun listino fornitore collegato (GS_FEED_URL e GS_FEED_TOKEN): qui sotto puoi far scrivere al negozio i prezzi KicksDB, una volta al giorno.",
+      autoPublish: "Pubblica da solo i nuovi prodotti del listino",
+      autoPublishHint:
+        "Appena il fornitore li mette nel listino: creati nascosti, in vendita con la prima foto. Al massimo 20 per ciclo, gli altri al ciclo dopo.",
       dailyStoreSync: "Anche i prezzi KicksDB del resto del negozio, con la sincronizzazione completa",
       dailyStoreSyncHint:
         "Cambiano di migliaia di taglie al giorno: vengono scritti un blocco per volta, il resto alla volta successiva.",

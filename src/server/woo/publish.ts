@@ -17,7 +17,7 @@ import {
 } from "@/lib/publish-page";
 import { getAnyBySkus, listPublishCandidates, type PublishCandidate } from "@/server/catalog/repo";
 import { getOverrides } from "@/server/overrides/repo";
-import { manualPriceFor } from "@/server/overrides/model";
+import { manualPriceFor, skusPinnedTo } from "@/server/overrides/model";
 import { gsOwnedProducts } from "@/server/feeds/owner";
 import { activeFeedSkus, GS_FEED } from "@/server/feeds/repo";
 import { sourceEuSize } from "@/server/store-json/match";
@@ -150,7 +150,7 @@ function skuTaken(e: unknown): boolean {
  * failure, and a product found is carried on with — given its sizes — instead
  * of being left on the shop with none.
  */
-async function createOrAdopt(
+export async function createOrAdopt(
   client: WooClient,
   sku: string,
   body: Record<string, unknown>,
@@ -228,7 +228,7 @@ function identityRejection(e: unknown): string | null {
   return null;
 }
 
-async function resolveTagliaId(client: WooClient): Promise<number | undefined> {
+export async function resolveTagliaId(client: WooClient): Promise<number | undefined> {
   try {
     const taxonomies = await client.getAttributeTaxonomies();
     return taxonomies.find((t) => t.slug.toLowerCase().includes("taglia"))?.id;
@@ -302,7 +302,7 @@ export async function listPublishTargets(
   // this runs on every render of the tab, including the one that follows each
   // publish call, and deserializing the whole store to ask "does it have X"
   // is how the dev server ran out of heap.
-  const [info, storeSkus, sizeless, rows, photosQueued, photosFailed, inFeed] = await Promise.all([
+  const [info, storeSkus, sizeless, rows, photosQueued, photosFailed, inFeed, overrides] = await Promise.all([
     getSnapshotInfo().catch(() => null),
     listStoreSkus(),
     listSizelessStoreSkus(),
@@ -310,13 +310,17 @@ export async function listPublishTargets(
     openMediaSkus().catch(() => new Set<string>()),
     failedMediaSkus().catch(() => new Set<string>()),
     activeFeedSkus(GS_FEED),
+    getOverrides().catch(() => null),
   ]);
+  // Made by hand in the shop: its owner decided, no source publishes it again.
+  const handmade = new Set((overrides ? skusPinnedTo(overrides, "store") : []).map(skuKey));
   const unpublishable: UnpublishableTarget[] = [];
   // Filtered and sliced HERE: the whole delta stays on the server, and only a
   // page of it is serialized into the page the browser has to parse.
   const page = pagePublishTargets(
     rows
       .filter((r) => {
+        if (handmade.has(skuKey(r.sku))) return false;
         // No size Publish can create, and no feed bringing its own: it would
         // only be refused ("no EU-sized variants to create") — every run, as
         // "select all" took it again. Named apart instead of offered.

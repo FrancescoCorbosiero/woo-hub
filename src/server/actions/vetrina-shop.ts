@@ -39,6 +39,7 @@ const SettingsPatch = z
   .object({
     storeSync: z.boolean(),
     feedsEveryMinutes: z.number(),
+    autoPublish: z.boolean(),
     dailyStoreSync: z.boolean(),
     dailyTimes: z.array(z.string()),
   })
