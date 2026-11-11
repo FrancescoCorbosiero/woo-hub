@@ -28,6 +28,7 @@ export const shopIt = {
     step: {
       pull: "Leggo il negozio…",
       gs: "Scarico il listino del fornitore…",
+      publish: "Pubblico i nuovi prodotti…",
       feedSync: "Aggiorno prezzi e disponibilità…",
       kicksdb: "Aggiorno i prezzi KicksDB…",
       storeSync: "Scrivo i prezzi KicksDB…",
@@ -67,6 +68,10 @@ export const shopIt = {
       writtenKicks: (count: number) =>
         count === 0 ? "I prezzi KicksDB erano già in pari" : count === 1 ? "1 prezzo KicksDB aggiornato" : `${n(count)} prezzi KicksDB aggiornati`,
       added: (count: number) => (count === 1 ? "1 taglia aggiunta" : `${n(count)} taglie aggiunte`),
+      published: (count: number) =>
+        count === 1 ? "1 nuovo prodotto pubblicato: compare con la prima foto" : `${n(count)} nuovi prodotti pubblicati: compaiono con la prima foto`,
+      publishFailed: (count: number) => (count === 1 ? "1 nuovo prodotto non pubblicato" : `${n(count)} nuovi prodotti non pubblicati`),
+      publishWaiting: (count: number) => `Altri ${n(count)} nuovi prodotti alla prossima sincronizzazione`,
       kept: (count: number) =>
         count === 1
           ? "1 prezzo cambiato su WordPress lasciato com'è: decidi tu"
@@ -82,6 +87,7 @@ export const shopIt = {
       stepFailed: (step: string) => `${step}: non riuscito`,
       stepName: {
         gs: "Listino del fornitore",
+        publish: "Nuovi prodotti",
         feedSync: "Prezzi e disponibilità",
         kicksdb: "Prezzi KicksDB",
         storeSync: "Prezzi KicksDB nel negozio",
@@ -187,6 +193,8 @@ export const shopIt = {
     title: "Aggiornamento automatico",
     storeSync: "Aggiorna il negozio da solo",
     storeSyncHint: "Prezzi e disponibilità dal listino del fornitore, senza che tu faccia nulla.",
+    autoPublish: "Pubblica i nuovi prodotti",
+    autoPublishHint: "I nuovi del listino vanno online da soli, appena arriva la loro prima foto.",
     every: "Ogni",
     everyTitle: "Ogni quanto aggiornare il negozio",
     interval: (minutes: number) =>

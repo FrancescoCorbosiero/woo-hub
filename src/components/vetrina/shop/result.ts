@@ -30,6 +30,16 @@ export function resultLines(summary: Record<string, SchedulerStepSummary>, words
         : { tone: "error", text: words.stepFailed(words.stepName.gs), detail: gs.note },
     );
   }
+  const publish = summary.publish;
+  if (publish?.pullRunning) lines.push({ tone: "warn", text: words.pullRunning });
+  else if (publish?.published) {
+    const { created, failed, waiting } = publish.published;
+    if (created > 0) lines.push({ tone: "ok", text: words.published(created) });
+    if (failed > 0) lines.push({ tone: "error", text: words.publishFailed(failed), href: "/vetrina/negozio/nuovi", detail: publish.note });
+    if (waiting > 0) lines.push({ tone: "warn", text: words.publishWaiting(waiting) });
+  } else if (publish && !publish.ok) {
+    lines.push({ tone: "error", text: words.stepFailed(words.stepName.publish), detail: publish.note });
+  }
   for (const step of ["feedSync", "storeSync"] as const) {
     const outcome = summary[step];
     if (!outcome) continue;

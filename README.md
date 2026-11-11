@@ -296,12 +296,13 @@ cadences:
   (default `Europe/Rome`). In order:
   1. the **store pull** (the Hub's copy of every product on WooCommerce);
   2. the GoldenSneakers complete sync;
-  3. a KicksDB re-pricing pass;
-  4. with *the KicksDB prices of the rest of the store too* ticked, the
+  3. **auto-publish** of the feed's new products (below);
+  4. a KicksDB re-pricing pass;
+  5. with *the KicksDB prices of the rest of the store too* ticked, the
      **store sync** of the whole store, a few at a time, the feed's products
      left to the feed cycle (below);
-  5. the **automatic categories**, against a full read of the store;
-  6. self-repair (with *Automatic repair* ticked, under Advanced), metadata
+  6. the **automatic categories**, against a full read of the store;
+  7. self-repair (with *Automatic repair* ticked, under Advanced), metadata
      backfill and recategorization.
 
   A failed step doesn't stop the others and is retried an hour later, twice
@@ -309,7 +310,7 @@ cadences:
 - **The feed cycle**, every N minutes on the clock (`15` runs at :00, :15,
   :30 and :45), while *Update the store automatically* is on and the
   GoldenSneakers API is set (`GS_FEED_URL` and `GS_FEED_TOKEN`). It runs the
-  GoldenSneakers sync, then the store sync of the feed's products, so the
+  GoldenSneakers sync, auto-publish, then the store sync of the feed's products, so the
   store follows the feed within the interval. KicksDB-priced products wait for
   the daily sync, because planning them asks KicksDB about every one of them,
   every time. A cycle skips its turn while another run is going, and the daily
@@ -330,6 +331,15 @@ cadences:
   check runs even while no category is automatic: the store index it keeps is
   also what the Vetrina's catalog lists. It then only reads; nothing is
   written to the store.
+
+**Auto-publish** (*Publish the feed's new products on its own*, on by default)
+puts a product on the store as soon as the supplier's feed lists it: Publish's
+own run, created hidden and on sale with its first photo, each SKU looked up
+live before it is created. Feed products only — a KicksDB pick stays a
+person's choice. At most 20 a run, the rest at the next; a product the store
+refuses is left alone for 6 hours; nothing until the Hub has its copy of the
+store, nor while a store pull runs; and nothing at all with *Update the store
+automatically* off. "Sincronizza ora" includes it whenever it is on.
 
 **The store sync** does unattended what the Sync tab does with "apply all":
 it plans the price and stock changes the sources call for and writes them to
@@ -587,7 +597,8 @@ what waits for the owner, on the phone (`/vetrina/negozio`,
     route under `/vetrina`; dry runs, force reimport and the rest stay on the
     Publish tab.
 - **Aggiornamento automatico** — the everyday settings of Automatic sync: on
-  or off, every N minutes, the KicksDB prices too, the full update's times.
+  or off, every N minutes, the feed's new products published on their own,
+  the KicksDB prices too, the full update's times.
   The rest of them are on the Feeds tab.
 
 **Rolling back** past the store-term rules: an older engine ignores their

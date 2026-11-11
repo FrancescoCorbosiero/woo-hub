@@ -220,6 +220,12 @@ export interface AutomationConfig {
     storeSync: boolean;
     /** With a supplier feed connected (and storeSync on): read it and write its products' changes every N minutes, 5–720. */
     feedsEveryMinutes: number;
+    /**
+     * The supplier feed's new products are published on their own, as soon as the feed
+     * lists them (each feed cycle, and the daily sync): created hidden, on sale with their
+     * first photo. Only while storeSync is on, like every write nobody watches.
+     */
+    autoPublish: boolean;
     /** The daily sync writes the rest of the store too — the KicksDB prices — storeMaxChanges a run. */
     dailyStoreSync: boolean;
     /** When the daily sync runs: HH:MM times, in timeZone. */

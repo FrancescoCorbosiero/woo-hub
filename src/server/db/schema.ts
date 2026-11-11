@@ -429,6 +429,8 @@ export interface SchedulerStepSummary {
   pullRunning?: boolean;
   /** The supplier feed's sync: its products added, updated, taken off sale. */
   feed?: { added: number; updated: number; deactivated: number };
+  /** The feed's new products published on their own: created, refused, and left for the next run. */
+  published?: { created: number; failed: number; waiting: number };
 }
 
 export const schedulerRuns = pgTable(

@@ -23,6 +23,7 @@ export const shopEn: typeof shopIt = {
     step: {
       pull: "Reading the store…",
       gs: "Downloading the supplier's list…",
+      publish: "Publishing the new products…",
       feedSync: "Updating prices and stock…",
       kicksdb: "Updating the KicksDB prices…",
       storeSync: "Writing the KicksDB prices…",
@@ -57,6 +58,10 @@ export const shopEn: typeof shopIt = {
       writtenKicks: (count) =>
         count === 0 ? "The KicksDB prices were already up to date" : count === 1 ? "1 KicksDB price updated" : `${n(count)} KicksDB prices updated`,
       added: (count) => (count === 1 ? "1 size added" : `${n(count)} sizes added`),
+      published: (count) =>
+        count === 1 ? "1 new product published: it shows with its first photo" : `${n(count)} new products published: they show with their first photo`,
+      publishFailed: (count) => (count === 1 ? "1 new product not published" : `${n(count)} new products not published`),
+      publishWaiting: (count) => `${n(count)} more new products at the next sync`,
       kept: (count) =>
         count === 1
           ? "1 price changed on WordPress left as it is: your call"
@@ -70,6 +75,7 @@ export const shopEn: typeof shopIt = {
       stepFailed: (step) => `${step}: did not work`,
       stepName: {
         gs: "Supplier list",
+        publish: "New products",
         feedSync: "Prices and stock",
         kicksdb: "KicksDB prices",
         storeSync: "KicksDB prices in the store",
@@ -169,6 +175,8 @@ export const shopEn: typeof shopIt = {
     title: "Automatic updates",
     storeSync: "Update the store on its own",
     storeSyncHint: "Prices and stock from the supplier's list, without you doing anything.",
+    autoPublish: "Publish the new products",
+    autoPublishHint: "The list's new ones go online on their own, as soon as their first photo arrives.",
     every: "Every",
     everyTitle: "How often to update the store",
     interval: (minutes) => (minutes % 60 === 0 ? (minutes === 60 ? "1 hour" : `${minutes / 60} hours`) : `${minutes} minutes`),

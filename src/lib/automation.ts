@@ -30,6 +30,7 @@ export const AUTOMATION_LIMITS = {
 export const DEFAULT_AUTOMATION: AutomationConfig = {
   storeSync: true,
   feedsEveryMinutes: DEFAULT_FEEDS_MINUTES,
+  autoPublish: true,
   dailyStoreSync: false,
   dailyTimes: ["04:30"],
   timeZone: DEFAULT_TIMEZONE,
@@ -57,6 +58,7 @@ const pingUrl = z.preprocess(
 export const AutomationSchema = z.object({
   storeSync: z.boolean(),
   feedsEveryMinutes: minutes(L.feedsEveryMinutes),
+  autoPublish: z.boolean(),
   dailyStoreSync: z.boolean(),
   // In order and once each, as the scheduler reads them.
   dailyTimes: z

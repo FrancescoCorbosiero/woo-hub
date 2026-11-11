@@ -87,7 +87,12 @@ vi.mock("@/server/collections/runner", () => ({ runFull: async () => null, runCh
 vi.mock("@/server/catalog/enrich", () => ({
   backfillCatalogMetadata: async () => ({ scanned: 0, enriched: 0, missed: 0 }),
 }));
-vi.mock("@/server/woo/media", () => ({ drainMedia: async () => ({ steps: 0, more: false, unreachable: null }) }));
+vi.mock("@/server/woo/media", () => ({
+  drainMedia: async () => ({ steps: 0, more: false, unreachable: null }),
+  // Auto-publish reads the delta, which leaves out what waits for photos: nothing does.
+  openMediaSkus: async () => new Set<string>(),
+  failedMediaSkus: async () => new Set<string>(),
+}));
 
 const load = async () => ({
   ...(await import("drizzle-orm")),
@@ -244,7 +249,7 @@ describe.skipIf(!enabled)("the scheduler's store syncs, KicksDB prices included 
 
   it("records a run by hand apart from the daily runs: never the day's slot", { timeout: 60_000 }, async () => {
     const { db, eq, schedulerRuns, getSchedulerStatus, syncNow, lastManualRun } = await load();
-    expect(syncNow()).toEqual({ started: true, steps: ["gs", "feedSync", "kicksdb", "storeSync"] });
+    expect(syncNow()).toEqual({ started: true, steps: ["gs", "publish", "feedSync", "kicksdb", "storeSync"] });
     await vi.waitFor(() => expect(getSchedulerStatus().current).toBeNull(), { timeout: 30_000 });
     const rows = await db.select().from(schedulerRuns).where(eq(schedulerRuns.trigger, "manual"));
     expect(rows).toHaveLength(1);

@@ -75,6 +75,19 @@ vi.mock("@/server/feeds/repo", () => ({ GS_FEED: "goldensneakers", knownFeedSkus
 vi.mock("@/server/store-json/repo", () => ({ listStoreSkuSpellings: async () => ["FEED-1", "KICKS-1"] }));
 const priceSync = vi.hoisted(() => ({ run: vi.fn() }));
 vi.mock("@/server/sync/price-sync", () => ({ runPriceSync: priceSync.run }));
+// Publish: what the store lacks, and the creating itself.
+const publisher = vi.hoisted(() => ({
+  page: { hasSnapshot: true, candidates: [] as { sku: string; source: string; onStore: boolean }[] },
+  publish: vi.fn(async (skus: string[], _options?: unknown) => ({
+    created: skus.length,
+    completed: 0,
+    products: skus.map((sku) => ({ sku, error: null as string | null })),
+  })),
+}));
+vi.mock("@/server/woo/publish", () => ({
+  listPublishTargets: async () => publisher.page,
+  publishProducts: (skus: string[], options: unknown) => publisher.publish(skus, options),
+}));
 
 /** Save new settings, as the Feeds tab does: the listener hears the change. */
 function change(patch: Partial<AutomationConfig>): void {
@@ -218,6 +231,9 @@ describe("Sincronizza ora: the automatic sync, now, by hand", () => {
     env.HUB_ROLE = undefined;
     env.GS_FEED_URL = "https://gs.example.com/api/assortment-flat/";
     priceSync.run.mockReset();
+    publisher.page = { hasSnapshot: true, candidates: [] };
+    publisher.publish.mockClear();
+    delete (globalThis as Record<string, unknown>).__storeHubPublishRefused;
     for (const fn of Object.values(steps)) fn.mockClear();
     steps.wooConfigured.mockReturnValue(true);
     vi.spyOn(console, "log").mockImplementation(() => {});
@@ -238,9 +254,9 @@ describe("Sincronizza ora: the automatic sync, now, by hand", () => {
     priceSync.run.mockResolvedValue(wrote(12, 2, 1));
 
     const { syncNow } = await import("./scheduler");
-    expect(syncNow()).toEqual({ started: true, steps: ["gs", "feedSync"] });
+    expect(syncNow()).toEqual({ started: true, steps: ["gs", "publish", "feedSync"] });
     // One at a time: a second press is told one is going, and follows it.
-    expect(status().current).toMatchObject({ kind: "manual", steps: ["gs", "feedSync"] });
+    expect(status().current).toMatchObject({ kind: "manual", steps: ["gs", "publish", "feedSync"] });
     expect(syncNow()).toEqual({ started: false, reason: "running" });
 
     await vi.waitFor(() => expect(status().current).toBeNull());
@@ -275,7 +291,7 @@ describe("Sincronizza ora: the automatic sync, now, by hand", () => {
     priceSync.run.mockReset();
     priceSync.run.mockResolvedValueOnce(wrote(3)).mockResolvedValueOnce(wrote(7));
     const { syncNow } = await import("./scheduler");
-    expect(syncNow()).toEqual({ started: true, steps: ["gs", "feedSync", "kicksdb", "storeSync"] });
+    expect(syncNow()).toEqual({ started: true, steps: ["gs", "publish", "feedSync", "kicksdb", "storeSync"] });
     await vi.waitFor(() => expect(status().current).toBeNull());
     expect(priceSync.run).toHaveBeenNthCalledWith(1, expect.objectContaining({ skus: ["FEED-1"], instalments: false }));
     expect(priceSync.run).toHaveBeenNthCalledWith(2, expect.objectContaining({ skus: ["KICKS-1"], maxChanges: 40, instalments: true }));
@@ -290,5 +306,87 @@ describe("Sincronizza ora: the automatic sync, now, by hand", () => {
     env.GS_FEED_URL = "https://gs.example.com/api/assortment-flat/";
     env.HUB_ROLE = "web";
     expect(syncNow()).toEqual({ started: false, reason: "not-writer" });
+  });
+});
+
+describe("auto-publish: the feed's new products, as soon as the feed lists them", () => {
+  const feedProduct = (i: number) => ({ sku: `NEW-${i}`, source: "goldensneakers", onStore: false });
+
+  beforeEach(() => {
+    vi.resetModules();
+    const g = globalThis as Record<string, unknown>;
+    for (const key of ["__storeHubScheduler", "__storeHubSchedulerTimers", "__storeHubPublishRefused"]) delete g[key];
+    settings.listener = null;
+    env.HUB_ROLE = undefined;
+    env.GS_FEED_URL = "https://gs.example.com/api/assortment-flat/";
+    priceSync.run.mockReset();
+    priceSync.run.mockResolvedValue(wrote(0));
+    publisher.publish.mockClear();
+    for (const fn of Object.values(steps)) fn.mockClear();
+    steps.wooConfigured.mockReturnValue(true);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"], now: NOW });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("publishes the feed's products the store lacks — never a KicksDB pick, never one already there — 20 a run", async () => {
+    publisher.page = {
+      hasSnapshot: true,
+      candidates: [
+        ...Array.from({ length: 23 }, (_, i) => feedProduct(i)),
+        { sku: "KICKS-PICK", source: "kicksdb", onStore: false },
+        { sku: "ON-STORE", source: "goldensneakers", onStore: true },
+      ],
+    };
+    const status = await start();
+    publisher.publish.mockClear();
+    const { syncNow } = await import("./scheduler");
+    syncNow();
+    await vi.waitFor(() => expect(status().current).toBeNull());
+    const skus = publisher.publish.mock.calls[0][0];
+    expect(skus).toHaveLength(20);
+    expect(skus).not.toContain("KICKS-PICK");
+    expect(skus).not.toContain("ON-STORE");
+    expect(publisher.publish.mock.calls[0][1]).toEqual({ dryRun: false });
+    expect(status().lastManual?.summary.publish).toMatchObject({ ok: true, published: { created: 20, failed: 0, waiting: 3 } });
+  });
+
+  it("leaves a product the store refused alone for the next cycles, and publishes nothing without a copy of the store", async () => {
+    publisher.page = { hasSnapshot: true, candidates: [feedProduct(1), feedProduct(2)] };
+    publisher.publish.mockImplementation(async (skus: string[]) => ({
+      created: skus.filter((sku) => sku !== "NEW-1").length,
+      completed: 0,
+      products: skus.map((sku) => ({ sku, error: sku === "NEW-1" ? "no EU-sized variants" : null })),
+    }));
+    const status = await start();
+    // The boot's daily run tried both; the store refused NEW-1.
+    expect(publisher.publish.mock.calls[0][0]).toEqual(["NEW-1", "NEW-2"]);
+    publisher.publish.mockClear();
+    const { syncNow } = await import("./scheduler");
+    syncNow();
+    await vi.waitFor(() => expect(status().current).toBeNull());
+    expect(publisher.publish.mock.calls[0][0]).toEqual(["NEW-2"]);
+
+    publisher.page = { hasSnapshot: false, candidates: [feedProduct(3)] };
+    publisher.publish.mockClear();
+    syncNow();
+    await vi.waitFor(() => expect(status().current).toBeNull());
+    expect(publisher.publish).not.toHaveBeenCalled();
+  });
+
+  it("publishes nothing unattended with the store sync off, nor with auto-publish off", async () => {
+    publisher.page = { hasSnapshot: true, candidates: [feedProduct(1)] };
+    // The boot's daily run, store sync off: nothing published.
+    await start({ storeSync: false });
+    expect(publisher.publish).not.toHaveBeenCalled();
+    const { syncNow } = await import("./scheduler");
+    settings.current = { ...DEFAULT_AUTOMATION, autoPublish: false };
+    expect(syncNow()).toEqual({ started: true, steps: ["gs", "feedSync"] });
   });
 });

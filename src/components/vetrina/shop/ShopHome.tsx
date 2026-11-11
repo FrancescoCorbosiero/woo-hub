@@ -139,6 +139,22 @@ export function ShopHome({ result }: { result: VetrinaResult<ShopOverview> }) {
             />
             {overview.feed && (
               <ListItem
+                title={s.settings.autoPublish}
+                className={settings.storeSync ? undefined : "opacity-50"}
+                after={
+                  <Toggle
+                    className={SWITCH_TARGET}
+                    checked={settings.autoPublish}
+                    disabled={!settings.storeSync}
+                    colors={TOGGLE_COLORS}
+                    aria-label={s.settings.autoPublish}
+                    onChange={() => void save({ autoPublish: !settings.autoPublish })}
+                  />
+                }
+              />
+            )}
+            {overview.feed && (
+              <ListItem
                 link
                 linkComponent="button"
                 linkProps={{ type: "button", onClick: () => setIntervalOpen(true), disabled: !settings.storeSync }}
@@ -172,7 +188,7 @@ export function ShopHome({ result }: { result: VetrinaResult<ShopOverview> }) {
             />
           </List>
           <p className="px-5 pt-1 text-[13px] leading-snug opacity-60">
-            {s.settings.storeSyncHint} {overview.kicksdb ? s.settings.kicksdbHint : ""}
+            {s.settings.storeSyncHint} {overview.feed ? s.settings.autoPublishHint : ""} {overview.kicksdb ? s.settings.kicksdbHint : ""}
           </p>
           {!standalone && (
             <List strong inset className="!mt-4">
