@@ -144,7 +144,7 @@ function usableImages(catalog: SourceProduct, includeGallery: boolean, max: numb
  * global pa_brand attribute — and a product invisible to the connector the
  * shop actually uses is no better than a product with no brand at all.
  */
-function applyIdentity(body: Record<string, unknown>, identity: ResolvedIdentity | undefined): void {
+export function applyIdentity(body: Record<string, unknown>, identity: ResolvedIdentity | undefined): void {
   if (identity?.brandId != null) body.brands = [{ id: identity.brandId }];
   if (identity?.categoryIds?.length) {
     body.categories = identity.categoryIds.map((id) => ({ id }));

@@ -16,6 +16,7 @@ import { demoShop } from "./fixture-source";
  * by, the catalog's "Provenienza" chips, and the one rule "Elimina" follows.
  * Decided by SKU, from what the Hub knows:
  *
+ *   made by hand in the shop                → woo (the shop owns it, whatever any source says)
  *   the supplier's feed carries it now      → goldensneakers  ("Elimina" refuses it)
  *   pinned to KicksDB's prices in the Hub   → kicksdb
  *   the feed listed it, no longer does      → delisted
@@ -43,12 +44,15 @@ export interface SourceFacts {
   catalog: ReadonlyMap<string, string>;
   /** SKUs the Hub prices from KicksDB whatever the feed says (the product drawer's switch). */
   pinned: ReadonlySet<string>;
+  /** SKUs made by hand in the shop ("Aggiungi prodotti"): no source writes to them, the feed included. */
+  handmade?: ReadonlySet<string>;
 }
 
 export function productSource(sku: string, facts: SourceFacts): ProductSource {
   const key = skuKey(sku);
   // No SKU: nothing can link it to a source.
   if (!key) return "woo";
+  if (facts.handmade?.has(key)) return "woo";
   if (facts.carried.has(key)) return "goldensneakers";
   if (facts.pinned.has(key)) return "kicksdb";
   if (facts.listed.has(key)) return "delisted";
@@ -63,7 +67,12 @@ export async function readSourceFacts(): Promise<SourceFacts> {
   if (demoMode()) return demoSourceFacts();
   // The overrides are read best-effort, as everywhere: a pin only tells kicksdb from delisted, both of which "Elimina" takes.
   const [feed, catalog, overrides] = await Promise.all([readFeedCoverage(), readCatalogSources(), getOverrides()]);
-  return { ...feed, catalog, pinned: new Set((overrides ? skusPinnedTo(overrides, "kicksdb") : []).map(skuKey)) };
+  return {
+    ...feed,
+    catalog,
+    pinned: new Set((overrides ? skusPinnedTo(overrides, "kicksdb") : []).map(skuKey)),
+    handmade: new Set((overrides ? skusPinnedTo(overrides, "store") : []).map(skuKey)),
+  };
 }
 
 /** Every SKU the feed has listed, and whether any of its sizes is active. */

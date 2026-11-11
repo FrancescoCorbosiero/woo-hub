@@ -584,6 +584,46 @@ what waits for the owner, on the phone (`/vetrina/negozio`,
   prices changed on WordPress left for the owner, a list past its safety limit
   refused, what waits for next time, a step that failed. Recorded as a run
   "by hand", it never counts as the day's sync.
+- **Aggiungi prodotti** — the one way in for new products
+  (`/vetrina/negozio/aggiungi`, `src/lib/add-products.ts`,
+  `src/server/add-products`). One box takes codes: typed, scanned, pasted,
+  a whole spreadsheet column, or a CSV file (its column headed "SKU",
+  "Codice"…, else its first). The Hub works out, code by code, how each
+  comes in, trying the sources in order:
+  - *already in the shop*: nothing is added twice;
+  - *from the supplier's feed*: one tap, through Publish;
+  - *from KicksDB*: the Hub's catalog, or KicksDB asked for it, with one tap
+    as well;
+  - *by hand*: a code nobody knows, a product without EU sizes, or one the
+    supplier no longer sells.
+
+  One tap runs Publish batch by batch, through its own route
+  (`/vetrina/negozio/aggiungi/importa`). Each product is created hidden and
+  goes on sale with its first photo. KicksDB's answer from the lookup is
+  remembered, so the add asks for nothing twice. A single code that can't be
+  added with one tap opens the form straight away.
+
+  The form (`/vetrina/negozio/aggiungi/nuovo?sku=…`) is pre-filled with what
+  is known of the code. It has:
+  - photos uploaded from the phone into WordPress's media library, or photo
+    links;
+  - name and code, brand, the shop's categories, a description;
+  - sizes (EU shoe sizes, clothes sizes, or one size), each with a price,
+    pieces and an optional barcode;
+  - a Google preview with the SEO plugin's title and description (Rank Math
+    or Yoast, detected from the site's REST index), and the address;
+  - whether it goes on sale at once.
+
+  The product gets the shape Publish gives every product. Its EU sizes use
+  Publish's labels and SKUs (`{SKU}-EU42.5`), and a clothes size or the one
+  size gets its own (`{SKU}-M`, `{SKU}-UNICA`). The shop owns it from then on,
+  through an ownership pin, `store`, in the Hub's overrides. Every source
+  honours it: the feed never takes it over or zeroes it, even when the feed
+  carries the same code, the store sync prices it from nowhere, and Publish
+  and auto-publish never offer it. The shop is its only copy.
+
+  Uploading photos needs `WP_APP_USER` and `WP_APP_PASSWORD`, from a user who
+  may upload files. Without them, the form takes photo links.
 - **Da fare** — the orders to fulfil, the prices changed on WordPress, the new
   products to publish, each with its count and its screen:
   - *Ordini*: to fulfil, shipped, or all, searchable; an order's sheet takes

@@ -32,7 +32,7 @@ import { getOverrides } from "@/server/overrides/repo";
 import { holdPlanPrices, STORE_TERMS_HELD_NOTE, withStoreTermsChecked } from "@/server/pricing/store-terms";
 import { assertSnapshotIsThisStore } from "@/server/woo/site-guard";
 import { activeFeedSkus, GS_FEED } from "@/server/feeds/repo";
-import { followSaleRuleFor, manualPriceFor, type StoreOverrides } from "@/server/overrides/model";
+import { followSaleRuleFor, manualPriceFor, type StoreOverrides, skusPinnedTo } from "@/server/overrides/model";
 import { isExactMatch } from "@/lib/match";
 import { skuKey } from "@/lib/skus";
 import { emptySummary, type PlanSummary, type PreviewPlan } from "@/lib/plan";
@@ -499,8 +499,12 @@ async function feedInUse(): Promise<boolean> {
  * Plan ONE slice of the store's SKUs and persist its plans under the run. The
  * unit both the one-shot preview and the stepped sync are made of.
  */
-async function previewStoreChunk(part: string[], ctx: ChunkContext): Promise<ChunkOutcome> {
+async function previewStoreChunk(slice: string[], ctx: ChunkContext): Promise<ChunkOutcome> {
   const { config, market, source, overrides, runId, seen } = ctx;
+  // Made by hand in the shop (src/server/add-products): the shop owns its
+  // prices and stock, so no source is asked about it and nothing is planned.
+  const handmade = new Set((overrides ? skusPinnedTo(overrides, "store") : []).map(skuKey));
+  const part = handmade.size > 0 ? slice.filter((s) => !handmade.has(skuKey(s))) : slice;
   // OWNERSHIP FIRST. A feed-owned product's prices, sizes and stock come
   // from the local feed tables, so asking KicksDB about it is pointless at
   // best: on a supplier-only store it is hundreds of SKUs KicksDB has never

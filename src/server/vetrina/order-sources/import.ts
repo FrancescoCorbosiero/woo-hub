@@ -3,9 +3,8 @@ import { skuKey as catalogKey } from "@/lib/skus";
 import type { OrderSourceItem, SourceLookup, SourceImport } from "@/lib/vetrina/order-sources";
 import { getSource as kicksdb, kicksdbConfigured } from "@/server/adapters/kicksdb";
 import { getAnyBySkus } from "@/server/catalog/repo";
-import { growCatalogFromSkus } from "@/server/catalog/service";
+import { joinCatalog } from "@/server/catalog/join";
 import { requestCheck } from "@/server/collections/runner";
-import { dbCatalogStore } from "@/server/catalog/store";
 import { demoMode } from "@/server/collections/store";
 import { getActiveConfig } from "@/server/config/repo";
 import { words } from "@/server/vetrina/operations/words";
@@ -13,7 +12,7 @@ import { VetrinaError } from "@/server/vetrina/source";
 import { wooConfigured } from "@/server/woo/client";
 import { publishProducts } from "@/server/woo/publish";
 import { isWriter, NOT_WRITER } from "@/server/writer";
-import { catalogSpellings, closest } from "./compare-model";
+import { closest } from "./compare-model";
 import { getSource } from "./service";
 
 /**
@@ -100,38 +99,7 @@ export async function importSkus(skus: readonly string[], opts: { dryRun: boolea
   if (asked.length === 0) throw new VetrinaError("invalid", words().source.importEmpty, 400);
 
   const config = await getActiveConfig();
-  const market = config.source.market;
-  // As the catalog holds each: as written, or with its spaces as dashes.
-  const known = await getAnyBySkus(market, [...new Set(asked.flatMap(catalogSpellings))]);
-  const resolved = new Map<string, string>();
-  const unknown: string[] = [];
-  for (const sku of asked) {
-    const hit = catalogSpellings(sku).find((k) => known.has(k));
-    if (hit) resolved.set(sku, hit);
-    else unknown.push(sku);
-  }
-
-  const notFound: string[] = [];
-  const unreachable: string[] = [];
-  if (unknown.length > 0) {
-    if (!kicksdbConfigured()) notFound.push(...unknown);
-    else {
-      const growth = await growCatalogFromSkus(kicksdb(config), dbCatalogStore, unknown, market);
-      for (const j of growth.joined) resolved.set(j.requested, j.sku);
-      notFound.push(...growth.rejected);
-      unreachable.push(...growth.failed.map((f) => f.sku));
-      // Asked twice in two spellings, or already there under another: what the catalog has, by now.
-      const late = unknown.filter((s) => !resolved.has(s) && !growth.rejected.includes(s) && !growth.failed.some((f) => f.sku === s));
-      if (late.length > 0) {
-        const again = await getAnyBySkus(market, late.flatMap(catalogSpellings));
-        for (const sku of late) {
-          const hit = catalogSpellings(sku).find((k) => again.has(k));
-          if (hit) resolved.set(sku, hit);
-          else notFound.push(sku);
-        }
-      }
-    }
-  }
+  const { resolved, notFound, unreachable } = await joinCatalog(asked, config.source.market, kicksdbConfigured() ? kicksdb(config) : null);
 
   const toPublish = [...new Set(resolved.values())];
   const outcome = toPublish.length > 0 ? await publishProducts(toPublish, { dryRun: opts.dryRun }) : null;

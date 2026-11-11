@@ -58,7 +58,10 @@ export async function gsFeedStatus(
   const delisted = new Set<string>();
   const bySku = await knownOffersBySku(GS_FEED, skus);
   for (const [sku, rows] of bySku) {
-    if (overrides && ownerPinFor(overrides, sku) === "kicksdb") continue; // pinned back
+    const pin = overrides ? ownerPinFor(overrides, sku) : null;
+    if (pin === "kicksdb") continue; // pinned back
+    // Made by hand in the shop: the feed neither prices, stocks nor zeroes it.
+    if (pin === "store") continue;
     if (!rows.some((r) => r.active)) {
       delisted.add(skuKey(sku)); // the supplier stopped selling it → stock 0
       continue;

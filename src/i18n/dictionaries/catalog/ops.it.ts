@@ -328,6 +328,11 @@ export const opsIt = {
   },
 
   /** Order sources ("classifiche"): what the server says of one. */
+  /** "Aggiungi prodotti" (src/server/add-products): its refusals. */
+  add: {
+    demo: "Sul negozio di prova non si aggiungono prodotti: qui la ricerca si vede, la creazione no.",
+    busy: "Questo prodotto si sta già creando: aspetta un momento.",
+  },
   source: {
     /** The whole shop, where a source's ranking is used on all of it. */
     wholeCatalog: "tutto il catalogo",
