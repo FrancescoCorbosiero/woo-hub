@@ -12,13 +12,13 @@ import { MenuGlyph } from "./menus/parts";
 
 /**
  * The Vetrina's tabs, Homepage, Catalogo, Menu (the site's navigation
- * menus) and Negozio (the store kept in step with the supplier, and what
+ * menus), Pagine (a page's block markup, copied out and pasted back) and Negozio (the store kept in step with the supplier, and what
  * waits for the owner): Konsta's floating glass tab bar, above the home indicator. It steps aside in the section editor, which
  * has its own publish bar down there, and while a catalog list is selecting:
  * the selection's action bar takes its place.
  */
 
-export type VetrinaTab = "home" | "catalog" | "menu" | "shop";
+export type VetrinaTab = "home" | "catalog" | "menu" | "pages" | "shop";
 
 /**
  * The tab an address belongs to, or null where the bar is not shown (the
@@ -28,6 +28,7 @@ export function tabOf(pathname: string): VetrinaTab | null {
   if (pathname === "/vetrina" || pathname === "/") return "home";
   if (pathname === "/vetrina/catalogo" || pathname.startsWith("/vetrina/catalogo/")) return "catalog";
   if (pathname === "/vetrina/menu" || pathname.startsWith("/vetrina/menu/")) return "menu";
+  if (pathname === "/vetrina/pagine" || pathname.startsWith("/vetrina/pagine/")) return "pages";
   if (pathname === "/vetrina/negozio" || pathname.startsWith("/vetrina/negozio/")) return "shop";
   return null;
 }
@@ -44,6 +45,7 @@ const HREF: Record<VetrinaTab, string> = {
   home: "/vetrina",
   catalog: "/vetrina/catalogo",
   menu: "/vetrina/menu",
+  pages: "/vetrina/pagine",
   shop: "/vetrina/negozio",
 };
 
@@ -135,6 +137,7 @@ export function VetrinaTabbar({ active }: { active: VetrinaTab | null }) {
               {link("home", tabs.homepage, <House className={iconSize} />)}
               {link("catalog", tabs.catalog, <CatalogIcon className={iconSize} />)}
               {link("menu", tabs.menu, <MenuGlyph className={iconSize} />)}
+              {link("pages", tabs.pages, <PagesIcon className={iconSize} />)}
               {link("shop", tabs.shop, <StoreIcon className={iconSize} />)}
             </ToolbarPane>
           </Tabbar>
@@ -162,6 +165,17 @@ function CatalogIcon({ className }: { className?: string }) {
       <rect x="13.5" y="4" width="6.5" height="6.5" rx="1.8" />
       <rect x="4" y="13.5" width="6.5" height="6.5" rx="1.8" />
       <rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.8" />
+    </svg>
+  );
+}
+
+/** A sheet with a folded corner and its lines of markup: the site's pages. */
+function PagesIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className} {...stroke}>
+      <path d="M14 3.5H7.5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V8Z" />
+      <path d="M14 3.5V8h4.5" />
+      <path d="m10 12.5-1.8 1.8L10 16.1M14 12.5l1.8 1.8-1.8 1.8" />
     </svg>
   );
 }

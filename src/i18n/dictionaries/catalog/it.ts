@@ -3,6 +3,7 @@ import { actIt } from "./act.it";
 import { homeIt } from "./home.it";
 import { marginsIt } from "./margins.it";
 import { menusIt } from "./menus.it";
+import { pagesIt } from "./pages.it";
 import { pickerIt } from "./picker.it";
 import { opsIt } from "./ops.it";
 import { originIt } from "./origin.it";
@@ -35,6 +36,7 @@ export const catalogIt = {
   sections: sectionsIt,
   picker: pickerIt,
   menus: menusIt,
+  pages: pagesIt,
   shop: shopIt,
   terms: termsIt,
 };

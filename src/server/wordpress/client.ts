@@ -6,11 +6,14 @@ import { VetrinaError } from "@/server/vetrina/source";
 
 /**
  * WordPress's own REST API (wp/v2), for what WooCommerce's keys cannot reach:
- * navigation menus, their items and the theme's places for them, and pages.
+ * navigation menus, their items and the theme's places for them, pages
+ * (listed for menus; read and saved whole by the Vetrina's "Pagine" tab) and
+ * the registered block types.
  * WordPress accepts Woo's REST keys on wc-* routes only, so this signs in as
  * a WordPress user, with an Application Password (WP_APP_USER,
  * WP_APP_PASSWORD; WordPress 5.6+). Menus need an administrator — the
- * edit_theme_options capability — and WordPress 5.9+ (the menus API). The
+ * edit_theme_options capability — and WordPress 5.9+ (the menus API); saving
+ * pages needs edit_pages, edit_published_pages and edit_others_pages. The
  * site is WOO_BASE_URL's.
  *
  * The shapes below are WordPress 6.5's own (WP_REST_Menus_Controller,
@@ -82,6 +85,35 @@ export const WpPage = z.object({
 });
 export type WpPage = z.infer<typeof WpPage>;
 
+/** A page opened for editing (context=edit): its stored markup, its modified time, its revisions' count. */
+export const WpPageEdit = z.object({
+  id: z.number().int(),
+  title: Title,
+  link: z.string().default(""),
+  status: z.string().default("publish"),
+  modified_gmt: z.string(),
+  content: z.object({ raw: z.string() }),
+  _links: z
+    .object({
+      "version-history": z.array(z.object({ count: z.number().int().optional() })).optional(),
+      "predecessor-version": z.array(z.object({ id: z.number().int() })).optional(),
+    })
+    .partial()
+    .optional(),
+});
+export type WpPageEdit = z.infer<typeof WpPageEdit>;
+
+/** A registered block type (GET /wp/v2/block-types): its attributes as registered, JSON-schema types and enums. */
+export const WpBlockType = z.object({
+  name: z.string(),
+  title: z.string().default(""),
+  attributes: z
+    .record(z.string(), z.object({ type: z.union([z.string(), z.array(z.string())]).optional(), enum: z.array(z.unknown()).optional() }).passthrough())
+    .nullable()
+    .default({}),
+});
+export type WpBlockType = z.infer<typeof WpBlockType>;
+
 /** The user the Hub signs in as: who, and whether menus are theirs to change (edit_theme_options). */
 export const WpMe = z.object({
   id: z.number().int(),
@@ -141,7 +173,7 @@ function assertConfigured(): void {
   if (!wordpressConfigured()) {
     throw new VetrinaError(
       "not_configured",
-      "WordPress's menus need WP_APP_USER and WP_APP_PASSWORD: an administrator and an Application Password of theirs (Users › Profile), on WOO_BASE_URL's site.",
+      "WordPress's own API (menus, pages) needs WP_APP_USER and WP_APP_PASSWORD: a WordPress user and an Application Password of theirs (Users › Profile), on WOO_BASE_URL's site.",
     );
   }
 }
@@ -159,14 +191,17 @@ export function wpError(e: unknown, route: string): VetrinaError {
   } catch {
     // not JSON: a proxy's page, a timeout — the transport's own words stay
   }
+  const menus = route.includes("menu");
   if (code === "rest_no_route") {
-    return new VetrinaError("not_configured", `This WordPress has no ${route} route: menus need WordPress 5.9 or later. ${message}`, status);
+    const need = menus ? "menus need WordPress 5.9 or later" : "WordPress's REST API is incomplete or a plugin hides this route";
+    return new VetrinaError("not_configured", `This WordPress has no ${route} route: ${need}. ${message}`, status);
   }
   if (status === 401) {
     return new VetrinaError("unauthorized", `WordPress refused WP_APP_USER / WP_APP_PASSWORD: ${message}`, status);
   }
   if (status === 403) {
-    return new VetrinaError("unauthorized", `WP_APP_USER may not do this — menus need an administrator (edit_theme_options): ${message}`, status);
+    const need = menus ? "menus need an administrator (edit_theme_options)" : "pages need edit_pages, edit_published_pages and edit_others_pages";
+    return new VetrinaError("unauthorized", `WP_APP_USER may not do this (${route}) — ${need}: ${message}`, status);
   }
   if (status === 404) return new VetrinaError("not_found", message, status);
   if (status === 409) return new VetrinaError("stale", message, status);
@@ -328,6 +363,7 @@ async function one(r: BatchRequest): Promise<BatchOutcome> {
  * The routes the Hub uses
  * ---------------------------------------------------------------- */
 
+const PAGE_FIELDS = "id,title,link,status,modified_gmt,content,_links";
 const ITEM_FIELDS = "id,title,status,url,attr_title,description,type,object,object_id,parent,menu_order,target,classes,xfn,invalid,menus";
 
 export const wp = {
@@ -377,6 +413,18 @@ export const wp = {
     }),
   /** The published pages a menu can lead to. */
   pages: () => readAll("/wp/v2/pages", WpPage, { status: "publish", orderby: "title", order: "asc", _fields: "id,title,parent,link" }),
+  /** A page as stored (content.raw needs context=edit and a user who may edit it), with its revisions' count. */
+  page: (id: number) => read(`/wp/v2/pages/${id}`, WpPageEdit, { context: "edit", _fields: PAGE_FIELDS }),
+  /**
+   * A page's markup saved: one POST, never retried (a write that timed out
+   * may have landed). WordPress keeps a revision of it, and answers the page
+   * as it stored it — filtered, for a user without unfiltered_html.
+   */
+  savePage: async (id: number, content: string) =>
+    parsed(`/wp/v2/pages/${id}`, WpPageEdit, await write("POST", `/wp/v2/pages/${id}`, { content }, { context: "edit", _fields: PAGE_FIELDS })),
+  /** The block types registered under a namespace ("golden-hive"); context=edit needs a user who may edit posts or pages. */
+  blockTypes: (namespace: string) =>
+    read("/wp/v2/block-types", z.array(WpBlockType), { namespace, context: "edit", _fields: "name,title,attributes" }),
   /** One create per body, in order; each answer is the item WordPress made (or why it did not). */
   createMenuItems: (bodies: readonly WpMenuItemBody[]) =>
     runBatch(bodies.map((body) => ({ method: "POST", path: "/wp/v2/menu-items", body: { status: "publish", ...body } }))),

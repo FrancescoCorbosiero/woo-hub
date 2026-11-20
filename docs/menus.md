@@ -27,7 +27,9 @@ WordPress.
    ```
 
    The spaces are WordPress's own, and can stay. The site is
-   `WOO_BASE_URL`'s.
+   `WOO_BASE_URL`'s. The same user saves pages from the Pagine tab
+   (`edit_pages`, `edit_published_pages`, `edit_others_pages`, which an
+   administrator has: [pages.md](pages.md#setup)).
 3. Restart the app.
 
 What WordPress must give:

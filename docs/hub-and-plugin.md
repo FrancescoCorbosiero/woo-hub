@@ -119,6 +119,7 @@ Letters follow `docs/02-FEATURES.md` there. **Hub ✓** = in the Hub today;
 | Taxonomy CRUD (categories, brands, tags) | Hub ✓ | Made, renamed, moved, merged, deleted from the Vetrina and the API, with undo; renames leave aliases Publish follows ([taxonomy.md](taxonomy.md)) |
 | Smart taxonomy | Hub ✓ | Automatic categories, better than the plan: persisted rules, held changes, a log |
 | Tax query, counts | Hub → | Over `store_index`, when a screen needs it |
+| Page markup (copy out, check, save) | Hub ✓ | The Vetrina's Pagine tab over `wp/v2` with the Application Password, checked against the site's live block registry ([pages.md](pages.md)) |
 | Navigation menus | Hub ✓ | The Vetrina's Menu tab and the API, over `wp/v2` with an Application Password — no plugin route ([menus.md](menus.md)): items, whole menus, the theme's places |
 | Round-trip export/import | Hub ✓ | The hidden `/preview` file flow |
 

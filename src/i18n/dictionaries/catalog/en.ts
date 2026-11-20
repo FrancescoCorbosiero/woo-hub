@@ -4,6 +4,7 @@ import { actEn } from "./act.en";
 import { homeEn } from "./home.en";
 import { marginsEn } from "./margins.en";
 import { menusEn } from "./menus.en";
+import { pagesEn } from "./pages.en";
 import { pickerEn } from "./picker.en";
 import { opsEn } from "./ops.en";
 import { originEn } from "./origin.en";
@@ -27,6 +28,7 @@ export const catalogEn: typeof catalogIt = {
   sections: sectionsEn,
   picker: pickerEn,
   menus: menusEn,
+  pages: pagesEn,
   shop: shopEn,
   terms: termsEn,
 };

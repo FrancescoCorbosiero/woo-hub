@@ -325,6 +325,15 @@ tested on the fixture; **not yet run against a live WordPress**.
 For the acceptance sentence, creating a category is still missing as an
 action (`categorize` takes an existing one).
 
+*Landed (2026-11-20):* pages over `wp/v2`, the same Application Password
+([pages.md](pages.md)): a page's block markup read (`context=edit`),
+checked with WordPress's own parser against the site's live block registry
+(`wp/v2/block-types`), compared block by block, and saved whole, refused
+when the page changed since it was read. Screens only for now (the
+Vetrina's Pagine tab): not an action kind, not in the log, no undo but
+WordPress's revisions; a `pageUpdate` proposal over the API is the next
+step there.
+
 **Weeks 8–12: durability.**
 Replace the runner's `globalThis` chain with a leased `jobs` table
 (`FOR UPDATE SKIP LOCKED` + `locked_until` + worker identity, the pattern

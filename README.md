@@ -659,6 +659,34 @@ what waits for the owner, on the phone (`/vetrina/negozio`,
   the KicksDB prices too, the full update's times.
   The rest of them are on the Feeds tab.
 
+**The Vetrina's Pagine tab.** A WordPress page's block markup, copied out,
+rewritten (by hand or by an LLM), pasted back and saved, without WordPress's
+code editor (`/vetrina/pagine`, [docs/pages.md](docs/pages.md)):
+- **Copia**: the page's markup exactly as stored (`wp/v2/pages/<id>`,
+  `context=edit`), with its modified time and a link to it.
+- **Controlla**: the pasted version read with WordPress's own block parser
+  and checked: attribute JSON WordPress would silently drop (a bare `"`
+  instead of `\u0022`), closers that would turn the rest of the page into a
+  Classic block, every `golden-hive/*` block against the site's live
+  registry (`wp/v2/block-types`: the block exists, its attributes, their
+  types and allowed values), HTML outside blocks, and golden-hive-blocks'
+  rules for `[gh_product_rail]`. Errors block saving; warnings do not.
+  Then what changes, block by block: added, removed, changed (which
+  attributes, the content), by name and place.
+- **Aggiorna**: checked again, the changes confirmed, then one write
+  (`POST wp/v2/pages/<id>`), never retried. Refused, with nothing sent,
+  when the page changed since it was opened (its modified time and its
+  markup are read again right before the write; a small window remains,
+  which core WordPress cannot close), when the WordPress user lacks
+  `edit_pages`, `edit_published_pages` or `edit_others_pages` (said on the
+  screen before anyone tries), and on any error. The previous version is in
+  the page's WordPress revisions. The front page, which the Vetrina edits
+  too, warns that a whole-page paste replaces the Vetrina's latest edits
+  unless it started from a fresh copy.
+
+Saving needs `WP_APP_USER` and `WP_APP_PASSWORD` (as the menus do), from a
+user with those three capabilities: an Administrator or an Editor.
+
 **Rolling back** past the store-term rules: an older engine ignores their
 scope keys and would apply them to every product, supplier prices included.
 Disable or delete every rule with `storeCategory` / `storeBrand` first (see
