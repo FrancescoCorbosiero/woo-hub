@@ -237,3 +237,42 @@ describe("writes, a batch at a time", () => {
     expect(calls).toHaveLength(3);
   });
 });
+
+describe("pages and the block registry", () => {
+  const PAGE = {
+    id: 9,
+    title: { raw: "Chi siamo", rendered: "Chi siamo" },
+    link: "https://shop.example.com/chi-siamo/",
+    status: "publish",
+    modified_gmt: "2026-11-20T10:00:00",
+    content: { raw: "<!-- wp:golden-hive/store-visit /-->", rendered: "<section>…</section>", protected: false, block_version: 1 },
+    _links: { "version-history": [{ count: 4, href: "…" }], "predecessor-version": [{ id: 120, href: "…" }] },
+  };
+
+  it("reads a page as stored: context=edit, the raw markup and its revisions", async () => {
+    answers.push(() => json(PAGE));
+    const page = await wp.page(9);
+    expect(page.content.raw).toBe("<!-- wp:golden-hive/store-visit /-->");
+    expect(page._links?.["version-history"]?.[0].count).toBe(4);
+    expect(calls[0].url.pathname).toBe("/wp-json/wp/v2/pages/9");
+    expect(calls[0].url.searchParams.get("context")).toBe("edit");
+    expect(calls[0].url.searchParams.get("_fields")).toContain("_links");
+  });
+
+  it("saves a page's markup in one POST, and never sends it twice", async () => {
+    answers.push(() => json({ code: "internal_server_error", message: "Boom" }, 500));
+    await expect(wp.savePage(9, "<!-- wp:paragraph -->x<!-- /wp:paragraph -->")).rejects.toMatchObject({ code: "failed" });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe("POST");
+    expect(calls[0].body).toEqual({ content: "<!-- wp:paragraph -->x<!-- /wp:paragraph -->" });
+  });
+
+  it("reads a namespace's block types, and names a missing capability for pages", async () => {
+    answers.push(() => json([{ name: "golden-hive/cta-banner", title: "CTA Banner", attributes: { title: { type: "string", default: "x" } } }]));
+    const types = await wp.blockTypes("golden-hive");
+    expect(types[0].attributes).toEqual({ title: { type: "string", default: "x" } });
+    expect(calls[0].url.searchParams.get("namespace")).toBe("golden-hive");
+    const err = { message: "HTTP 403", status: 403, body: JSON.stringify({ code: "rest_cannot_edit", message: "Non hai i permessi." }) };
+    expect(wpError(err, "/wp/v2/pages/9")).toMatchObject({ code: "unauthorized", message: expect.stringContaining("edit_others_pages") });
+  });
+});

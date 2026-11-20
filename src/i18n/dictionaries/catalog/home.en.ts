@@ -2,7 +2,7 @@ import type { homeIt } from "./home.it";
 
 export const homeEn: typeof homeIt = {
   title: "Catalog",
-  tabs: { homepage: "Homepage", catalog: "Catalog", menu: "Menus", shop: "Store" },
+  tabs: { homepage: "Homepage", catalog: "Catalog", menu: "Menus", pages: "Pages", shop: "Store" },
   search: "Search the catalog",
   segments: { category: "Categories", brand: "Brands" },
 

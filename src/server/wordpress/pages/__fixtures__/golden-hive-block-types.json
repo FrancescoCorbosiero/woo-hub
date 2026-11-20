@@ -1,0 +1,1020 @@
+[
+  {
+    "name": "golden-hive/about-hero",
+    "title": "About Hero",
+    "attributes": {
+      "eyebrow": {
+        "type": "string"
+      },
+      "title": {
+        "type": "string"
+      },
+      "text": {
+        "type": "string"
+      },
+      "imageUrl": {
+        "type": "string"
+      },
+      "imageUrlId": {
+        "type": "number"
+      },
+      "values": {
+        "type": "array"
+      },
+      "reverse": {
+        "type": "boolean"
+      },
+      "lock": {
+        "type": "object"
+      },
+      "metadata": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "golden-hive/authenticity-guarantee",
+    "title": "Authenticity Guarantee",
+    "attributes": {
+      "eyebrow": {
+        "type": "string"
+      },
+      "title": {
+        "type": "string"
+      },
+      "description": {
+        "type": "string"
+      },
+      "badgeText": {
+        "type": "string"
+      },
+      "badgeSub": {
+        "type": "string"
+      },
+      "steps": {
+        "type": "array"
+      },
+      "buttonText": {
+        "type": "string"
+      },
+      "buttonUrl": {
+        "type": "string"
+      },
+      "lock": {
+        "type": "object"
+      },
+      "metadata": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "golden-hive/brand-marquee",
+    "title": "Brand Marquee",
+    "attributes": {
+      "title": {
+        "type": "string"
+      },
+      "brands": {
+        "type": "array"
+      },
+      "speed": {
+        "type": "number"
+      },
+      "direction": {
+        "type": "string"
+      },
+      "pauseOnHover": {
+        "type": "boolean"
+      },
+      "lock": {
+        "type": "object"
+      },
+      "metadata": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "golden-hive/category-slider",
+    "title": "Category Slider",
+    "attributes": {
+      "title": {
+        "type": "string"
+      },
+      "categories": {
+        "type": "array"
+      },
+      "showNav": {
+        "type": "boolean"
+      },
+      "showDots": {
+        "type": "boolean"
+      },
+      "autoplay": {
+        "type": "boolean"
+      },
+      "loop": {
+        "type": "boolean"
+      },
+      "imageRatio": {
+        "type": "string"
+      },
+      "paddingTop": {
+        "type": "number"
+      },
+      "paddingBottom": {
+        "type": "number"
+      },
+      "lock": {
+        "type": "object"
+      },
+      "metadata": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "golden-hive/contact-info",
+    "title": "Contact Info",
+    "attributes": {
+      "title": {
+        "type": "string"
+      },
+      "subtitle": {
+        "type": "string"
+      },
+      "address": {
+        "type": "string"
+      },
+      "vat": {
+        "type": "string"
+      },
+      "phone": {
+        "type": "string"
+      },
+      "email": {
+        "type": "string"
+      },
+      "mapUrl": {
+        "type": "string"
+      },
+      "mapEmbed": {
+        "type": "string"
+      },
+      "clickToLoad": {
+        "type": "boolean"
+      },
+      "lock": {
+        "type": "object"
+      },
+      "metadata": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "golden-hive/cta-banner",
+    "title": "CTA Banner",
+    "attributes": {
+      "eyebrow": {
+        "type": "string"
+      },
+      "title": {
+        "type": "string"
+      },
+      "text": {
+        "type": "string"
+      },
+      "buttonText": {
+        "type": "string"
+      },
+      "buttonUrl": {
+        "type": "string"
+      },
+      "backgroundImage": {
+        "type": "string"
+      },
+      "backgroundImageId": {
+        "type": "number"
+      },
+      "showGlow": {
+        "type": "boolean"
+      },
+      "lock": {
+        "type": "object"
+      },
+      "metadata": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "golden-hive/cta-image",
+    "title": "CTA Image Split",
+    "attributes": {
+      "imageUrl": {
+        "type": "string"
+      },
+      "imageUrlId": {
+        "type": "number"
+      },
+      "eyebrow": {
+        "type": "string"
+      },
+      "title": {
+        "type": "string"
+      },
+      "text": {
+        "type": "string"
+      },
+      "buttonText": {
+        "type": "string"
+      },
+      "buttonUrl": {
+        "type": "string"
+      },
+      "reverse": {
+        "type": "boolean"
+      },
+      "lock": {
+        "type": "object"
+      },
+      "metadata": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "golden-hive/drop-calendar",
+    "title": "Drop Calendar",
+    "attributes": {
+      "eyebrow": {
+        "type": "string"
+      },
+      "title": {
+        "type": "string"
+      },
+      "subtitle": {
+        "type": "string"
+      },
+      "limit": {
+        "type": "number"
+      },
+      "showReleased": {
+        "type": "boolean"
+      },
+      "emptyText": {
+        "type": "string"
+      },
+      "lock": {
+        "type": "object"
+      },
+      "metadata": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "golden-hive/drop-countdown",
+    "title": "Drop Countdown",
+    "attributes": {
+      "productId": {
+        "type": "number"
+      },
+      "productName": {
+        "type": "string"
+      },
+      "productImage": {
+        "type": "string"
+      },
+      "productImageId": {
+        "type": "number"
+      },
+      "releaseDate": {
+        "type": "string"
+      },
+      "buttonText": {
+        "type": "string"
+      },
+      "buttonUrl": {
+        "type": "string"
+      },
+      "eyebrow": {
+        "type": "string"
+      },
+      "backgroundColor": {
+        "type": "string"
+      },
+      "lock": {
+        "type": "object"
+      },
+      "metadata": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "golden-hive/faq-schema",
+    "title": "FAQ Schema",
+    "attributes": {
+      "title": {
+        "type": "string"
+      },
+      "subtitle": {
+        "type": "string"
+      },
+      "items": {
+        "type": "array"
+      },
+      "allowMultiple": {
+        "type": "boolean"
+      },
+      "lock": {
+        "type": "object"
+      },
+      "metadata": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "golden-hive/hero-carousel",
+    "title": "Hero Carousel",
+    "attributes": {
+      "slides": {
+        "type": "array"
+      },
+      "autoplay": {
+        "type": "number"
+      },
+      "layout": {
+        "type": "string"
+      },
+      "showDots": {
+        "type": "boolean"
+      },
+      "showArrows": {
+        "type": "boolean"
+      },
+      "lock": {
+        "type": "object"
+      },
+      "metadata": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "golden-hive/hero-split",
+    "title": "Hero Split",
+    "attributes": {
+      "eyebrow": {
+        "type": "string"
+      },
+      "title": {
+        "type": "string"
+      },
+      "subtitle": {
+        "type": "string"
+      },
+      "imageUrl": {
+        "type": "string"
+      },
+      "imageUrlId": {
+        "type": "number"
+      },
+      "imagePosition": {
+        "type": "string"
+      },
+      "mediaSide": {
+        "type": "string"
+      },
+      "theme": {
+        "type": "string"
+      },
+      "height": {
+        "type": "string"
+      },
+      "buttonText": {
+        "type": "string"
+      },
+      "buttonUrl": {
+        "type": "string"
+      },
+      "buttonStyle": {
+        "type": "string"
+      },
+      "lock": {
+        "type": "object"
+      },
+      "metadata": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "golden-hive/hero-video",
+    "title": "Hero Video",
+    "attributes": {
+      "mediaType": {
+        "type": "string"
+      },
+      "videoUrl": {
+        "type": "string"
+      },
+      "imageUrl": {
+        "type": "string"
+      },
+      "imageUrlId": {
+        "type": "number"
+      },
+      "posterUrl": {
+        "type": "string"
+      },
+      "posterUrlId": {
+        "type": "number"
+      },
+      "badge": {
+        "type": "string"
+      },
+      "title": {
+        "type": "string"
+      },
+      "titleAccent": {
+        "type": "string"
+      },
+      "headingLevel": {
+        "type": "string"
+      },
+      "subtitle": {
+        "type": "string"
+      },
+      "primaryButtonText": {
+        "type": "string"
+      },
+      "primaryButtonUrl": {
+        "type": "string"
+      },
+      "secondaryButtonText": {
+        "type": "string"
+      },
+      "secondaryButtonUrl": {
+        "type": "string"
+      },
+      "showScrollIndicator": {
+        "type": "boolean"
+      },
+      "lock": {
+        "type": "object"
+      },
+      "metadata": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "golden-hive/instagram-feed",
+    "title": "Instagram Feed",
+    "attributes": {
+      "title": {
+        "type": "string"
+      },
+      "subtitle": {
+        "type": "string"
+      },
+      "instagramUrl": {
+        "type": "string"
+      },
+      "buttonText": {
+        "type": "string"
+      },
+      "images": {
+        "type": "array"
+      },
+      "columns": {
+        "type": "number"
+      },
+      "lock": {
+        "type": "object"
+      },
+      "metadata": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "golden-hive/legit-check",
+    "title": "Legit Check",
+    "attributes": {
+      "eyebrow": {
+        "type": "string"
+      },
+      "title": {
+        "type": "string"
+      },
+      "subtitle": {
+        "type": "string"
+      },
+      "checks": {
+        "type": "array"
+      },
+      "buttonText": {
+        "type": "string"
+      },
+      "buttonUrl": {
+        "type": "string"
+      },
+      "lock": {
+        "type": "object"
+      },
+      "metadata": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "golden-hive/map-embed",
+    "title": "Map Embed",
+    "attributes": {
+      "embedCode": {
+        "type": "string"
+      },
+      "height": {
+        "type": "number"
+      },
+      "borderRadius": {
+        "type": "number"
+      },
+      "clickToLoad": {
+        "type": "boolean"
+      },
+      "address": {
+        "type": "string"
+      },
+      "lock": {
+        "type": "object"
+      },
+      "metadata": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "golden-hive/newsletter",
+    "title": "Newsletter",
+    "attributes": {
+      "title": {
+        "type": "string"
+      },
+      "text": {
+        "type": "string"
+      },
+      "placeholder": {
+        "type": "string"
+      },
+      "buttonText": {
+        "type": "string"
+      },
+      "disclaimer": {
+        "type": "string"
+      },
+      "askSize": {
+        "type": "boolean"
+      },
+      "sizeLabel": {
+        "type": "string"
+      },
+      "askBrands": {
+        "type": "boolean"
+      },
+      "lock": {
+        "type": "object"
+      },
+      "metadata": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "golden-hive/parallax-section",
+    "title": "Parallax Section",
+    "attributes": {
+      "backgroundImage": {
+        "type": "string"
+      },
+      "backgroundImageId": {
+        "type": "number"
+      },
+      "foregroundImage": {
+        "type": "string"
+      },
+      "foregroundImageId": {
+        "type": "number"
+      },
+      "title": {
+        "type": "string"
+      },
+      "text": {
+        "type": "string"
+      },
+      "buttonText": {
+        "type": "string"
+      },
+      "buttonUrl": {
+        "type": "string"
+      },
+      "enableMouseParallax": {
+        "type": "boolean"
+      },
+      "lock": {
+        "type": "object"
+      },
+      "metadata": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "golden-hive/product-spotlight",
+    "title": "Product Spotlight",
+    "attributes": {
+      "imageUrl": {
+        "type": "string"
+      },
+      "imageUrlId": {
+        "type": "number"
+      },
+      "category": {
+        "type": "string"
+      },
+      "title": {
+        "type": "string"
+      },
+      "description": {
+        "type": "string"
+      },
+      "condition": {
+        "type": "string"
+      },
+      "size": {
+        "type": "string"
+      },
+      "authenticity": {
+        "type": "string"
+      },
+      "currentPrice": {
+        "type": "string"
+      },
+      "originalPrice": {
+        "type": "string"
+      },
+      "buttonText": {
+        "type": "string"
+      },
+      "buttonUrl": {
+        "type": "string"
+      },
+      "lock": {
+        "type": "object"
+      },
+      "metadata": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "golden-hive/promo-modal",
+    "title": "Promo Modal",
+    "attributes": {
+      "modalId": {
+        "type": "string"
+      },
+      "imageUrl": {
+        "type": "string"
+      },
+      "imageUrlId": {
+        "type": "number"
+      },
+      "badge": {
+        "type": "string"
+      },
+      "title": {
+        "type": "string"
+      },
+      "text": {
+        "type": "string"
+      },
+      "couponCode": {
+        "type": "string"
+      },
+      "buttonText": {
+        "type": "string"
+      },
+      "buttonUrl": {
+        "type": "string"
+      },
+      "disclaimer": {
+        "type": "string"
+      },
+      "autoShow": {
+        "type": "boolean"
+      },
+      "showDelay": {
+        "type": "number"
+      },
+      "showOnce": {
+        "type": "boolean"
+      },
+      "lock": {
+        "type": "object"
+      },
+      "metadata": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "golden-hive/shortcode-wrapper",
+    "title": "Shortcode Wrapper",
+    "attributes": {
+      "eyebrow": {
+        "type": "string"
+      },
+      "title": {
+        "type": "string"
+      },
+      "shortcode": {
+        "type": "string"
+      },
+      "backgroundColor": {
+        "type": "string"
+      },
+      "buttonText": {
+        "type": "string"
+      },
+      "buttonUrl": {
+        "type": "string"
+      },
+      "hidden": {
+        "type": "string"
+      },
+      "lock": {
+        "type": "object"
+      },
+      "metadata": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "golden-hive/size-chart-modal",
+    "title": "Size Chart Modal",
+    "attributes": {
+      "modalId": {
+        "type": "string"
+      },
+      "title": {
+        "type": "string"
+      },
+      "description": {
+        "type": "string"
+      },
+      "triggerText": {
+        "type": "string"
+      },
+      "showTrigger": {
+        "type": "boolean"
+      },
+      "lock": {
+        "type": "object"
+      },
+      "metadata": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "golden-hive/social-buttons",
+    "title": "Social Buttons",
+    "attributes": {
+      "instagram": {
+        "type": "string"
+      },
+      "facebook": {
+        "type": "string"
+      },
+      "tiktok": {
+        "type": "string"
+      },
+      "youtube": {
+        "type": "string"
+      },
+      "twitter": {
+        "type": "string"
+      },
+      "lock": {
+        "type": "object"
+      },
+      "metadata": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "golden-hive/social-proof",
+    "title": "Social Proof",
+    "attributes": {
+      "days": {
+        "type": "number"
+      },
+      "limit": {
+        "type": "number"
+      },
+      "showCity": {
+        "type": "boolean"
+      },
+      "maxPerVisit": {
+        "type": "number"
+      },
+      "notifications": {
+        "type": "array"
+      },
+      "interval": {
+        "type": "number"
+      },
+      "initialDelay": {
+        "type": "number"
+      },
+      "displayDuration": {
+        "type": "number"
+      },
+      "showVerified": {
+        "type": "boolean"
+      },
+      "title": {
+        "type": "string"
+      },
+      "lock": {
+        "type": "object"
+      },
+      "metadata": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "golden-hive/store-hours",
+    "title": "Store Hours",
+    "attributes": {
+      "title": {
+        "type": "string"
+      },
+      "hours": {
+        "type": "array"
+      },
+      "note": {
+        "type": "string"
+      },
+      "closedOnHolidays": {
+        "type": "boolean"
+      },
+      "closedDates": {
+        "type": "string"
+      },
+      "lock": {
+        "type": "object"
+      },
+      "metadata": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "golden-hive/store-visit",
+    "title": "Vieni in negozio",
+    "attributes": {
+      "eyebrow": {
+        "type": "string"
+      },
+      "title": {
+        "type": "string"
+      },
+      "subtitle": {
+        "type": "string"
+      },
+      "address": {
+        "type": "string"
+      },
+      "vat": {
+        "type": "string"
+      },
+      "phone": {
+        "type": "string"
+      },
+      "showWhatsApp": {
+        "type": "boolean"
+      },
+      "whatsappText": {
+        "type": "string"
+      },
+      "hours": {
+        "type": "array"
+      },
+      "note": {
+        "type": "string"
+      },
+      "closedOnHolidays": {
+        "type": "boolean"
+      },
+      "closedDates": {
+        "type": "string"
+      },
+      "mapEmbed": {
+        "type": "string"
+      },
+      "mapImage": {
+        "type": "string"
+      },
+      "mapImageId": {
+        "type": "number"
+      },
+      "lock": {
+        "type": "object"
+      },
+      "metadata": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "golden-hive/trust-badges",
+    "title": "Trust Badges",
+    "attributes": {
+      "badges": {
+        "type": "array"
+      },
+      "variant": {
+        "type": "string",
+        "enum": [
+          "default",
+          "carousel"
+        ]
+      },
+      "lock": {
+        "type": "object"
+      },
+      "metadata": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "golden-hive/trustpilot-widget",
+    "title": "Trustpilot Widget",
+    "attributes": {
+      "rating": {
+        "type": "number"
+      },
+      "reviewCount": {
+        "type": "number"
+      },
+      "label": {
+        "type": "string"
+      },
+      "trustpilotUrl": {
+        "type": "string"
+      },
+      "lock": {
+        "type": "object"
+      },
+      "metadata": {
+        "type": "object"
+      }
+    }
+  },
+  {
+    "name": "golden-hive/whatsapp-button",
+    "title": "WhatsApp Button",
+    "attributes": {
+      "phoneNumber": {
+        "type": "string"
+      },
+      "message": {
+        "type": "string"
+      },
+      "buttonText": {
+        "type": "string"
+      },
+      "iconOnly": {
+        "type": "boolean"
+      },
+      "lock": {
+        "type": "object"
+      },
+      "metadata": {
+        "type": "object"
+      }
+    }
+  }
+]
